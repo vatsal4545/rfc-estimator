@@ -34,8 +34,8 @@ describe("buildQuickProject", () => {
     const r = computeEstimate(p);
 
     expect(p.takeoff).toHaveLength(11);
-    // Distance ladder: 100 ft first charger, +15 ft each after → 250 ft longest.
-    expect(p.setup.trenchLengthFt).toBe(100 + 15 * 10);
+    // Two trench legs, one per level: DCFC 100+15×5 = 175 ft, L2 100+15×4 = 160 ft.
+    expect(p.setup.trenchLengthFt).toBe(100 + 15 * 5 + (100 + 15 * 4));
     expect(r.rollups.nDCFC).toBe(6);
     expect(r.rollups.nL2).toBe(5);
 

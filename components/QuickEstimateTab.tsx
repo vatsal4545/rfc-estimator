@@ -10,6 +10,7 @@ import {
   buildQuickProject,
   countChargers,
   defaultQuickInput,
+  normalizeQuickInput,
   estimateTimeline,
   timelineTotal,
 } from "@/lib/calc/autoplan";
@@ -43,7 +44,7 @@ const SERVICE_TOGGLES: {
 export function QuickEstimateTab() {
   const { project, setProject, result } = useProject();
   const [input, setInput] = useState<QuickEstimateInput>(
-    () => project.quick ?? defaultQuickInput(),
+    () => (project.quick ? normalizeQuickInput(project.quick) : defaultQuickInput()),
   );
 
   const chargerModels = project.loadTypes.filter((lt) => lt.category !== "Feeder");
@@ -124,8 +125,11 @@ export function QuickEstimateTab() {
           <Field label="Site address">
             <input className={inputCls} value={input.siteAddress} onChange={(e) => set("siteAddress", e.target.value)} />
           </Field>
-          <Field label="Distance to nearest charger (ft)" hint="One-way, power source → first charger">
-            <input type="number" className={inputCls} value={input.firstRunFt} onChange={(e) => set("firstRunFt", Number(e.target.value))} />
+          <Field label="Distance to nearest L3 / DCFC charger (ft)" hint="One-way, power source → first DCFC">
+            <input type="number" className={inputCls} value={input.firstRunFtDcfc} onChange={(e) => set("firstRunFtDcfc", Number(e.target.value))} />
+          </Field>
+          <Field label="Distance to nearest L2 charger (ft)" hint="One-way, power source → first L2">
+            <input type="number" className={inputCls} value={input.firstRunFtL2} onChange={(e) => set("firstRunFtL2", Number(e.target.value))} />
           </Field>
           <Field label="Spacing per extra charger (ft)">
             <input type="number" className={inputCls} value={input.stepFt} onChange={(e) => set("stepFt", Number(e.target.value))} />

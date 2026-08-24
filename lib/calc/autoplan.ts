@@ -222,9 +222,24 @@ export function countChargers(input: QuickEstimateInput, loadTypes: LoadType[]):
   return { nL2, nDCFC, nChargers: nL2 + nDCFC };
 }
 
-export function longestRunFt(input: QuickEstimateInput, counts: ChargerCounts): number {
-  if (counts.nChargers === 0) return 0;
-  return input.firstRunFt + input.stepFt * (counts.nChargers - 1);
+/**
+ * Trench length: one leg per charger level, each running from the power
+ * source to its own bank (RunFtDcfc / RunFtL2 in the RFC template).
+ */
+export function trenchLengthFt(input: QuickEstimateInput, counts: ChargerCounts): number {
+  const dcfcLeg = counts.nDCFC > 0 ? input.firstRunFtDcfc + input.stepFt * (counts.nDCFC - 1) : 0;
+  const l2Leg = counts.nL2 > 0 ? input.firstRunFtL2 + input.stepFt * (counts.nL2 - 1) : 0;
+  return dcfcLeg + l2Leg;
+}
+
+/** Backfills the split distance fields on projects saved before the L2/L3 split. */
+export function normalizeQuickInput(q: QuickEstimateInput): QuickEstimateInput {
+  const legacy = (q as QuickEstimateInput & { firstRunFt?: number }).firstRunFt;
+  return {
+    ...q,
+    firstRunFtDcfc: q.firstRunFtDcfc ?? legacy ?? 100,
+    firstRunFtL2: q.firstRunFtL2 ?? legacy ?? 100,
+  };
 }
 
 /** Crew-days: mobilization + per-charger install + trench production, terrain-adjusted. */
@@ -273,7 +288,8 @@ export function defaultQuickInput(): QuickEstimateInput {
       { loadTypeId: "DCFC 200kW", count: 6 },
       { loadTypeId: "L2 Single 40A", count: 5 },
     ],
-    firstRunFt: 100,
+    firstRunFtDcfc: 100,
+    firstRunFtL2: 100,
     stepFt: 15,
     terrain: "flat",
     includeChargerHardware: true,
@@ -298,26 +314,25 @@ export function buildQuickProject(
   idSeed = "qs",
 ): Project {
   const p: Project = JSON.parse(JSON.stringify(base));
+  input = normalizeQuickInput(input);
   p.quick = { ...input, lines: input.lines.map((l) => ({ ...l })) };
 
   const counts = countChargers(input, p.loadTypes);
   const terrain = TERRAIN_INFO[input.terrain];
-  const trenchFt = longestRunFt(input, counts);
+  const trenchFt = trenchLengthFt(input, counts);
   const laborDays = estimateLaborDays(counts, trenchFt, input.terrain);
   const ada = adaStallBreakdown(counts.nChargers);
 
   // --- Takeoff + service chain + auto gear -------------------------------
-  // L2 chargers go nearest the panel: 208V branch runs are the ones voltage
-  // drop punishes, while 480V DCFC tolerates the longer end of the ladder.
-  const orderedLines = [...input.lines].sort((a, b) => {
-    const cat = (id: string) => (findLoadType(p.loadTypes, id)?.category === "L2" ? 0 : 1);
-    return cat(a.loadTypeId) - cat(b.loadTypeId);
-  });
-  p.takeoff = generateTakeoffRows(
-    orderedLines,
-    { startFt: input.firstRunFt, stepFt: input.stepFt },
-    idSeed,
-  );
+  // Each level runs its own distance ladder from its own first-run input:
+  // L2 banks and DCFC banks sit in different spots on real sites.
+  const isL2 = (id: string) => findLoadType(p.loadTypes, id)?.category === "L2";
+  const l2Lines = input.lines.filter((l) => isL2(l.loadTypeId));
+  const dcfcLines = input.lines.filter((l) => !isL2(l.loadTypeId));
+  p.takeoff = [
+    ...generateTakeoffRows(l2Lines, { startFt: input.firstRunFtL2, stepFt: input.stepFt }, `${idSeed}a`),
+    ...generateTakeoffRows(dcfcLines, { startFt: input.firstRunFtDcfc, stepFt: input.stepFt }, `${idSeed}b`),
+  ];
   p.setup = {
     ...p.setup,
     clientName: input.clientName,

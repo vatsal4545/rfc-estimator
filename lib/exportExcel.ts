@@ -910,7 +910,7 @@ function fillAssumptions(ws: WS, project: Project, result: EstimateResult): void
     ...(q
       ? ([
           ["Chargers", q.lines.filter((l) => l.count > 0).map((l) => `${l.count} × ${l.loadTypeId}`).join(" + ")],
-          ["Distance ladder", `first charger ${q.firstRunFt} ft, +${q.stepFt} ft each after`],
+          ["Distance ladder", `first DCFC ${q.firstRunFtDcfc} ft, first L2 ${q.firstRunFtL2} ft, +${q.stepFt} ft each after (per level)`],
         ] as [string, string][])
       : []),
     ["Terrain", `${info.label} — trenching ×${info.trenchFactor}, labor ×${info.laborFactor}, ADA regrade ×${info.adaRegradeFactor}`],

@@ -396,9 +396,11 @@ export interface QuickEstimateInput {
   clientName: string;
   siteAddress: string;
   lines: QuickChargerLine[];
-  /** One-way distance from the power source to the nearest charger (ft). */
-  firstRunFt: number;
-  /** Extra distance for each subsequent charger (ft). */
+  /** One-way distance from the power source to the nearest DCFC / L3 charger (ft). */
+  firstRunFtDcfc: number;
+  /** One-way distance from the power source to the nearest L2 charger (ft). */
+  firstRunFtL2: number;
+  /** Extra distance for each subsequent charger of the same level (ft). */
   stepFt: number;
   terrain: Terrain;
   includeChargerHardware: boolean;
