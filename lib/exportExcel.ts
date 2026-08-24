@@ -11,6 +11,7 @@ import ExcelJS from "exceljs";
 import { GPR_ITEM_NAME, TERRAIN_INFO, estimateTimeline, timelineTotal } from "./calc/autoplan";
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
+import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
 
 const MONEY = '"$"#,##0.00';
 const PCT = "0.00%";
@@ -57,6 +58,9 @@ export async function buildEstimateWorkbook(
   // Tab order = reading order; Summary is filled last (it references Cost Detail).
   const summary = wb.addWorksheet("Summary");
   const costs = wb.addWorksheet("Cost Detail");
+  const costsInternal = wb.addWorksheet("Costs Internal", {
+    properties: { tabColor: { argb: COSTS_INTERNAL_TAB_COLOR } },
+  });
   const takeoff = wb.addWorksheet("Takeoff");
   const materials = wb.addWorksheet("Materials BOM");
   const panel = wb.addWorksheet("Panel Schedule");
@@ -69,6 +73,27 @@ export async function buildEstimateWorkbook(
 
   const refs = fillCostDetail(costs, project, result);
   fillSummary(summary, project, result, refs);
+  const fin = project.financial;
+  fillCostsInternal(costsInternal, {
+    // One CellSource per engine cost line, in engine order (matches the labels).
+    lines: result.costs.lines.map((line, i) => ({
+      formula: `'Cost Detail'!B${refs.lineStartRow + i}`,
+      cached: line.base,
+    })),
+    contingency: { formula: "'Cost Detail'!$B$4", cached: fin.contingencyPct },
+    laborContingency: {
+      formula: "IF('Cost Detail'!$B$8,'Cost Detail'!$B$4,0)",
+      cached: (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0,
+    },
+    dailyRate: { formula: "'Cost Detail'!$B$6", cached: fin.laborDailyRate },
+    businessDays: { formula: "'Cost Detail'!$B$7", cached: fin.laborBusinessDays },
+    // Site plan + SLD + PM hours×rate — everything on the Design invoice
+    // except the plan check / permit fee (permitting-side).
+    constructionPm: {
+      formula: `'Cost Detail'!D${refs.designStartRow}+'Cost Detail'!D${refs.designStartRow + 1}+'Cost Detail'!D${refs.designStartRow + 2}`,
+      cached: fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
+    },
+  });
   fillTakeoff(takeoff, result);
   fillMaterials(materials, project, result);
   fillPanel(panel, project, result);
@@ -116,6 +141,10 @@ interface CostRefs {
   equipSubtotal: string;
   designSubtotal: string;
   total: string;
+  /** Row of the first construction line on Cost Detail (Costs Internal reads them). */
+  lineStartRow: number;
+  /** Row of the first Design Invoice line (site plan; SLD and PM follow). */
+  designStartRow: number;
 }
 
 function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostRefs {
@@ -254,6 +283,8 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
     equipSubtotal: `'Cost Detail'!D${equipSubRow}`,
     designSubtotal: `'Cost Detail'!D${designSubRow}`,
     total: `'Cost Detail'!D${totalRow}`,
+    lineStartRow: firstLine,
+    designStartRow: designStart,
   };
 }
 

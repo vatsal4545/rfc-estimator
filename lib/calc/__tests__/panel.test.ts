@@ -33,10 +33,10 @@ describe("Panel schedule — Bartell (6x DCFC 100kW, validated against the real 
   });
 });
 
-describe("Quick-generate — 5x DCFC 240kW + 6x L2 Dual 80A (user scenario)", () => {
+describe("Quick-generate — 5x DCFC 240kW + 6x L2 Dual 40A (user scenario)", () => {
   const rows = generateTakeoffRows([
     { loadTypeId: "DCFC 240kW", count: 5 },
-    { loadTypeId: "L2 Dual 80A", count: 6 },
+    { loadTypeId: "L2 Dual 40A", count: 6 },
   ]);
   const project: Project = { ...defaultProject(), takeoff: rows };
   const result = computeEstimate(project);
@@ -68,7 +68,7 @@ describe("Quick-generate — 5x DCFC 240kW + 6x L2 Dual 80A (user scenario)", ()
 
     // At a short run the same charger sizes to its 8 AWG design minimum.
     const short = computeTakeoffRow(
-      { id: "s", loadTypeId: "L2 Dual 80A", location: "near", units: 1, oneWayDistFt: 50 },
+      { id: "s", loadTypeId: "L2 Dual 40A", location: "near", units: 1, oneWayDistFt: 50 },
       defaultProject().setup,
       DEFAULT_LOAD_TYPES,
     );

@@ -8,13 +8,13 @@ import type { Project } from "../types";
 // 80A. With the service chain on, the app must generate and size every
 // upstream segment (utility TX -> switchgear -> step-down TX -> sub-panel)
 // and auto-cost the gear, with zero manual rows.
-describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 80A", () => {
+describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 40A", () => {
   const base = defaultProject();
   const project: Project = {
     ...base,
     takeoff: generateTakeoffRows([
       { loadTypeId: "DCFC 240kW", count: 5 },
-      { loadTypeId: "L2 Dual 80A", count: 6 },
+      { loadTypeId: "L2 Dual 40A", count: 6 },
     ]),
     setup: {
       ...base.setup,
@@ -93,7 +93,7 @@ describe("Service chain — L2-only site", () => {
   const base = defaultProject();
   const project: Project = {
     ...base,
-    takeoff: generateTakeoffRows([{ loadTypeId: "L2 Dual 80A", count: 4 }], { startFt: 50, stepFt: 10 }),
+    takeoff: generateTakeoffRows([{ loadTypeId: "L2 Dual 40A", count: 4 }], { startFt: 50, stepFt: 10 }),
     setup: { ...base.setup, serviceChain: { ...base.setup.serviceChain!, enabled: true } },
   };
   const r = computeEstimate(project);

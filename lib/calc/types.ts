@@ -63,6 +63,12 @@ export interface LoadType {
   hasDataCable: boolean;
   materialOverride?: Material;
   runsAreParallel: boolean;
+  /**
+   * Billable ports (plugs) per unit, when it differs from the wiring-derived
+   * default (L2 = runsPerUnit, DCFC = 1): dual-cable DCFC units dispense to
+   * one vehicle at a time electrically but bill network fees per port.
+   */
+  portsPerUnit?: number;
   notes?: string;
 }
 

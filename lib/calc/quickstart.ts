@@ -13,7 +13,7 @@ export interface DistanceAssumption {
 export const DEFAULT_DISTANCE_ASSUMPTION: DistanceAssumption = { startFt: 100, stepFt: 15 };
 
 /**
- * Expands "5x DCFC 240kW + 6x L2 Dual 80A" style input into takeoff rows.
+ * Expands "5x DCFC 240kW + 6x L2 Dual 40A" style input into takeoff rows.
  * Distances follow the assumption ladder: charger 1 gets startFt, each next
  * charger +stepFt, continuing across every line in order — placeholders to
  * replace with real site measurements when the plan is available.

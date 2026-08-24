@@ -15,7 +15,7 @@ describe("Review finding 1 — 125% continuous factor applied exactly once in pa
     ...base,
     takeoff: generateTakeoffRows([
       { loadTypeId: "DCFC 240kW", count: 5 },
-      { loadTypeId: "L2 Dual 80A", count: 6 },
+      { loadTypeId: "L2 Dual 40A", count: 6 },
     ]),
   };
   const { panel } = computeEstimate(project);

@@ -26,6 +26,7 @@ describe("Excel export", () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual([
       "Summary",
       "Cost Detail",
+      "Costs Internal",
       "Takeoff",
       "Materials BOM",
       "Panel Schedule",
@@ -96,6 +97,39 @@ describe("Excel export", () => {
     expect(costs.getCell("B4").value).toBeCloseTo(project.financial.contingencyPct, 6);
     // Cached result matches the engine line.
     expect(contingency.result).toBeCloseTo(result.costs.lines[0].contingency, 2);
+  });
+
+  it("Costs Internal replicates the RFC_V18 sheet and ties to the engine", async () => {
+    const wb = await buildEstimateWorkbook(project, result);
+    const ws = wb.getWorksheet("Costs Internal")!;
+    // Layout matches the source workbook: labels in B3:B13, banner in B2.
+    expect(ws.getCell("B2").value).toBe("Electrical Supply & Construction Management Costs");
+    expect(ws.getCell("B3").value).toBe("Wires, Conduits and Peripherals");
+    expect(ws.getCell("B13").value).toBe("Construction Equipment");
+    expect(ws.getCell("B14").value).toBe("Construction PM");
+    expect(ws.getCell("B17").value).toBe("ZERO IMPACT BUILDERS COSTS");
+    // Individual Cost reads the Cost Detail bases; contingency reads the input block.
+    expect((ws.getCell("D3").value as ExcelJS.CellFormulaValue).formula).toBe("'Cost Detail'!B13");
+    expect((ws.getCell("E3").value as ExcelJS.CellFormulaValue).formula).toBe("'Cost Detail'!$B$4");
+    // Construction PM row = design invoice minus the AHJ plan check, at 0%
+    // contingency, excluded from the G15 construction subtotal.
+    const fin = project.financial;
+    expect(cellNumber(ws.getCell("D14").value)).toBeCloseTo(
+      fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
+      2,
+    );
+    expect(ws.getCell("E14").value).toBe(0);
+    expect((ws.getCell("G15").value as ExcelJS.CellFormulaValue).formula).toBe("SUM(G3:G13)");
+    // Money ties: G15 = construction total, G18/G19 = labor, G20 = both.
+    expect(cellNumber(ws.getCell("G15").value)).toBeCloseTo(
+      result.costs.electricalSupplyConstructionTotal,
+      2,
+    );
+    expect(cellNumber(ws.getCell("G18").value)).toBeCloseTo(result.costs.labor, 2);
+    expect(cellNumber(ws.getCell("G20").value)).toBeCloseTo(
+      result.costs.electricalSupplyConstructionTotal + result.costs.labor,
+      2,
+    );
   });
 
   it("Takeoff row totals and the materials grand total tie to the engine", async () => {

@@ -2,11 +2,12 @@
 // budgetary estimate workbook mirroring the web tool AND the shop's real
 // RFC_V18 workbooks (VN Village, Boatman, CCMH, Hoopa Motel, Bartell).
 //
-// Sheets: Intake (only place a user types) → Panel (two schedules: 480V L3 +
-// 208V L2, transformer, switchgear @ website catalog rates) → Estimate →
-// Revenue & Payback (Hoopa revenue model: occupancy × hours × derated kW,
-// LCFS carbon credits) → Financing (DLL-style loan summary) → ADA → Timeline
-// → RateCard → Instructions.
+// Sheets: Intake (only place a user types — details, chargers incl. dual-port
+// L3, wire runs with editable sizes/lengths, services, commercial terms) →
+// Panel (two schedules: 480V L3 + 208V L2, transformer, switchgear @ website
+// catalog rates) → Estimate → Costs Internal (the RFC_V18 presentation sheet,
+// cell-for-cell Hoopa layout) → ADA → Timeline → RateCard (incl. wire $/ft
+// with 450 kcmil Cu & Al) → Instructions.
 //
 // "Next standard size >= demand" uses INDEX/COUNTIF, verified against the
 // engine below. Make-ready allowances are engine-calibrated at generation
@@ -26,8 +27,9 @@ import {
 } from "../lib/calc/autoplan";
 import { defaultProject } from "../lib/calc/defaults";
 import { computeEstimate } from "../lib/calc/engine";
-import { DEFAULT_LOAD_TYPES, GEAR_CATALOG, STANDARD_BREAKERS_A } from "../lib/calc/tables";
+import { DEFAULT_LOAD_TYPES, GEAR_CATALOG, STANDARD_BREAKERS_A, WIRE_TABLE } from "../lib/calc/tables";
 import type { LoadType, QuickEstimateInput, Terrain } from "../lib/calc/types";
+import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "../lib/costsInternalSheet";
 
 const MONEY = '"$"#,##0.00';
 const PCT = "0.00%";
@@ -54,9 +56,9 @@ function electrical(lt: LoadType) {
     breakerA: lt.feederOcpdA,
     circuitsPerUnit: lt.runsAreParallel ? 1 : lt.runsPerUnit,
     unitInputA: Math.round((lt.unitInputAmps ?? amps) * 10) / 10,
-    // Ports drive network fees and revenue stalls: dual-port L2 = 2; a DCFC
-    // dispenses to one vehicle at a time (the Hoopa revenue convention).
-    ports: lt.category === "L2" ? lt.runsPerUnit : 1,
+    // Ports drive network fees: dual-port L2 = 2; a single-cable DCFC = 1.
+    // Dual-cable DCFC units carry an explicit portsPerUnit override.
+    ports: lt.portsPerUnit ?? (lt.category === "L2" ? lt.runsPerUnit : 1),
     kwPerPort: lt.kwPerPort,
     /** Per-breaker current — drives the plan-set schedules' phase VA. */
     ampsPerCircuit: Math.round(amps * 10) / 10,
@@ -103,15 +105,27 @@ function bareInput(overrides: Partial<QuickEstimateInput>): QuickEstimateInput {
 interface ModelCal {
   lt: LoadType;
   hardware: number;
-  makeReady: number;
+  /** Conduit + install hardware + terminations per unit — wire billed separately on the Wire Runs block. */
+  install: number;
+  /** The wire the engine picked for this model's runs at calibration distances (mode). */
+  defaultWire: string;
+  defaultMaterial: string;
 }
 
 function calibrateModel(lt: LoadType): ModelCal {
   const N = 6;
   const p = buildQuickProject(bareInput({ lines: [{ loadTypeId: lt.id, count: N }] }), defaultProject(), "cal");
   const r = computeEstimate(p);
-  const makeReady = (r.materials.grandTotal + r.peripherals.hardwareSubtotal) / N;
-  return { lt, hardware: HARDWARE_ALLOWANCE[lt.id] ?? 0, makeReady: Math.round(makeReady) };
+  // Wire cost (charger runs AND service chain) moves to the editable Wire Runs
+  // block, so the per-unit allowance keeps only conduit/install/terminations.
+  const wireTotal = r.rows.reduce((s, row) => s + row.wireCost, 0);
+  const install = (r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal) / N;
+  const own = r.rows.filter((row) => row.loadTypeId === lt.id && row.selectedWire);
+  const tally = new Map<string, number>();
+  for (const row of own) tally.set(`${row.selectedWire}|${row.material}`, (tally.get(`${row.selectedWire}|${row.material}`) ?? 0) + 1);
+  const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "|Cu";
+  const [defaultWire, defaultMaterial] = best.split("|");
+  return { lt, hardware: HARDWARE_ALLOWANCE[lt.id] ?? 0, install: Math.round(install), defaultWire, defaultMaterial: defaultMaterial || "Cu" };
 }
 
 function calibrateCategory(id: string): { civil: number; signage: number } {
@@ -160,8 +174,9 @@ async function main() {
   const planSet480 = wb.addWorksheet("Panel 480V");
   const planSet208 = wb.addWorksheet("Panel 208V");
   const estimate = wb.addWorksheet("Estimate");
-  const revenue = wb.addWorksheet("Revenue");
-  const financing = wb.addWorksheet("Financing");
+  const costsInternal = wb.addWorksheet("Costs Internal", {
+    properties: { tabColor: { argb: COSTS_INTERNAL_TAB_COLOR } },
+  });
   const ada = wb.addWorksheet("ADA");
   const timeline = wb.addWorksheet("Timeline");
   const rate = wb.addWorksheet("RateCard");
@@ -181,11 +196,13 @@ async function main() {
   };
 
   // ------------------------------------------------------------------ RateCard
-  [22, 14, 15, 10, 9, 12, 11, 12, 9, 9, 10, 34, 12].forEach((w, i) => (rate.getColumn(i + 1).width = w));
+  [22, 14, 16, 10, 9, 12, 11, 12, 9, 9, 10, 9, 10, 13, 9, 3, 36, 12, 9, 9, 10].forEach(
+    (w, i) => (rate.getColumn(i + 1).width = w),
+  );
   rate.getCell("A1").value = "Rate Card — every price the template uses. Edit the yellow cells; formulas follow.";
   rate.getCell("A1").font = { bold: true, size: 13 };
 
-  head(rate, 3, ["Model", "Hardware $/u", "Make-ready $/u", "Category", "Voltage", "Breaker A", "Circuits/u", "Unit input A", "Ports/u", "kW/port", "A/circuit"]);
+  head(rate, 3, ["Model", "Hardware $/u", "Install $/u (excl. wire)", "Category", "Voltage", "Breaker A", "Circuits/u", "Unit input A", "Ports/u", "kW/port", "A/circuit", "Runs/u", "Cond/run", "Default wire", "Material"]);
   models.forEach((m, i) => {
     const row = 4 + i;
     const e = electrical(m.lt);
@@ -193,7 +210,7 @@ async function main() {
     rate.getCell(row, 2).value = m.hardware;
     rate.getCell(row, 2).numFmt = MONEY;
     rate.getCell(row, 2).fill = YELLOW;
-    rate.getCell(row, 3).value = m.makeReady;
+    rate.getCell(row, 3).value = m.install;
     rate.getCell(row, 3).numFmt = MONEY;
     rate.getCell(row, 3).fill = YELLOW;
     rate.getCell(row, 4).value = m.lt.category;
@@ -204,12 +221,16 @@ async function main() {
     rate.getCell(row, 9).value = e.ports;
     rate.getCell(row, 10).value = e.kwPerPort;
     rate.getCell(row, 11).value = e.ampsPerCircuit;
+    rate.getCell(row, 12).value = m.lt.runsPerUnit;
+    rate.getCell(row, 13).value = m.lt.conductorsPerRun;
+    rate.getCell(row, 14).value = m.defaultWire;
+    rate.getCell(row, 15).value = m.defaultMaterial;
   });
   const modelEnd = 3 + models.length;
   rate.getCell(modelEnd + 1, 1).value =
-    "Make-ready $/u = wire, conduit & install hardware (engine-calibrated, ~100-180 ft runs). Gear prices on the Panel sheet. Hardware $/u are budgetary — swap in CTX/vendor quotes.";
+    "Install $/u = conduit, terminations & install hardware (engine-calibrated) — wire is priced on the Intake's Wire Runs block. Hardware $/u are budgetary — swap in CTX/vendor quotes.";
   rate.getCell(modelEnd + 1, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
-  wb.definedNames.add(`RateCard!$A$4:$K$${modelEnd}`, "ModelTable");
+  wb.definedNames.add(`RateCard!$A$4:$O$${modelEnd}`, "ModelTable");
 
   let gRow = modelEnd + 3;
   const priceTable = (title: string, rows: [number, number][], sizeName: string, tableName: string) => {
@@ -243,19 +264,46 @@ async function main() {
     gRow++;
   }
   wb.definedNames.add(`RateCard!$A$${stdFirst}:$A$${gRow - 1}`, "StdBrk");
+  gRow++;
 
-  head(rate, 3, ["Terrain", "Trench ×", "Labor ×", "ADA ×", "Spoils $/ft"], 12);
+  // Wire prices — the Intake's Wire Runs block looks sizes up here. A $0
+  // price means "no price on the vendor list": type one in before using it.
+  label(rate, gRow, "Wire $/ft — THHN/XHHW (Rexel list; incl. 450 kcmil Cu & Al)", true);
+  gRow++;
+  head(rate, gRow, ["Size", "Cu $/ft", "Al $/ft", "Cu A (75C)", "Al A (75C)"]);
+  gRow++;
+  const wireFirst = gRow;
+  for (const w of WIRE_TABLE) {
+    rate.getCell(gRow, 1).value = w.size;
+    rate.getCell(gRow, 2).value = w.cuPerFt;
+    rate.getCell(gRow, 2).numFmt = MONEY;
+    rate.getCell(gRow, 2).fill = YELLOW;
+    rate.getCell(gRow, 3).value = w.alPerFt;
+    rate.getCell(gRow, 3).numFmt = MONEY;
+    rate.getCell(gRow, 3).fill = YELLOW;
+    rate.getCell(gRow, 4).value = w.ampacityCu;
+    rate.getCell(gRow, 5).value = w.ampacityAl;
+    gRow++;
+  }
+  const wireLast = gRow - 1;
+  wb.definedNames.add(`RateCard!$A$${wireFirst}:$A$${wireLast}`, "WireSizes");
+  wb.definedNames.add(`RateCard!$A$${wireFirst}:$E$${wireLast}`, "WireTable");
+  rate.getCell(gRow, 1).value =
+    "450 kcmil: ampacity interpolated (not in NEC 310.16) and the Al $/ft interpolated between 400/500 kcmil — verify before quoting.";
+  rate.getCell(gRow, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+
+  head(rate, 3, ["Terrain", "Trench ×", "Labor ×", "ADA ×", "Spoils $/ft"], 17);
   (Object.keys(TERRAIN_INFO) as Terrain[]).forEach((t, i) => {
     const info = TERRAIN_INFO[t];
     const row = 4 + i;
-    rate.getCell(row, 12).value = t;
-    rate.getCell(row, 13).value = info.trenchFactor;
-    rate.getCell(row, 14).value = info.laborFactor;
-    rate.getCell(row, 15).value = info.adaRegradeFactor;
-    rate.getCell(row, 16).value = info.spoilsPerFt;
-    for (let cc = 13; cc <= 16; cc++) rate.getCell(row, cc).fill = YELLOW;
+    rate.getCell(row, 17).value = t;
+    rate.getCell(row, 18).value = info.trenchFactor;
+    rate.getCell(row, 19).value = info.laborFactor;
+    rate.getCell(row, 20).value = info.adaRegradeFactor;
+    rate.getCell(row, 21).value = info.spoilsPerFt;
+    for (let cc = 18; cc <= 21; cc++) rate.getCell(row, cc).fill = YELLOW;
   });
-  wb.definedNames.add(`RateCard!$L$4:$P$7`, "TerrainTable");
+  wb.definedNames.add(`RateCard!$Q$4:$U$7`, "TerrainTable");
 
   const scalars: [string, string, number, string?][] = [
     ["TrenchRate", "Trenching $/ft (flat baseline)", 40.81, MONEY],
@@ -283,20 +331,20 @@ async function main() {
   ];
   scalars.forEach(([name, text, value, fmt], i) => {
     const row = 10 + i;
-    rate.getCell(row, 12).value = text;
-    const c = rate.getCell(row, 13);
+    rate.getCell(row, 17).value = text;
+    const c = rate.getCell(row, 18);
     c.value = value;
     if (fmt) c.numFmt = fmt;
     c.fill = YELLOW;
-    wb.definedNames.add(`RateCard!$M$${row}`, name);
+    wb.definedNames.add(`RateCard!$R$${row}`, name);
   });
 
   // ------------------------------------------------------------------ Intake
-  [30, 26, 16, 10, 15, 15, 10].forEach((w, i) => (intake.getColumn(i + 1).width = w));
+  [30, 26, 16, 10, 18, 15, 10, 12].forEach((w, i) => (intake.getColumn(i + 1).width = w));
   intake.getCell("A1").value = "RFC INTAKE — EV Charging Project";
   intake.getCell("A1").font = { bold: true, size: 16 };
   intake.getCell("A2").value =
-    "Fill the yellow cells only — Panel, Estimate, Revenue, Financing, ADA and Timeline calculate from them.";
+    "Yellow cells are the inputs — everything else (Panel, Estimate, Costs Internal, ADA, Timeline) calculates from them.";
   intake.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
 
   const inputCell = (row: number, value?: ExcelJS.CellValue, fmt?: string) => {
@@ -326,7 +374,7 @@ async function main() {
   inputCell(19);
 
   label(intake, 21, "CHARGERS", true);
-  head(intake, 22, ["Model", "Qty", "Hardware $/u", "Category", "Make-ready $", "Hardware $", "Ports"]);
+  head(intake, 22, ["Model", "Qty", "Hardware $/u", "Category", "Install $ (excl. wire)", "Hardware $", "Ports"]);
   const CH_FIRST = 23;
   const CH_LAST = 28;
   const defaults: [string, number][] = [
@@ -367,20 +415,108 @@ async function main() {
   wb.definedNames.add("Intake!$B$33", "NPorts");
 
   label(intake, 35, "SITE", true);
-  label(intake, 36, "Distance to nearest charger (ft)");
+  label(intake, 36, "Distance to nearest L3 / DCFC charger (ft)");
   inputCell(36, 100);
-  label(intake, 37, "Spacing per extra charger (ft)");
-  inputCell(37, 15);
-  label(intake, 38, "Terrain");
-  inputCell(38, "flat").dataValidation = { type: "list", allowBlank: false, formulae: ['"flat,sloped,hilly,rocky"'] };
-  label(intake, 39, "Trench length (ft) — overtype if surveyed");
-  inputCell(39, { formula: "B36+B37*MAX(0,NTotal-1)" } as ExcelJS.CellValue);
-  wb.definedNames.add("Intake!$B$36", "FirstRunFt");
-  wb.definedNames.add("Intake!$B$37", "StepFt");
-  wb.definedNames.add("Intake!$B$38", "Terrain");
-  wb.definedNames.add("Intake!$B$39", "TrenchFt");
+  label(intake, 37, "Distance to nearest L2 charger (ft)");
+  inputCell(37, 100);
+  label(intake, 38, "Spacing per extra charger (ft)");
+  inputCell(38, 15);
+  label(intake, 39, "Terrain");
+  inputCell(39, "flat").dataValidation = { type: "list", allowBlank: false, formulae: ['"flat,sloped,hilly,rocky"'] };
+  label(intake, 40, "Trench length (ft) — overtype if surveyed");
+  inputCell(40, {
+    formula: "IF(NDcfc>0,RunFtDcfc+StepFt*(NDcfc-1),0)+IF(NumL2>0,RunFtL2+StepFt*(NumL2-1),0)",
+  } as ExcelJS.CellValue);
+  label(intake, 41, "Construction labor days — overtype if known");
+  inputCell(41, {
+    formula: "IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc+1*NumL2+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE),0))",
+  } as ExcelJS.CellValue);
+  wb.definedNames.add("Intake!$B$36", "RunFtDcfc");
+  wb.definedNames.add("Intake!$B$37", "RunFtL2");
+  wb.definedNames.add("Intake!$B$38", "StepFt");
+  wb.definedNames.add("Intake!$B$39", "Terrain");
+  wb.definedNames.add("Intake!$B$40", "TrenchFt");
+  wb.definedNames.add("Intake!$B$41", "LaborDays");
 
-  label(intake, 41, "INCLUDED SERVICES (Yes / No)", true);
+  // ---- Wire Runs & Feeders: every run's size, material and length is a
+  // yellow cell (defaults auto-fill from the model + site distances; overtype
+  // freely — that is how the shop edited the V18 workbooks).
+  label(intake, 43, "WIRE RUNS & FEEDERS — size, material, runs and one-way ft are editable", true);
+  head(intake, 44, ["Run", "Wire size", "Material", "Runs", "Cond/run", "One-way ft", "$/ft", "Wire $"]);
+  const wireDropdown = `RateCard!$A$${wireFirst}:$A$${wireLast}`;
+  const wireInput = (row: number, col: number, value: ExcelJS.CellValue, list?: string) => {
+    const c = intake.getCell(row, col);
+    c.value = value;
+    c.fill = YELLOW;
+    c.border = { bottom: { style: "thin" } };
+    if (list) c.dataValidation = { type: "list", allowBlank: true, formulae: [list] };
+    return c;
+  };
+  const W_FIRST = 45;
+  for (let i = 0; i < 6; i++) {
+    const row = W_FIRST + i;
+    const src = CH_FIRST + i;
+    intake.getCell(row, 1).value = { formula: `IF($A$${src}<>"",$A$${src},"")` };
+    wireInput(row, 2, { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,14,FALSE),"")` }, wireDropdown);
+    wireInput(row, 3, { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,15,FALSE),"Cu")` }, '"Cu,Al"');
+    intake.getCell(row, 4).value = { formula: `IFERROR($B$${src}*VLOOKUP($A$${src},ModelTable,12,FALSE),0)` };
+    intake.getCell(row, 5).value = { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,13,FALSE),0)` };
+    // Sequential average run per level: L3 units space out from RunFtDcfc, L2
+    // units from RunFtL2, each stepping past earlier units of the SAME level.
+    const prior =
+      i === 0 ? "0" : `SUMPRODUCT(($D$${CH_FIRST}:$D$${src - 1}=$D$${src})*$B$${CH_FIRST}:$B$${src - 1})`;
+    wireInput(row, 6, {
+      formula: `IF($B$${src}>0,IF($D$${src}="DCFC",RunFtDcfc,RunFtL2)+StepFt*(${prior}+($B$${src}-1)/2),0)`,
+    });
+  }
+  const feeders: [string, string, string, string, string | number][] = [
+    [
+      "Service: utility → 480V switchgear",
+      "600 kcmil",
+      "Al",
+      'IF(NDcfc>0,MAX(1,ROUNDUP(Panel!$F$13*1.25/VLOOKUP($B$51,WireTable,IF($C$51="Cu",4,5),FALSE),0)),0)',
+      25,
+    ],
+    [
+      "Feeder: switchgear → step-down TX",
+      "4/0 AWG",
+      "Al",
+      'IF(TxKvaSuggested>0,MAX(1,ROUNDUP(Panel!$F$37*1.25/VLOOKUP($B$52,WireTable,IF($C$52="Cu",4,5),FALSE),0)),0)',
+      15,
+    ],
+    [
+      "Service/feeder → 208V panel",
+      "350 kcmil",
+      "Al",
+      'IF(NumL2>0,MAX(1,ROUNDUP(IF(TxKvaSuggested>0,TxKvaSuggested*1000/(208*SQRT(3)),Panel!$F$26)*1.25/VLOOKUP($B$53,WireTable,IF($C$53="Cu",4,5),FALSE),0)),0)',
+      15,
+    ],
+  ];
+  feeders.forEach(([name, size, mat, runsFormula, ft], i) => {
+    const row = 51 + i;
+    intake.getCell(row, 1).value = name;
+    wireInput(row, 2, size, wireDropdown);
+    wireInput(row, 3, mat, '"Cu,Al"');
+    // Runs is editable too — Boatman's feeder was a hand-typed single run.
+    wireInput(row, 4, { formula: runsFormula } as ExcelJS.CellValue);
+    intake.getCell(row, 5).value = 4;
+    wireInput(row, 6, ft);
+  });
+  for (let row = W_FIRST; row <= 53; row++) {
+    intake.getCell(row, 7).value = {
+      formula: `IF(OR($B$${row}="",$D$${row}=0),0,IF($C$${row}="Cu",VLOOKUP($B$${row},WireTable,2,FALSE),VLOOKUP($B$${row},WireTable,3,FALSE)))`,
+    };
+    intake.getCell(row, 7).numFmt = MONEY;
+    intake.getCell(row, 8).value = { formula: `$D$${row}*$E$${row}*$F$${row}*$G$${row}` };
+    intake.getCell(row, 8).numFmt = MONEY;
+  }
+  label(intake, 54, "Wire total", true);
+  intake.getCell(54, 8).value = { formula: "SUM(H45:H53)" };
+  intake.getCell(54, 8).numFmt = MONEY;
+  intake.getCell(54, 8).font = { bold: true };
+  wb.definedNames.add("Intake!$H$54", "WireTotal");
+
+  label(intake, 56, "INCLUDED SERVICES (Yes / No)", true);
   const services: [string, string][] = [
     ["Charger hardware", "IncHardware"],
     ["Site plan design (AutoCAD)", "IncSitePlan"],
@@ -390,50 +526,46 @@ async function main() {
     ["Private utility scan (GPR)", "IncGpr"],
   ];
   services.forEach(([name, defName], i) => {
-    const row = 42 + i;
+    const row = 57 + i;
     label(intake, row, name);
     inputCell(row, "Yes").dataValidation = { type: "list", allowBlank: false, formulae: ['"Yes,No"'] };
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
 
-  label(intake, 49, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
+  label(intake, 64, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
   const commercial: [string, string, number | string, string?][] = [
     ["Hardware price factor", "HardwareFactor", 1, undefined],
     ["Rebate / incentive amount ($)", "RebateAmt", 0, MONEY],
     ["Network (EVOLV) fee $/port/month", "NetworkFeeMo", 39.99, MONEY],
     ["Contract length (years)", "ContractYears", 5, undefined],
     ["Service plan $/year (post-warranty)", "ServicePlanYr", 0, MONEY],
-    ["Financing APR", "FinanceApr", 0.0839, PCT],
-    ["Financing term (years)", "FinanceYears", 5, undefined],
   ];
   commercial.forEach(([text, defName, value, fmt], i) => {
-    const row = 50 + i;
+    const row = 65 + i;
     label(intake, row, text);
     inputCell(row, value as ExcelJS.CellValue, fmt);
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
-  intake.getCell(50, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
-  intake.getCell(50, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
+  intake.getCell(65, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
+  intake.getCell(65, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
 
-  label(intake, 58, "CBC 11B-812 accessible stalls required", true);
-  intake.getCell(58, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
-  label(intake, 59, "Main gear (auto — Panel sheet)", true);
-  intake.getCell(59, 2).value = {
+  label(intake, 71, "CBC 11B-812 accessible stalls required", true);
+  intake.getCell(71, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
+  label(intake, 72, "Main gear (auto — Panel sheet)", true);
+  intake.getCell(72, 2).value = {
     formula:
       'IF(NDcfc>0,SgSuggested&"A switchgear @ 480V","208V service")&IF(TxKvaSuggested>0," + "&TxKvaSuggested&" kVA step-down TX","")',
   };
-  label(intake, 60, "TOTAL ESTIMATE", true);
-  intake.getCell(60, 1).font = { bold: true, size: 14 };
-  intake.getCell(60, 2).value = { formula: "TotalCost" };
-  intake.getCell(60, 2).numFmt = MONEY;
-  intake.getCell(60, 2).font = { bold: true, size: 14 };
-  intake.getCell(60, 2).fill = HEADER_FILL;
-  label(intake, 61, "CUSTOMER TOTAL (after rebate)", true);
-  intake.getCell(61, 2).value = { formula: "CustomerTotal" };
-  intake.getCell(61, 2).numFmt = MONEY;
-  intake.getCell(61, 2).font = { bold: true };
-  label(intake, 62, "Simple payback (years, revenue + credits)");
-  intake.getCell(62, 2).value = { formula: "PaybackYears" };
+  label(intake, 73, "TOTAL ESTIMATE", true);
+  intake.getCell(73, 1).font = { bold: true, size: 14 };
+  intake.getCell(73, 2).value = { formula: "TotalCost" };
+  intake.getCell(73, 2).numFmt = MONEY;
+  intake.getCell(73, 2).font = { bold: true, size: 14 };
+  intake.getCell(73, 2).fill = HEADER_FILL;
+  label(intake, 74, "CUSTOMER TOTAL (after rebate)", true);
+  intake.getCell(74, 2).value = { formula: "CustomerTotal" };
+  intake.getCell(74, 2).numFmt = MONEY;
+  intake.getCell(74, 2).font = { bold: true };
   intake.views = [{ state: "frozen", ySplit: 2 }];
 
   // ------------------------------------------------------------------ Panel
@@ -785,11 +917,8 @@ async function main() {
     "Structure mirrors the RFC_V18 Costs Internal → Summary chain. For the engineered takeoff use the app's Excel export.";
   estimate.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
 
-  label(estimate, 4, "Construction labor days (derived)");
-  estimate.getCell(4, 2).value = {
-    formula: "IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc+1*NumL2+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE),0))",
-  };
-  wb.definedNames.add("Estimate!$B$4", "LaborDays");
+  label(estimate, 4, "Construction labor days (edit on Intake)");
+  estimate.getCell(4, 2).value = { formula: "LaborDays" };
 
   const eHeader = (row: number, text: string) => {
     estimate.getCell(row, 1).value = text;
@@ -804,7 +933,7 @@ async function main() {
   };
 
   eHeader(6, "Electrical supply & construction");
-  eLine(7, "Electrical make-ready (wire, conduit, install hardware)", `SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
+  eLine(7, "Wire runs (Intake block) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
   eLine(9, "Trenching / asphalt cut (terrain-adjusted)", "TrenchFt*TrenchRate*VLOOKUP(Terrain,TerrainTable,2,FALSE)");
   eLine(10, "Civil (concrete, rebar, wheel stops)", "IF(NTotal>0,CivilBase,0)+NDcfc*CivilDcfc+NumL2*CivilL2");
@@ -859,114 +988,33 @@ async function main() {
   wb.definedNames.add("Estimate!$B$42", "CustomerTotal");
   estimate.views = [{ state: "frozen", ySplit: 2 }];
 
-  // ------------------------------------------------------------------ Revenue
-  [30, 10, 10, 12, 13, 13, 13, 13].forEach((w, i) => (revenue.getColumn(i + 1).width = w));
-  revenue.getCell("A1").value = "Revenue & Payback (the Hoopa RFC revenue model, formula-driven)";
-  revenue.getCell("A1").font = { bold: true, size: 13 };
-  revenue.getCell("A2").value =
-    "kWh/day = ports × occupancy × operating hours × charging% × port kW × derate. Credits = LCFS $/kW/yr on DCFC.";
-  revenue.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
-
-  const revInputs: [string, string, number, string?][] = [
-    ["Retail price $/kWh", "RetailKwh", 0.65, MONEY],
-    ["Utility cost $/kWh", "UtilityKwh", 0.4, MONEY],
-    ["Hours of operation / day", "OpHours", 12],
-    ["Stall occupancy %", "OccPct", 0.2, PCT],
-    ["Charging % per occupied hour", "ChargePct", 0.5, PCT],
-    ["Carbon credit $/kW/yr (DCFC, LCFS)", "CcRate", 71.6667, MONEY],
-    ["Charger derate factor", "DerateF", 0.98],
-  ];
-  revInputs.forEach(([text, defName, value, fmt], i) => {
-    const row = 4 + i;
-    label(revenue, row, text);
-    const c = revenue.getCell(row, 2);
-    c.value = value;
-    if (fmt) c.numFmt = fmt;
-    c.fill = YELLOW;
-    wb.definedNames.add(`Revenue!$B$${row}`, defName);
+  // ------------------------------------------------------------ Costs Internal
+  // The RFC_V18 presentation view of the Estimate: same layout as the source
+  // workbooks (Hoopa D-00025). Rows re-slice the Estimate lines into the
+  // shop's categories — G15 ties to ConstructionTotal, G18 to LaborCost,
+  // G20 to the permit Valuation.
+  fillCostsInternal(costsInternal, {
+    lines: [
+      { formula: "Estimate!B7" }, // Wires, Conduits and Peripherals ← make-ready
+      { formula: "Panel!F16" }, // Main Distribution Switchgear
+      { formula: "Panel!F30+Panel!F36+Panel!F49" }, // Sub-panels, transformers, breakers
+      { formula: "Estimate!B11" }, // Bollards, Signage ← signage/striping/bollards
+      { formula: "Estimate!B9" }, // Asphalt, Paving, and Striping ← trenching
+      { formula: "Estimate!B10" }, // Concrete Improvements ← civil
+      { formula: "Estimate!B12" }, // ADA
+      { formula: "Estimate!B13" }, // Dump/ Waste ← spoils haul-off
+      { formula: "Estimate!B16" }, // Permits ← AHJ issuance
+      { formula: "Estimate!B17+Estimate!B14" }, // Utility ← application + pad + GPR scan
+      { formula: "Estimate!B15" }, // Construction Equipment ← rentals
+    ],
+    contingency: { formula: "ContingencyPct" },
+    laborContingency: { formula: "ContingencyPct" },
+    dailyRate: { formula: "LaborDayRate" },
+    businessDays: { formula: "LaborDays" },
+    // Design invoice minus the AHJ plan check (B37, permitting-side):
+    // site plan + SLD + CPM hours × rate.
+    constructionPm: { formula: "Estimate!B34+Estimate!B35+Estimate!B36" },
   });
-
-  head(revenue, 12, ["Model", "Qty", "Ports", "kW/port", "kWh/day", "Rev $/day", "Net $/mo", "CC $/yr"]);
-  for (let i = 0; i < 6; i++) {
-    const row = 13 + i;
-    const src = CH_FIRST + i;
-    revenue.getCell(row, 1).value = { formula: `IF(Intake!$B${src}>0,Intake!$A${src},"")` };
-    revenue.getCell(row, 2).value = { formula: `IF(Intake!$B${src}>0,Intake!$B${src},0)` };
-    revenue.getCell(row, 3).value = { formula: `Intake!$G${src}` };
-    revenue.getCell(row, 4).value = { formula: `IF(B${row}>0,VLOOKUP(Intake!$A${src},ModelTable,10,FALSE),0)` };
-    revenue.getCell(row, 5).value = { formula: `C${row}*OccPct*OpHours*ChargePct*D${row}*DerateF` };
-    revenue.getCell(row, 6).value = { formula: `E${row}*RetailKwh` };
-    revenue.getCell(row, 6).numFmt = MONEY;
-    revenue.getCell(row, 7).value = { formula: `E${row}*30*(RetailKwh-UtilityKwh)` };
-    revenue.getCell(row, 7).numFmt = MONEY;
-    // Nested IFs, not AND(): AND doesn't short-circuit, so the VLOOKUP's
-    // #N/A on an empty intake row would poison the whole column.
-    revenue.getCell(row, 8).value = {
-      formula: `IF(B${row}<=0,0,IF(VLOOKUP(Intake!$A${src},ModelTable,4,FALSE)="DCFC",B${row}*D${row}*CcRate,0))`,
-    };
-    revenue.getCell(row, 8).numFmt = MONEY;
-  }
-  label(revenue, 19, "Totals", true);
-  revenue.getCell(19, 5).value = { formula: "SUM(E13:E18)" };
-  revenue.getCell(19, 7).value = { formula: "SUM(G13:G18)" };
-  revenue.getCell(19, 7).numFmt = MONEY;
-  revenue.getCell(19, 8).value = { formula: "SUM(H13:H18)" };
-  revenue.getCell(19, 8).numFmt = MONEY;
-
-  label(revenue, 21, "Charging net revenue / year", true);
-  revenue.getCell(21, 2).value = { formula: "G19*12" };
-  revenue.getCell(21, 2).numFmt = MONEY;
-  wb.definedNames.add("Revenue!$B$21", "RevenueYr");
-  label(revenue, 22, "Carbon credits / year (DCFC)", true);
-  revenue.getCell(22, 2).value = { formula: "H19" };
-  revenue.getCell(22, 2).numFmt = MONEY;
-  wb.definedNames.add("Revenue!$B$22", "CcYr");
-  label(revenue, 23, "Total annual benefit", true);
-  revenue.getCell(23, 2).value = { formula: "RevenueYr+CcYr" };
-  revenue.getCell(23, 2).numFmt = MONEY;
-  wb.definedNames.add("Revenue!$B$23", "AnnualBenefit");
-  label(revenue, 24, "Benefit over the contract (flat, no escalation)");
-  revenue.getCell(24, 2).value = { formula: "AnnualBenefit*ContractYears" };
-  revenue.getCell(24, 2).numFmt = MONEY;
-  label(revenue, 25, "Simple payback (years)", true);
-  revenue.getCell(25, 2).value = { formula: 'IF(AnnualBenefit>0,ROUND(CustomerTotal/AnnualBenefit,1),"n/a")' };
-  wb.definedNames.add("Revenue!$B$25", "PaybackYears");
-  revenue.getCell(27, 1).value =
-    "Assumptions from the Hoopa RFC 'standard-low' case (20% occupancy). Bump occupancy % for busier sites — their 'medium' case used 45-50%.";
-  revenue.getCell(27, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
-
-  // ------------------------------------------------------------------ Financing
-  [38, 16].forEach((w, i) => (financing.getColumn(i + 1).width = w));
-  financing.getCell("A1").value = "Financing (DLL-style loan summary)";
-  financing.getCell("A1").font = { bold: true, size: 13 };
-  label(financing, 3, "Loan amount (customer total)");
-  financing.getCell(3, 2).value = { formula: "CustomerTotal" };
-  financing.getCell(3, 2).numFmt = MONEY;
-  label(financing, 4, "Annual interest rate (Intake)");
-  financing.getCell(4, 2).value = { formula: "FinanceApr" };
-  financing.getCell(4, 2).numFmt = PCT;
-  label(financing, 5, "Term (years, Intake)");
-  financing.getCell(5, 2).value = { formula: "FinanceYears" };
-  label(financing, 6, "Monthly payment", true);
-  financing.getCell(6, 2).value = {
-    formula: "IF(FinanceApr>0,-PMT(FinanceApr/12,FinanceYears*12,CustomerTotal),CustomerTotal/(FinanceYears*12))",
-  };
-  financing.getCell(6, 2).numFmt = MONEY;
-  label(financing, 7, "Total of payments");
-  financing.getCell(7, 2).value = { formula: "B6*FinanceYears*12" };
-  financing.getCell(7, 2).numFmt = MONEY;
-  label(financing, 8, "Total interest");
-  financing.getCell(8, 2).value = { formula: "B7-B3" };
-  financing.getCell(8, 2).numFmt = MONEY;
-  label(financing, 10, "Monthly revenue + credits (Revenue sheet)");
-  financing.getCell(10, 2).value = { formula: "AnnualBenefit/12" };
-  financing.getCell(10, 2).numFmt = MONEY;
-  label(financing, 11, "Net monthly cashflow during the term", true);
-  financing.getCell(11, 2).value = { formula: "B10-B6" };
-  financing.getCell(11, 2).numFmt = MONEY;
-  financing.getCell(13, 1).value =
-    "Mirrors the DLL amortization summary in the Hoopa RFC (their deal: 8.39% APR × 60 months). Negative net cashflow = the site doesn't cover its own loan yet.";
-  financing.getCell(13, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
 
   // ------------------------------------------------------------------ ADA
   [40, 16, 60].forEach((w, i) => (ada.getColumn(i + 1).width = w));
@@ -1062,24 +1110,24 @@ async function main() {
   help.getColumn(1).width = 114;
   const helpLines: [string, boolean][] = [
     ["HOW TO USE THIS TEMPLATE", true],
-    ["1. Fill the yellow cells on the Intake sheet: your details, client & program IDs, chargers, site facts, services, commercial terms.", false],
-    ["2. Everything else calculates: Panel (sizing + gear pricing at website catalog rates), Panel 480V & Panel 208V (plan-set style", false],
-    ["   schedules with phase-staggered circuits, ready for the drawing set), Estimate, Revenue & Payback, Financing, ADA and Timeline.", false],
-    ["   The totals, gear pick and payback show at the bottom of the Intake sheet. Grid capacity: 16 circuits @480V / 24 @208V.", false],
-    ["3. Every price lives on the RateCard (yellow) — hardware, gear catalog, labor, tax, contingency. Change there, everything follows.", false],
+    ["1. Yellow cells are the only inputs. Intake top-to-bottom: your details, client & program IDs, chargers (every L3 size in", false],
+    ["   Single and Dual-port; L2 at 32/40/80A per port, Single and Dual), separate L3 / L2 site distances, WIRE RUNS & FEEDERS,", false],
+    ["   labor days, services, commercial terms. Totals show at the bottom of the Intake.", false],
+    ["2. WIRE RUNS & FEEDERS: every run's wire size, material (Cu/Al) and one-way ft is editable — like the V18 workbooks. Defaults", false],
+    ["   auto-fill from the model and site distances; overtyping a yellow cell replaces its default formula (re-enter it to restore).", false],
+    ["3. Every price lives on the RateCard (yellow) — hardware, install allowance, gear catalog, wire $/ft (incl. 450 kcmil Cu & Al),", false],
+    ["   labor, tax, contingency. Change there, everything follows.", false],
+    ["4. Costs Internal shows the estimate in the RFC_V18 layout (cell-for-cell Hoopa D-00025). Panel 480V / 208V are plan-set", false],
+    ["   style schedules ready for the drawing set. Grid capacity: 16 circuits @480V / 24 @208V.", false],
     ["", false],
-    ["WHAT WAS FOLDED IN FROM THE REAL RFC_V18 WORKBOOKS (VN Village, Boatman, CCMH, Hoopa, Bartell)", true],
+    ["FOLDED IN FROM THE REAL RFC_V18 WORKBOOKS (VN Village, Boatman, CCMH, Hoopa, Bartell)", true],
     ["• Costs Internal → Summary structure: per-line contingency, labor loaded with contingency, sales tax on construction and on chargers.", false],
-    ["• Hoopa proposal extras: EVOLV network fees ($39.99/port/mo × contract), service plans over contract, hardware price factor", false],
-    ["  (1.05 contingency × 1.10 markup when starting from vendor cost), rebate/incentive line, customer total after rebate.", false],
-    ["• Hoopa revenue model: occupancy × operating hours × charging% × derated port kW; $0.65/kWh retail vs $0.40/kWh utility;", false],
-    ["  LCFS carbon credits ≈ $71.67/kW/yr on DCFC; simple payback. Their financing: DLL loan at 8.39% APR × 60 months (PMT-based).", false],
+    ["• Hoopa proposal extras: EVOLV network fees ($39.99/port/mo × contract), service plans, hardware price factor, rebate line.", false],
     ["• Intake carries the incentive program + application ID (CALeVIP / CEC style: D-00025, H-01007, I-271839…).", false],
     ["", false],
     ["WHAT THIS TEMPLATE IS", true],
-    ["A budgetary intake + estimate. Make-ready allowances are engine-calibrated per charger (~100-180 ft runs); gear is sized & priced live.", false],
-    ["Accuracy target ±15% vs the full RFC Estimator app. For the engineered takeoff — exact NEC wire sizes and the vendor-ready BOM —", false],
-    ["build the project in the RFC Estimator web app and use its '⬇ Excel' export.", false],
+    ["A budgetary intake + estimate (±15% vs the RFC Estimator app). Install allowances are engine-calibrated per charger; gear and", false],
+    ["wire are priced live. For the engineered takeoff — exact NEC sizes, vendor BOM — use the web app's '⬇ Excel' export.", false],
     ["", false],
     ["KEY ASSUMPTIONS (2025-26 CA market, sources on file)", true],
     ["• Buses, breakers and the transformer size at 125% of connected input amps (NEC 625 continuous loads), matching the app.", false],
@@ -1087,7 +1135,7 @@ async function main() {
     ["• ADA per CBC 11B-812: van $6.5k, standard $4.9k (shop bid rate), ambulatory $3.5k flat-lot, ramp $5.2k. Markings must NOT be blue.", false],
     ["• Permits: L2-only = streamlined flat fees (AB 1236); DCFC = plan check ≈ 2% of construction valuation + issuance + utility fees.", false],
     ["• Design: site plan $2.5k + $150/charger (+$1k DCFC); SLD $6k + $900/DCFC + $150/L2 (PE). CPM = 5% of construction at $358/h.", false],
-    ["• GPR $1,500/day per 2,000 trench-ft. Utility energization on DCFC sites runs 4-12 months and sets the real schedule.", false],
+    ["• 450 kcmil: ampacity and the Al $/ft are interpolated (not NEC 310.16 / not on the vendor list) — verify before quoting.", false],
     ["• Charger hardware and 'budgetary' breaker prices are allowances — swap in CTX price-book / vendor quotes on the RateCard.", false],
   ];
   helpLines.forEach(([text, bold], i) => {
@@ -1104,7 +1152,7 @@ async function main() {
   const scenarios: [string, QuickEstimateInput][] = [
     ["6xDCFC200+5xL2-40 (default)", { ...defaultQuickInput(), terrain: "flat" }],
     ["DCFC-only 4x160", bareInput({ lines: [{ loadTypeId: "DCFC 160kW", count: 4 }] })],
-    ["L2-only 8xDual80", bareInput({ lines: [{ loadTypeId: "L2 Dual 80A", count: 8 }] })],
+    ["L2-only 8xDual40", bareInput({ lines: [{ loadTypeId: "L2 Dual 40A", count: 8 }] })],
   ];
   for (const [name, input] of scenarios) {
     const p = buildQuickProject(input, defaultProject(), "chk");
@@ -1140,15 +1188,40 @@ async function main() {
   const nD = 6, nL = 5, n = nD + nL;
   const nPorts = 6 * 1 + 5 * 1;
   const networkFees = nPorts * 39.99 * 12 * 5;
-  const trench = 100 + 15 * (n - 1);
+  // Two trench legs now — one per charger level (RunFtDcfc / RunFtL2 defaults).
+  const trench = (100 + 15 * (nD - 1)) + (100 + 15 * (nL - 1));
   const t = TERRAIN_INFO.flat;
   const laborDays = Math.ceil((8 + 2.5 * nD + nL + trench / 40) * t.laborFactor);
-  const makeReady =
-    6 * models.find((m) => m.lt.id === "DCFC 200kW")!.makeReady +
-    5 * models.find((m) => m.lt.id === "L2 Single 40A")!.makeReady;
+  // Mirror the Wire Runs block defaults exactly as the template formulas do.
+  const wireRow = (size: string) => WIRE_TABLE.find((w) => w.size === size)!;
+  const pricePerFt = (size: string, mat: string) => (mat === "Cu" ? wireRow(size).cuPerFt : wireRow(size).alPerFt);
+  // Each level sequences from its own first-run distance (priors are per-level,
+  // and the default intake has one line per level, so priors are 0 here).
+  let chargerWire = 0;
+  for (const { id, cnt } of [{ id: "DCFC 200kW", cnt: 6 }, { id: "L2 Single 40A", cnt: 5 }]) {
+    const m = models.find((x) => x.lt.id === id)!;
+    const ft = 100 + 15 * ((cnt - 1) / 2);
+    chargerWire += cnt * m.lt.runsPerUnit * m.lt.conductorsPerRun * ft * pricePerFt(m.defaultWire, m.defaultMaterial);
+  }
+  const txConnKvaM = (5 * 40 * 208 * SQRT3) / 1000;
+  const txKvaM = nextSizeCountif(TX_TABLE.map((x) => x[0]), txConnKvaM * 1.25);
+  const f13 = 6 * 265 + (txConnKvaM * 1000) / (480 * SQRT3);
+  const svcRuns = Math.max(1, Math.ceil((f13 * 1.25) / wireRow("600 kcmil").ampacityAl));
+  const f37 = (txKvaM * 1000) / (480 * SQRT3);
+  const sgTxRuns = Math.max(1, Math.ceil((f37 * 1.25) / wireRow("4/0 AWG").ampacityAl));
+  const secFla = (txKvaM * 1000) / (208 * SQRT3);
+  const txPnlRuns = Math.max(1, Math.ceil((secFla * 1.25) / wireRow("350 kcmil").ampacityAl));
+  const wireMirror =
+    chargerWire +
+    svcRuns * 4 * 25 * pricePerFt("600 kcmil", "Al") +
+    sgTxRuns * 4 * 15 * pricePerFt("4/0 AWG", "Al") +
+    txPnlRuns * 4 * 15 * pricePerFt("350 kcmil", "Al");
+  const install =
+    6 * models.find((m) => m.lt.id === "DCFC 200kW")!.install +
+    5 * models.find((m) => m.lt.id === "L2 Single 40A")!.install;
   const adaCost = (ADA_UNIT_COST.van + ADA_UNIT_COST.standard) * t.adaRegradeFactor + ADA_UNIT_COST.ramp;
   const constr =
-    makeReady + gearMirror + trench * 40.81 * t.trenchFactor +
+    install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor +
     Math.round(CIVIL_BASE) + nD * dcfcCal.civil + nL * l2Cal.civil +
     nD * dcfcCal.signage + nL * l2Cal.signage +
     adaCost + trench * t.spoilsPerFt + 1500 +
