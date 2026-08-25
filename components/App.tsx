@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
+import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
 import { PeripheralsTab } from "./PeripheralsTab";
@@ -20,6 +21,7 @@ const TABS = [
   { key: "chargers", label: "Charger library" },
   { key: "peripherals", label: "Peripherals & Equipment" },
   { key: "financials", label: "Financials" },
+  { key: "costsInternal", label: "Costs Internal" },
   { key: "results", label: "Results" },
 ] as const;
 
@@ -151,6 +153,7 @@ function AppShell() {
         {tab === "chargers" && <ChargerLibraryTab />}
         {tab === "peripherals" && <PeripheralsTab />}
         {tab === "financials" && <FinancialsTab />}
+        {tab === "costsInternal" && <CostsInternalTab />}
         {tab === "results" && <ResultsTab />}
       </main>
     </div>
