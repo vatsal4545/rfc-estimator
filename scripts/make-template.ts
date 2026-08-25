@@ -459,7 +459,9 @@ async function main() {
     intake.getCell(row, 1).value = { formula: `IF($A$${src}<>"",$A$${src},"")` };
     wireInput(row, 2, { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,14,FALSE),"")` }, wireDropdown);
     wireInput(row, 3, { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,15,FALSE),"Cu")` }, '"Cu,Al"');
-    intake.getCell(row, 4).value = { formula: `IFERROR($B$${src}*VLOOKUP($A$${src},ModelTable,12,FALSE),0)` };
+    // Runs is editable (like the feeders): overtype to run parallel sets —
+    // e.g. two smaller conductors per DCFC instead of one fat one on long runs.
+    wireInput(row, 4, { formula: `IFERROR($B$${src}*VLOOKUP($A$${src},ModelTable,12,FALSE),0)` } as ExcelJS.CellValue);
     intake.getCell(row, 5).value = { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,13,FALSE),0)` };
     // Sequential average run per level: L3 units space out from RunFtDcfc, L2
     // units from RunFtL2, each stepping past earlier units of the SAME level.
@@ -516,7 +518,34 @@ async function main() {
   intake.getCell(54, 8).font = { bold: true };
   wb.definedNames.add("Intake!$H$54", "WireTotal");
 
-  label(intake, 56, "INCLUDED SERVICES (Yes / No)", true);
+  // ---- Labor breakdown: itemize by role/phase; the total feeds the Estimate
+  // (mirrors the app's Financials table). Row 1 defaults to the classic
+  // crew rate × schedule days, so an untouched sheet prices exactly as before.
+  label(intake, 56, "LABOR BREAKDOWN — add roles/phases; the total feeds the estimate", true);
+  head(intake, 57, ["Role / phase", "Days", "$ / day", "Labor $"]);
+  const laborRows: [string | null, ExcelJS.CellValue, ExcelJS.CellValue][] = [
+    ["Electrical crew", { formula: "LaborDays" } as ExcelJS.CellValue, { formula: "LaborDayRate" } as ExcelJS.CellValue],
+    [null, 0, 0],
+    [null, 0, 0],
+  ];
+  laborRows.forEach(([name, days, rate], i) => {
+    const row = 58 + i;
+    const nameCell = intake.getCell(row, 1);
+    if (name) nameCell.value = name;
+    nameCell.fill = YELLOW;
+    nameCell.border = { bottom: { style: "thin" } };
+    wireInput(row, 2, days);
+    wireInput(row, 3, rate).numFmt = MONEY;
+    intake.getCell(row, 4).value = { formula: `$B$${row}*$C$${row}` };
+    intake.getCell(row, 4).numFmt = MONEY;
+  });
+  label(intake, 61, "Labor total (before contingency)", true);
+  intake.getCell(61, 4).value = { formula: "SUM(D58:D60)" };
+  intake.getCell(61, 4).numFmt = MONEY;
+  intake.getCell(61, 4).font = { bold: true };
+  wb.definedNames.add("Intake!$D$61", "LaborBase");
+
+  label(intake, 63, "INCLUDED SERVICES (Yes / No)", true);
   const services: [string, string][] = [
     ["Charger hardware", "IncHardware"],
     ["Site plan design (AutoCAD)", "IncSitePlan"],
@@ -526,13 +555,13 @@ async function main() {
     ["Private utility scan (GPR)", "IncGpr"],
   ];
   services.forEach(([name, defName], i) => {
-    const row = 57 + i;
+    const row = 64 + i;
     label(intake, row, name);
     inputCell(row, "Yes").dataValidation = { type: "list", allowBlank: false, formulae: ['"Yes,No"'] };
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
 
-  label(intake, 64, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
+  label(intake, 71, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
   const commercial: [string, string, number | string, string?][] = [
     ["Hardware price factor", "HardwareFactor", 1, undefined],
     ["Rebate / incentive amount ($)", "RebateAmt", 0, MONEY],
@@ -541,31 +570,31 @@ async function main() {
     ["Service plan $/year (post-warranty)", "ServicePlanYr", 0, MONEY],
   ];
   commercial.forEach(([text, defName, value, fmt], i) => {
-    const row = 65 + i;
+    const row = 72 + i;
     label(intake, row, text);
     inputCell(row, value as ExcelJS.CellValue, fmt);
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
-  intake.getCell(65, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
-  intake.getCell(65, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
+  intake.getCell(72, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
+  intake.getCell(72, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
 
-  label(intake, 71, "CBC 11B-812 accessible stalls required", true);
-  intake.getCell(71, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
-  label(intake, 72, "Main gear (auto — Panel sheet)", true);
-  intake.getCell(72, 2).value = {
+  label(intake, 78, "CBC 11B-812 accessible stalls required", true);
+  intake.getCell(78, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
+  label(intake, 79, "Main gear (auto — Panel sheet)", true);
+  intake.getCell(79, 2).value = {
     formula:
       'IF(NDcfc>0,SgSuggested&"A switchgear @ 480V","208V service")&IF(TxKvaSuggested>0," + "&TxKvaSuggested&" kVA step-down TX","")',
   };
-  label(intake, 73, "TOTAL ESTIMATE", true);
-  intake.getCell(73, 1).font = { bold: true, size: 14 };
-  intake.getCell(73, 2).value = { formula: "TotalCost" };
-  intake.getCell(73, 2).numFmt = MONEY;
-  intake.getCell(73, 2).font = { bold: true, size: 14 };
-  intake.getCell(73, 2).fill = HEADER_FILL;
-  label(intake, 74, "CUSTOMER TOTAL (after rebate)", true);
-  intake.getCell(74, 2).value = { formula: "CustomerTotal" };
-  intake.getCell(74, 2).numFmt = MONEY;
-  intake.getCell(74, 2).font = { bold: true };
+  label(intake, 80, "TOTAL ESTIMATE", true);
+  intake.getCell(80, 1).font = { bold: true, size: 14 };
+  intake.getCell(80, 2).value = { formula: "TotalCost" };
+  intake.getCell(80, 2).numFmt = MONEY;
+  intake.getCell(80, 2).font = { bold: true, size: 14 };
+  intake.getCell(80, 2).fill = HEADER_FILL;
+  label(intake, 81, "CUSTOMER TOTAL (after rebate)", true);
+  intake.getCell(81, 2).value = { formula: "CustomerTotal" };
+  intake.getCell(81, 2).numFmt = MONEY;
+  intake.getCell(81, 2).font = { bold: true };
   intake.views = [{ state: "frozen", ySplit: 2 }];
 
   // ------------------------------------------------------------------ Panel
@@ -952,7 +981,7 @@ async function main() {
   estimate.getCell(20, 2).font = { bold: true };
   wb.definedNames.add("Estimate!$B$20", "ConstructionTotal");
 
-  eLine(22, "Labor (days × rate, contingency-loaded)", "LaborDays*LaborDayRate*(1+ContingencyPct)");
+  eLine(22, "Labor (breakdown total, contingency-loaded)", "LaborBase*(1+ContingencyPct)");
   wb.definedNames.add("Estimate!$B$22", "LaborCost");
   eLine(23, "Sales tax on construction", "ConstructionTotal*TaxPct");
   eLine(24, "Permit valuation (construction + labor)", "ConstructionTotal+LaborCost");
@@ -1009,7 +1038,9 @@ async function main() {
     ],
     contingency: { formula: "ContingencyPct" },
     laborContingency: { formula: "ContingencyPct" },
-    dailyRate: { formula: "LaborDayRate" },
+    // Blended daily rate: with an itemized labor breakdown on the Intake the
+    // sheet's rate × days × contingency chain still equals LaborBase loaded.
+    dailyRate: { formula: "IF(LaborDays>0,LaborBase/LaborDays,0)" },
     businessDays: { formula: "LaborDays" },
     // Design invoice minus the AHJ plan check (B37, permitting-side):
     // site plan + SLD + CPM hours × rate.
@@ -1113,8 +1144,10 @@ async function main() {
     ["1. Yellow cells are the only inputs. Intake top-to-bottom: your details, client & program IDs, chargers (every L3 size in", false],
     ["   Single and Dual-port; L2 at 32/40/80A per port, Single and Dual), separate L3 / L2 site distances, WIRE RUNS & FEEDERS,", false],
     ["   labor days, services, commercial terms. Totals show at the bottom of the Intake.", false],
-    ["2. WIRE RUNS & FEEDERS: every run's wire size, material (Cu/Al) and one-way ft is editable — like the V18 workbooks. Defaults", false],
-    ["   auto-fill from the model and site distances; overtyping a yellow cell replaces its default formula (re-enter it to restore).", false],
+    ["2. WIRE RUNS & FEEDERS: every run's wire size, material (Cu/Al), runs and one-way ft is editable — like the V18 workbooks.", false],
+    ["   Defaults auto-fill from the model and site distances; overtyping a yellow cell replaces its default formula. On long DCFC or", false],
+    ["   feeder runs, extra parallel runs split the amps so each set can use smaller wire — often cheaper than one fat conductor.", false],
+    ["   LABOR BREAKDOWN: itemize by role/phase (foreman, crew, flagger…); the total feeds the estimate, contingency-loaded.", false],
     ["3. Every price lives on the RateCard (yellow) — hardware, install allowance, gear catalog, wire $/ft (incl. 450 kcmil Cu & Al),", false],
     ["   labor, tax, contingency. Change there, everything follows.", false],
     ["4. Costs Internal shows the estimate in the RFC_V18 layout (cell-for-cell Hoopa D-00025). Panel 480V / 208V are plan-set", false],
