@@ -4,11 +4,14 @@ behavior end to end. Run after `npm run template`:
     python3 scripts/verify-template.py
 
 Cell map (keep in sync with scripts/make-template.ts anchors, N_CH = 12):
-  Intake: chargers B23:B34, InstallMethod B46, RouteFt B47, TrenchFt B48,
-          wire runs 53-64 (I ovr / J used breaker), feeders 65-67
-  Panel:  SG F21 (D21 ovr) price F22, 208V panel F40 (D40 ovr),
-          TX F47 (D47 ovr) price F48, primary breaker F50, branch rows 54-65
-  ADA:    per-level rows 4-5, site total 6, override row 7, used row 8, cost B10
+  Intake:  chargers B23:B34, InstallMethod B46, RouteFt B47, TrenchFt B48,
+           wire-line defaults 53-64 (I ovr / J used breaker, H = Takeoff line $),
+           feeders 65-67, WireTotal H68
+  Takeoff: one row per charger, rows 5-28 (D size, E mat, F runs, H one-way ft,
+           J wire $), total J29
+  Panel:   SG F21 (D21 ovr) price F22, 208V panel F40 (D40 ovr),
+           TX F47 (D47 ovr) price F48, primary breaker F50, branch rows 54-65
+  ADA:     per-level rows 4-5, site total 6, override row 7, used row 8, cost B10
 """
 import os
 import sys
@@ -63,10 +66,25 @@ check("Panel 208V suggested", g("PANEL!F40"), 250)
 check("TX suggested", g("PANEL!F47"), 112.5)
 check("Breaker used = model rating (DCFC 200kW → 350A)", g("INTAKE!J53"), 350)
 check("Branch-breaker table reads used breaker", g("PANEL!B54"), 350)
+
+# Takeoff sheet: one row per charger, distance ladder per level.
+check("Takeoff row 1 = first DCFC at first-run ft", g("TAKEOFF!H5"), 100)
+check("Takeoff row 2 steps by StepFt", g("TAKEOFF!H6"), 115)
+check("Takeoff DCFC #6 at 100+15*5", g("TAKEOFF!H10"), 175)
+check("Takeoff first L2 restarts its own ladder", g("TAKEOFF!H11"), 100)
+check("Takeoff L2 #5 at 160 ft", g("TAKEOFF!H15"), 160)
+check("Takeoff row 12 inactive (11 chargers)", g("TAKEOFF!H16"), 0)
+check("Takeoff row label", g("TAKEOFF!B5"), "DCFC 200kW #1")
+tk_total = g("TAKEOFF!J29")
+line1 = sum(g(f"TAKEOFF!J{r}") for r in range(5, 11))
+check("Intake line-1 Wire $ reads its Takeoff rows", g("INTAKE!H53"), line1)
+feeders = sum(g(f"INTAKE!H{r}") for r in range(65, 68))
+check("WireTotal = Takeoff total + feeders", g("INTAKE!H68"), tk_total + feeders)
 tc = g("ESTIMATE!B41")
 print(f"INFO TotalCost (Trenched): {tc}")
 if not (isinstance(tc, (int, float)) and tc > 100000):
     failures.append("TotalCost sane")
+j5_base = g("TAKEOFF!J5")
 
 # ---- Surface EMT ------------------------------------------------------------
 g = run({"'[RFC-Template.xlsx]INTAKE'!B46": "Surface EMT"}, "surface")
@@ -121,6 +139,17 @@ check("Branch-breaker table picks up the override", g("PANEL!B54"), 400)
 g = run({"'[RFC-Template.xlsx]ADA'!C7": 3}, "ada-override")
 check("ADA van override wins", g("ADA!C8"), 3)
 check("ADA cost uses overridden count", g("ADA!B10"), 3 * 6500 + 2 * 4900 + 5200)
+
+# ---- Per-charger wire length / size edits reprice live (website parity) ------
+g = run({"'[RFC-Template.xlsx]TAKEOFF'!H5": 300}, "takeoff-ft-override")
+check("Tripling one charger's ft triples its wire $", g("TAKEOFF!J5"), 3 * j5_base)
+tc_ft = g("ESTIMATE!B41")
+if not (isinstance(tc_ft, (int, float)) and tc_ft > tc):
+    failures.append("Takeoff ft override raises TotalCost")
+print(f"INFO TotalCost after 300 ft on charger #1: {tc_ft} (was {tc})")
+
+g = run({"'[RFC-Template.xlsx]TAKEOFF'!D5": "600 kcmil"}, "takeoff-size-override")
+check("Per-charger wire-size change repriced at $16.57/ft Cu", g("TAKEOFF!I5"), 16.57382)
 
 # ---- 12-line charger capacity ------------------------------------------------
 g = run(

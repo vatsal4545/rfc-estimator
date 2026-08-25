@@ -2,12 +2,14 @@
 // budgetary estimate workbook mirroring the web tool AND the shop's real
 // RFC_V18 workbooks (VN Village, Boatman, CCMH, Hoopa Motel, Bartell).
 //
-// Sheets: Intake (only place a user types — details, chargers incl. dual-port
-// L3, wire runs with editable sizes/lengths, services, commercial terms) →
-// Panel (two schedules: 480V L3 + 208V L2, transformer, switchgear @ website
-// catalog rates) → Estimate → Costs Internal (the RFC_V18 presentation sheet,
-// cell-for-cell Hoopa layout) → ADA → Timeline → RateCard (incl. wire $/ft
-// with 450 kcmil Cu & Al) → Instructions.
+// Sheets: Intake (details, chargers incl. dual-port L3, line wire defaults +
+// service feeders, services, commercial terms) → Takeoff (one row per
+// INDIVIDUAL charger: editable wire size/material/runs/one-way ft, priced
+// live into the estimate) → Panel (two schedules: 480V L3 + 208V L2,
+// transformer, switchgear @ website catalog rates) → Estimate → Costs
+// Internal (the RFC_V18 presentation sheet, cell-for-cell Hoopa layout) →
+// ADA → Timeline → RateCard (incl. wire $/ft with 450 kcmil Cu & Al) →
+// Instructions.
 //
 // "Next standard size >= demand" uses INDEX/COUNTIF, verified against the
 // engine below. Make-ready allowances are engine-calibrated at generation
@@ -202,6 +204,7 @@ async function main() {
   wb.calcProperties.fullCalcOnLoad = true;
 
   const intake = wb.addWorksheet("Intake");
+  const takeoff = wb.addWorksheet("Takeoff");
   const panel = wb.addWorksheet("Panel");
   const planSet480 = wb.addWorksheet("Panel 480V");
   const planSet208 = wb.addWorksheet("Panel 208V");
@@ -425,6 +428,11 @@ async function main() {
   const N_CH = 12;
   const CH_FIRST = 23;
   const CH_LAST = CH_FIRST + N_CH - 1; // 34
+  // Takeoff sheet: one row per individual charger (website Takeoff parity).
+  const N_TK = 24;
+  const TK_FIRST = 5;
+  const TK_LAST = TK_FIRST + N_TK - 1; // 28
+  const TK_TOTAL = TK_LAST + 1; // 29
   const defaults: [string, number][] = [
     ["DCFC 200kW", 6],
     ["L2 Single 40A", 5],
@@ -519,7 +527,12 @@ async function main() {
   // ---- Wire Runs & Feeders: every run's size, material and length is a
   // yellow cell (defaults auto-fill from the model + site distances; overtype
   // freely — that is how the shop edited the V18 workbooks).
-  label(intake, W_HEAD - 1, "WIRE RUNS & FEEDERS — size, material, runs, one-way ft and breaker are editable", true);
+  label(
+    intake,
+    W_HEAD - 1,
+    "WIRE RUNS & FEEDERS — line defaults; per-charger lengths live on the Takeoff sheet",
+    true,
+  );
   head(intake, W_HEAD, ["Run", "Wire size", "Material", "Runs", "Cond/run", "One-way ft", "$/ft", "Wire $", "Breaker ovr (A)", "Breaker A used"]);
   const wireDropdown = `RateCard!$A$${wireFirst}:$A$${wireLast}`;
   const wireInput = (row: number, col: number, value: ExcelJS.CellValue, list?: string) => {
@@ -540,13 +553,15 @@ async function main() {
     // e.g. two smaller conductors per DCFC instead of one fat one on long runs.
     wireInput(row, 4, { formula: `IFERROR($B$${src}*VLOOKUP($A$${src},ModelTable,12,FALSE),0)` } as ExcelJS.CellValue);
     intake.getCell(row, 5).value = { formula: `IFERROR(VLOOKUP($A$${src},ModelTable,13,FALSE),0)` };
-    // Sequential average run per level: L3 units space out from RunFtDcfc, L2
-    // units from RunFtL2, each stepping past earlier units of the SAME level.
-    const prior =
-      i === 0 ? "0" : `SUMPRODUCT(($D$${CH_FIRST}:$D$${src - 1}=$D$${src})*$B$${CH_FIRST}:$B$${src - 1})`;
-    wireInput(row, 6, {
-      formula: `IF($B$${src}>0,IF($D$${src}="DCFC",RunFtDcfc,RunFtL2)+StepFt*(${prior}+($B$${src}-1)/2),0)`,
-    });
+    // Per-charger one-way lengths (and any per-unit size/material overrides)
+    // live on the Takeoff sheet; this line's Wire $ reads its rows back so
+    // the WireTotal → Estimate chain is untouched.
+    intake.getCell(row, 6).value = { formula: `IF($A$${src}<>"","→ Takeoff","")` };
+    intake.getCell(row, 6).font = { italic: true, size: 8, color: { argb: "FF666666" } };
+    intake.getCell(row, 8).value = {
+      formula: `SUMPRODUCT((Takeoff!$S$${TK_FIRST}:$S$${TK_LAST}=${i + 1})*Takeoff!$J$${TK_FIRST}:$J$${TK_LAST})`,
+    };
+    intake.getCell(row, 8).numFmt = MONEY;
     // Breaker: yellow override wins over the model's rating — feeds the Panel
     // sheet's branch-breaker pricing and both plan-set schedules (mirrors the
     // website Takeoff's breaker column). Undersizing is on you: NEC 625.41
@@ -597,7 +612,9 @@ async function main() {
     intake.getCell(row, 5).value = 4;
     wireInput(row, 6, ft);
   });
-  for (let row = W_FIRST; row <= FDR_FIRST + 2; row++) {
+  // $/ft and Wire $ formulas apply to the FEEDER rows only — charger lines
+  // price on the Takeoff sheet (their H cells read it back above).
+  for (let row = FDR_FIRST; row <= FDR_FIRST + 2; row++) {
     intake.getCell(row, 7).value = {
       formula: `IF(OR($B$${row}="",$D$${row}=0),0,IF($C$${row}="Cu",VLOOKUP($B$${row},WireTable,2,FALSE),VLOOKUP($B$${row},WireTable,3,FALSE)))`,
     };
@@ -605,7 +622,7 @@ async function main() {
     intake.getCell(row, 8).value = { formula: `$D$${row}*$E$${row}*$F$${row}*$G$${row}` };
     intake.getCell(row, 8).numFmt = MONEY;
   }
-  label(intake, W_TOTAL, "Wire total", true);
+  label(intake, W_TOTAL, "Wire total (Takeoff chargers + feeders)", true);
   intake.getCell(W_TOTAL, 8).value = { formula: `SUM(H${W_FIRST}:H${FDR_FIRST + 2})` };
   intake.getCell(W_TOTAL, 8).numFmt = MONEY;
   intake.getCell(W_TOTAL, 8).font = { bold: true };
@@ -693,6 +710,95 @@ async function main() {
   intake.getCell(BOT + 3, 2).numFmt = MONEY;
   intake.getCell(BOT + 3, 2).font = { bold: true };
   intake.views = [{ state: "frozen", ySplit: 2 }];
+
+  // ------------------------------------------------------------------ Takeoff
+  // One row per INDIVIDUAL charger (both L2 and L3), mirroring the website's
+  // Takeoff tab: wire size, material, runs and one-way ft are yellow —
+  // defaults auto-fill from the Intake line and the distance ladder, and any
+  // overtype reprices the row live. Row totals roll into WireTotal → Estimate
+  // → Costs Internal, so this sheet IS where charger wire gets priced.
+  [4, 22, 9, 12, 9, 7, 9, 11, 9, 12, 10].forEach((w, i) => (takeoff.getColumn(i + 1).width = w));
+  takeoff.getCell("A1").value = "TAKEOFF — one row per charger (wire length, size, runs all editable)";
+  takeoff.getCell("A1").font = { bold: true, size: 13 };
+  takeoff.getCell("A2").value =
+    "Rows expand from the Intake charger lines in order. Yellow cells default from the Intake line + distance ladder — overtype any of them (e.g. the surveyed one-way ft per charger) and the wire $ reprices into the estimate. Clear an overtype by re-entering the default.";
+  takeoff.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
+
+  // Hidden helper: units per Intake line (Q) + running count before (R), then
+  // per-row line index (S) / unit-within-line (T).
+  takeoff.getCell(2, 17).value = "engine — do not edit";
+  takeoff.getCell(2, 17).font = { italic: true, size: 8, color: { argb: "FF999999" } };
+  for (let j = 0; j < N_CH; j++) {
+    const hr = 3 + j;
+    const ir = CH_FIRST + j;
+    takeoff.getCell(hr, 17).value = { formula: `IF(Intake!$A$${ir}<>"",Intake!$B$${ir},0)` };
+    takeoff.getCell(hr, 18).value = j === 0 ? 0 : { formula: `R${hr - 1}+Q${hr - 1}` };
+  }
+  const TK_UNITS_TOTAL = 3 + N_CH; // Q15: total units across all lines
+  takeoff.getCell(TK_UNITS_TOTAL, 17).value = { formula: `SUM(Q3:Q${2 + N_CH})` };
+
+  head(takeoff, TK_FIRST - 1, ["#", "Charger", "Category", "Wire size", "Material", "Runs", "Cond/run", "One-way ft", "$/ft", "Wire $", "Breaker A"]);
+  const tkInput = (row: number, col: number, value: ExcelJS.CellValue, list?: string) => {
+    const c = takeoff.getCell(row, col);
+    c.value = value;
+    c.fill = YELLOW;
+    c.border = { bottom: { style: "thin" } };
+    if (list) c.dataValidation = { type: "list", allowBlank: true, formulae: [list] };
+    return c;
+  };
+  const CH_A = `Intake!$A$${CH_FIRST}:$A$${CH_LAST}`;
+  const CH_B = `Intake!$B$${CH_FIRST}:$B$${CH_LAST}`;
+  const CH_D = `Intake!$D$${CH_FIRST}:$D$${CH_LAST}`;
+  const WL_B = `Intake!$B$${W_FIRST}:$B$${W_FIRST + N_CH - 1}`; // line wire size
+  const WL_C = `Intake!$C$${W_FIRST}:$C$${W_FIRST + N_CH - 1}`; // line material
+  const WL_D = `Intake!$D$${W_FIRST}:$D$${W_FIRST + N_CH - 1}`; // line total runs
+  const WL_E = `Intake!$E$${W_FIRST}:$E$${W_FIRST + N_CH - 1}`; // cond/run
+  const WL_J = `Intake!$J$${W_FIRST}:$J$${W_FIRST + N_CH - 1}`; // breaker used
+  for (let k = 1; k <= N_TK; k++) {
+    const r = TK_FIRST + k - 1;
+    takeoff.getCell(r, 1).value = k;
+    // hidden: line index + unit number within the line
+    takeoff.getCell(r, 19).value = {
+      formula: `IF(A${r}<=$Q$${TK_UNITS_TOTAL},MATCH(A${r}-0.5,$R$3:$R$${2 + N_CH},1),0)`,
+    };
+    takeoff.getCell(r, 20).value = { formula: `IF(S${r}>0,A${r}-INDEX($R$3:$R$${2 + N_CH},S${r}),0)` };
+    takeoff.getCell(r, 2).value = { formula: `IF(S${r}>0,INDEX(${CH_A},S${r})&" #"&T${r},"")` };
+    takeoff.getCell(r, 3).value = { formula: `IF(S${r}>0,INDEX(${CH_D},S${r}),"")` };
+    tkInput(r, 4, { formula: `IF(S${r}>0,INDEX(${WL_B},S${r}),"")` }, wireDropdown);
+    tkInput(r, 5, { formula: `IF(S${r}>0,INDEX(${WL_C},S${r}),"")` }, '"Cu,Al"');
+    // Per-unit parallel runs = the line's total runs / qty (keeps line-level
+    // Runs overrides meaningful); overtype per charger for odd splits.
+    tkInput(r, 6, { formula: `IF(S${r}>0,IFERROR(INDEX(${WL_D},S${r})/INDEX(${CH_B},S${r}),1),0)` });
+    takeoff.getCell(r, 7).value = { formula: `IF(S${r}>0,INDEX(${WL_E},S${r}),0)` };
+    // Distance ladder per LEVEL: charger n of a level sits StepFt past the
+    // previous one, starting from that level's first-run distance. Overtype
+    // with the surveyed length per charger — that is the point of this sheet.
+    tkInput(r, 8, {
+      formula: `IF(S${r}=0,0,IF($C${r}="DCFC",RunFtDcfc,RunFtL2)+StepFt*(SUMPRODUCT(($C$${TK_FIRST}:$C${r}=$C${r})*1)-1))`,
+    });
+    takeoff.getCell(r, 9).value = {
+      formula: `IF(OR($D${r}="",$F${r}=0),0,IF($E${r}="Cu",VLOOKUP($D${r},WireTable,2,FALSE),VLOOKUP($D${r},WireTable,3,FALSE)))`,
+    };
+    takeoff.getCell(r, 9).numFmt = MONEY;
+    takeoff.getCell(r, 10).value = { formula: `$F${r}*$G${r}*$H${r}*$I${r}` };
+    takeoff.getCell(r, 10).numFmt = MONEY;
+    takeoff.getCell(r, 11).value = { formula: `IF(S${r}>0,INDEX(${WL_J},S${r}),"")` };
+  }
+  for (const col of [17, 18, 19, 20]) takeoff.getColumn(col).hidden = true;
+  label(takeoff, TK_TOTAL, "Charger wire total → Intake / Estimate", true);
+  takeoff.getCell(TK_TOTAL, 10).value = { formula: `SUM(J${TK_FIRST}:J${TK_LAST})` };
+  takeoff.getCell(TK_TOTAL, 10).numFmt = MONEY;
+  takeoff.getCell(TK_TOTAL, 10).font = { bold: true };
+  takeoff.getCell(TK_TOTAL, 10).fill = HEADER_FILL;
+  wb.definedNames.add(`Takeoff!$J$${TK_TOTAL}`, "TakeoffWire");
+  takeoff.getCell(TK_TOTAL + 1, 2).value = {
+    formula: `IF($Q$${TK_UNITS_TOTAL}>${N_TK},"⚠ More than ${N_TK} chargers — rows truncated; use the app's Excel export for larger sites","")`,
+  };
+  takeoff.getCell(TK_TOTAL + 1, 2).font = { color: { argb: "FFB45309" }, italic: true };
+  takeoff.getCell(TK_TOTAL + 2, 2).value =
+    "Conduit & terminations are in the per-charger install allowance (RateCard); this sheet prices the conductors. Breaker column mirrors the Intake line (override it there).";
+  takeoff.getCell(TK_TOTAL + 2, 2).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+  takeoff.views = [{ state: "frozen", ySplit: TK_FIRST - 1 }];
 
   // ------------------------------------------------------------------ Panel
   // Row anchors (all derived from N_CH so the 12-line intake flows through):
@@ -1104,16 +1210,18 @@ async function main() {
   };
 
   eHeader(6, "Electrical supply & construction");
-  eLine(7, "Wire runs (Intake block) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
+  eLine(7, "Wire runs (Takeoff + feeders) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
   eLine(9, "Trenching / asphalt cut (terrain-adjusted)", "TrenchFt*TrenchRate*VLOOKUP(Terrain,TerrainTable,2,FALSE)");
   // NEC 358.30: racks every 10 ft along the route (+1 end rack), one strut
-  // strap per conduit per rack ≈ one per 10 conduit-ft. Hybrid keeps the
-  // service feeders (rows 53-55) underground, so only charger runs get straps.
+  // strap per conduit per rack ≈ one per 10 conduit-ft. Charger conduit-ft
+  // come per-unit from the Takeoff sheet (runs × one-way ft per charger);
+  // hybrid keeps the service feeders underground, so only surface installs
+  // add the feeder footage.
   eLine(
     10,
     "Surface EMT supports — strut racks @ 10 ft + straps (NEC 358.30)",
-    `IF(InstallMethod="Trenched",0,(ROUNDUP(RouteFt/10,0)+1)*EmtRackCost+ROUNDUP((SUMPRODUCT(Intake!$D$${W_FIRST}:$D$${W_FIRST + N_CH - 1},Intake!$F$${W_FIRST}:$F$${W_FIRST + N_CH - 1})+IF(InstallMethod="Surface EMT",SUMPRODUCT(Intake!$D$${FDR_FIRST}:$D$${FDR_FIRST + 2},Intake!$F$${FDR_FIRST}:$F$${FDR_FIRST + 2}),0))/10,0)*EmtStrapCost)`,
+    `IF(InstallMethod="Trenched",0,(ROUNDUP(RouteFt/10,0)+1)*EmtRackCost+ROUNDUP((SUMPRODUCT(Takeoff!$F$${TK_FIRST}:$F$${TK_LAST},Takeoff!$H$${TK_FIRST}:$H$${TK_LAST})+IF(InstallMethod="Surface EMT",SUMPRODUCT(Intake!$D$${FDR_FIRST}:$D$${FDR_FIRST + 2},Intake!$F$${FDR_FIRST}:$F$${FDR_FIRST + 2}),0))/10,0)*EmtStrapCost)`,
   );
   eLine(11, "Civil (concrete, rebar, wheel stops)", "IF(NTotal>0,CivilBase,0)+NDcfc*CivilDcfc+NumL2*CivilL2");
   eLine(12, "Signage, striping & bollards", "NDcfc*SignageDcfc+NumL2*SignageL2");
@@ -1335,11 +1443,12 @@ async function main() {
     ["1. Yellow cells are the only inputs. Intake top-to-bottom: your details, client & program IDs, chargers (every L3 size in", false],
     ["   Single and Dual-port; L2 at 32/40/80A per port, Single and Dual), separate L3 / L2 site distances, WIRE RUNS & FEEDERS,", false],
     ["   labor days, services, commercial terms. Totals show at the bottom of the Intake.", false],
-    [`2. CHARGERS: ${N_CH} lines. One line per model, or enter qty 1 per line to control each individual charger's distance,`, false],
-    ["   wire and breaker — one row per charger, same as the website's Takeoff tab.", false],
-    ["   WIRE RUNS & FEEDERS: every run's wire size, material (Cu/Al), runs, one-way ft AND breaker is editable — like the V18", false],
-    ["   workbooks. Defaults auto-fill from the model and site distances; overtyping a yellow cell replaces its formula. On long", false],
-    ["   runs, extra parallel runs split the amps so each set can use smaller wire — often cheaper than one fat conductor.", false],
+    [`2. CHARGERS: ${N_CH} lines (model × qty). TAKEOFF SHEET: one row per INDIVIDUAL charger — L2 and L3 — with its own`, false],
+    ["   yellow wire size, material, runs and one-way ft. Defaults fill from the Intake line + the distance ladder; overtype the", false],
+    ["   surveyed length (or a different size) per charger and the wire $ reprices straight into the Estimate — same as the", false],
+    ["   website's Takeoff tab. The Intake's WIRE RUNS block holds each line's DEFAULTS plus the three service feeders; its", false],
+    ["   Wire $ column reads the Takeoff rows back, so nothing double-counts. On long runs, extra parallel runs split the", false],
+    ["   amps so each set can use smaller wire — often cheaper than one fat conductor.", false],
     ["   BREAKER COLUMN (col I): overrides the model's breaker for that line — flows into the Panel sheet's branch-breaker", false],
     ["   pricing and both plan-set schedules. NEC 625.41 wants ≥125% of continuous amps; the template does not police it.", false],
     ["   LABOR BREAKDOWN: itemize by role/phase (foreman, crew, flagger…); the total feeds the estimate, contingency-loaded.", false],
