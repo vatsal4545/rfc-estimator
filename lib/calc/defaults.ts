@@ -36,6 +36,10 @@ export function defaultSetup(): Setup {
 
 export function defaultPeripherals(): PeripheralsInput {
   return {
+    // Auto by default: the switchgear/sub-panel/transformer re-size and
+    // re-price from the panel schedule as charger counts change. The manual
+    // list below only applies after switching auto off on the Peripherals tab.
+    useAutoGear: true,
     gear: [{ item: "Main switchgear", size: "1000A", voltage: "480V", qty: 1 }],
     bollardsQty: 0,
     plywoodQty: 0,

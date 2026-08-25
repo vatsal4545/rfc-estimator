@@ -1,5 +1,7 @@
 "use client";
 
+import { INSTALL_METHOD_INFO, effectiveInstallMethod } from "@/lib/calc/install";
+import type { InstallMethod } from "@/lib/calc/types";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls } from "./ui";
 
@@ -66,6 +68,45 @@ export function SetupTab() {
               <option value="Al">Aluminium</option>
             </select>
           </Field>
+          <Field
+            label="Install method"
+            hint={INSTALL_METHOD_INFO[effectiveInstallMethod(s)].blurb}
+          >
+            <select
+              className={selectCls}
+              value={effectiveInstallMethod(s)}
+              onChange={(e) => {
+                const m = e.target.value as InstallMethod;
+                // Re-derive the dig footage for the new method so the hint
+                // and the priced trench agree: full route when trenched,
+                // just the existing service legs on a hybrid, none for
+                // surface EMT. Still editable below.
+                const chain = s.serviceChain;
+                const mixed = result.rollups.nDCFC > 0 && result.rollups.nL2 > 0;
+                const serviceFt =
+                  (chain?.utilityToSwitchgearFt ?? 25) +
+                  (mixed
+                    ? (chain?.switchgearToTransformerFt ?? 15) + (chain?.transformerToSubpanelFt ?? 15)
+                    : 0);
+                setProject((p) => ({
+                  ...p,
+                  setup: {
+                    ...p.setup,
+                    installMethod: m,
+                    conduitType: m === "trench" ? "PVC" : "EMT",
+                    trenchLengthFt:
+                      m === "surface" ? 0 : m === "hybrid" ? serviceFt : result.rollups.longestRunFt,
+                  },
+                }));
+              }}
+            >
+              {(Object.keys(INSTALL_METHOD_INFO) as InstallMethod[]).map((m) => (
+                <option key={m} value={m}>
+                  {INSTALL_METHOD_INFO[m].label}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="Conduit type">
             <select className={selectCls} value={s.conduitType} onChange={(e) => update("conduitType", e.target.value as "PVC" | "EMT")}>
               <option value="PVC">PVC</option>
@@ -129,7 +170,13 @@ export function SetupTab() {
           </Field>
           <Field
             label="Trench length (ft)"
-            hint={`Suggested: longest run on Takeoff = ${result.rollups.longestRunFt} ft`}
+            hint={
+              effectiveInstallMethod(s) === "surface"
+                ? "Surface EMT install — nothing gets dug (this field is ignored)"
+                : effectiveInstallMethod(s) === "hybrid"
+                  ? "Hybrid — only the utility → switchgear service section digs"
+                  : `Suggested: longest run on Takeoff = ${result.rollups.longestRunFt} ft`
+            }
           >
             <input
               type="number"
@@ -138,6 +185,19 @@ export function SetupTab() {
               onChange={(e) => update("trenchLengthFt", Number(e.target.value))}
             />
           </Field>
+          {effectiveInstallMethod(s) !== "trench" && (
+            <Field
+              label="Surface EMT route (ft)"
+              hint={`Ceiling/wall rack length — drives strut trapezes every 10 ft (NEC 358.30). 0 = auto from longest run (${result.rollups.longestRunFt} ft)`}
+            >
+              <input
+                type="number"
+                className={inputCls}
+                value={s.surfaceRouteFt ?? 0}
+                onChange={(e) => update("surfaceRouteFt", Number(e.target.value))}
+              />
+            </Field>
+          )}
           <Field
             label="Trenching difficulty multiplier"
             hint="1 = flat lot baseline ($40.81/ft). Sloped ~1.2, hilly ~1.5, rocky ~2.5 — set by the Quick Estimate terrain picker"

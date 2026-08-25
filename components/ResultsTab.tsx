@@ -144,8 +144,10 @@ export function ResultsTab() {
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {conduitLines.map((l) => (
-              <tr key={l.tradeSize}>
-                <td className="py-1.5">{l.tradeSize}</td>
+              <tr key={`${l.tradeSize}-${l.conduitType}`}>
+                <td className="py-1.5">
+                  {l.tradeSize} <span className="text-zinc-400">{l.conduitType}</span>
+                </td>
                 <td className="py-1.5 text-right">{num(l.feederFt)}</td>
                 <td className="py-1.5 text-right">{num(l.dataFt)}</td>
                 <td className="py-1.5 text-right">{num(l.totalFt)}</td>

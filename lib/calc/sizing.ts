@@ -139,13 +139,18 @@ export function computeTakeoffRow(
   const parallelDivisor = parallelCapable ? runsPerUnit : 1;
 
   // OCPD left at 0 on the LoadType means auto-size: next standard breaker at
-  // or above 125% of the per-circuit current (NEC 625.41 continuous load).
-  const ocpdA =
+  // or above 125% of the circuit current (NEC 625.41 continuous load). A
+  // parallel set is ONE circuit behind ONE breaker (240.8 forbids paralleled
+  // breakers), so the OCPD sizes on the FULL design current — only the
+  // per-conductor wire sizing divides by the parallel runs.
+  const autoOcpdA =
     lt.feederOcpdA > 0
       ? lt.feederOcpdA
       : designAmps > 0
-        ? nextStandardSize(STANDARD_BREAKERS_A, (designAmps / parallelDivisor) * setup.continuousLoadFactor)
+        ? nextStandardSize(STANDARD_BREAKERS_A, designAmps * setup.continuousLoadFactor)
         : 0;
+  const ocpdOverridden = input.ocpdOverrideA !== undefined && input.ocpdOverrideA > 0;
+  const ocpdA = ocpdOverridden ? input.ocpdOverrideA! : autoOcpdA;
 
   const contAmps =
     input.units === 0 || runsPerUnit === 0
@@ -192,22 +197,40 @@ export function computeTakeoffRow(
   const groundCostPerFt = groundSize ? wirePricePerFt(groundSize, groundMaterial) : 0;
   const groundCost = groundFt * groundCostPerFt;
 
+  const conduitMaterial = input.conduitOverride ?? setup.conduitType;
   const conduitSize = selectedWire === "" ? "" : conduitTradeSizeForWire(selectedWire, setup.conduitUpsizeSteps);
   const conduitFt = selectedWire === "" ? 0 : input.units * runsPerUnit * input.oneWayDistFt;
-  const conduitCostPerFt = conduitSize ? conduitPricePerFt(conduitSize, setup.conduitType) : 0;
+  const conduitCostPerFt = conduitSize ? conduitPricePerFt(conduitSize, conduitMaterial) : 0;
   const conduitCost = conduitFt * conduitCostPerFt;
 
   const dataFt = lt.hasDataCable ? input.units * input.oneWayDistFt : 0;
-  const dataConduitPerFt = conduitPricePerFt(setup.dataConduitTradeSize, setup.conduitType);
+  const dataConduitPerFt = conduitPricePerFt(setup.dataConduitTradeSize, conduitMaterial);
   const dataCost = dataFt * (setup.dataRatePerFt + dataConduitPerFt);
 
   const rowTotal = wireCost + groundCost + conduitCost + dataCost;
+
+  // One breaker serves the whole (possibly paralleled) circuit, so both
+  // bounds check against the FULL design current and the combined ampacity.
+  const reqOcpdA = designAmps * setup.continuousLoadFactor;
+  const wireRowSel = WIRE_TABLE.find((w) => w.size === selectedWire);
+  const wireAmpacityTotal = wireRowSel
+    ? (material === "Cu" ? wireRowSel.ampacityCu : wireRowSel.ampacityAl) *
+      (parallelCapable ? runsPerUnit : 1)
+    : 0;
+  // NEC 240.4(B): the OCPD may round up to the next standard size above the
+  // conductor ampacity — anything beyond that leaves the wire unprotected.
+  const maxOcpdForWire =
+    wireAmpacityTotal > 0 ? nextStandardSize(STANDARD_BREAKERS_A, wireAmpacityTotal) : 0;
 
   let flag = "OK";
   if (selectedWire === "" && exceedsTable) {
     flag = "Exceeds conductor table - use parallel runs";
   } else if (selectedWire === "") {
     flag = "Cannot size - set kW on LoadTypes or enter a Size override";
+  } else if (ocpdOverridden && designAmps > 0 && ocpdA < reqOcpdA) {
+    flag = `Breaker override ${ocpdA}A is below 125% of continuous load (${Math.ceil(reqOcpdA)}A required, NEC 625.41)`;
+  } else if (ocpdOverridden && maxOcpdForWire > 0 && ocpdA > maxOcpdForWire) {
+    flag = `Breaker override ${ocpdA}A exceeds the ${selectedWire} conductor's protection limit (${maxOcpdForWire}A max, NEC 240.4) - upsize the wire`;
   } else if (input.sizeOverride && !overrideValid) {
     flag = `Invalid size override "${input.sizeOverride}" - auto-sized to ${selectedWire}`;
   } else if (wireCostPerFt === 0) {

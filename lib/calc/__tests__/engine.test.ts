@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultFinancial, defaultSetup } from "../defaults";
 import { defaultEquipmentItems } from "../equipment";
 import { computeEstimate } from "../engine";
-import { DEFAULT_LOAD_TYPES } from "../tables";
+import { DEFAULT_LOAD_TYPES, GEAR_CATALOG } from "../tables";
 import type { PeripheralsInput, Project, TakeoffRowInput } from "../types";
 
 // Golden-master fixture: the "H-00087 Bartell Hotels / The Dana" project
@@ -120,7 +120,11 @@ describe("CPM engine — Bartell fixture (validated against CPM_Clean.xlsx)", ()
     expect(result.peripherals.signageSubtotal).toBeCloseTo(3068.3, 2);
     expect(result.peripherals.permitsSubtotal).toBe(1000);
     expect(result.peripherals.utilitySubtotal).toBe(3364);
-    expect(result.peripherals.gearMainSwitchgear).toBeCloseTo(36812.5, 2);
+    // Gear prices from the live catalog (Bartell's manual list picked 1000A).
+    const sg1000 = GEAR_CATALOG.find(
+      (g) => g.item === "Main switchgear" && g.size === "1000A" && g.voltage === "480V",
+    )!;
+    expect(result.peripherals.gearMainSwitchgear).toBeCloseTo(sg1000.unitCost, 2);
     expect(result.peripherals.gearOtherTotal).toBe(0);
   });
 

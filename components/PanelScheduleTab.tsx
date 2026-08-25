@@ -1,6 +1,7 @@
 "use client";
 
-import type { Material } from "@/lib/calc/types";
+import { SUBPANEL_208V_A, SWITCHGEAR_480V_A, TRANSFORMER_KVA } from "@/lib/calc/panel";
+import type { GearOverrides, Material } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
 import { SLD } from "./SLD";
@@ -28,6 +29,13 @@ export function PanelScheduleTab() {
     setProject((p) => ({
       ...p,
       peripherals: { ...p.peripherals, gear: panel.suggestedGear.map((g) => ({ ...g })) },
+    }));
+  }
+
+  function setGearOverride(patch: Partial<GearOverrides>) {
+    setProject((p) => ({
+      ...p,
+      setup: { ...p.setup, gearOverrides: { ...p.setup.gearOverrides, ...patch } },
     }));
   }
 
@@ -180,7 +188,14 @@ export function PanelScheduleTab() {
               ["Connected", `${num(panel.bus480.connectedAmps, 1)} A`],
               ["Demand ×125%", `${num(panel.bus480.demandAmps, 1)} A`],
             ]}
-            highlight={`${panel.bus480.suggestedBusA} A bus`}
+            highlight={`${panel.bus480.suggestedBusA} A bus${panel.bus480.overridden ? " (manual)" : ""}`}
+            override={{
+              value: project.setup.gearOverrides?.switchgear480A,
+              autoLabel: `auto — ${panel.bus480.autoBusA} A`,
+              options: SWITCHGEAR_480V_A,
+              unit: "A",
+              onChange: (v) => setGearOverride({ switchgear480A: v }),
+            }}
           />
         )}
         {panel.bus208 && (
@@ -191,7 +206,14 @@ export function PanelScheduleTab() {
               ["Connected", `${num(panel.bus208.connectedAmps, 1)} A`],
               ["Demand ×125%", `${num(panel.bus208.demandAmps, 1)} A`],
             ]}
-            highlight={`${panel.bus208.suggestedBusA} A bus`}
+            highlight={`${panel.bus208.suggestedBusA} A bus${panel.bus208.overridden ? " (manual)" : ""}`}
+            override={{
+              value: project.setup.gearOverrides?.subpanel208A,
+              autoLabel: `auto — ${panel.bus208.autoBusA} A`,
+              options: SUBPANEL_208V_A,
+              unit: "A",
+              onChange: (v) => setGearOverride({ subpanel208A: v }),
+            }}
           />
         )}
         {panel.transformer && (
@@ -202,10 +224,21 @@ export function PanelScheduleTab() {
               ["Demand ×125%", `${num(panel.transformer.demandKva, 1)} kVA`],
               ["Primary breaker", `${panel.transformer.primaryBreakerA} A @ 480V`],
             ]}
-            highlight={`${panel.transformer.suggestedKva} kVA`}
+            highlight={`${panel.transformer.suggestedKva} kVA${panel.transformer.overridden ? " (manual)" : ""}`}
+            override={{
+              value: project.setup.gearOverrides?.transformerKva,
+              autoLabel: `auto — ${panel.transformer.autoKva} kVA`,
+              options: TRANSFORMER_KVA,
+              unit: "kVA",
+              onChange: (v) => setGearOverride({ transformerKva: v }),
+            }}
           />
         )}
       </div>
+      <p className="mt-2 text-xs text-zinc-500">
+        Overrides cascade: the service-chain conductors, primary breaker and gear pricing all re-derive
+        from the size you pick. Sizes below the ×125% demand get flagged in the notes above.
+      </p>
 
       <div className="mt-4" />
       <Section
@@ -279,14 +312,24 @@ export function PanelScheduleTab() {
   );
 }
 
+interface BusOverride {
+  value: number | undefined;
+  autoLabel: string;
+  options: number[];
+  unit: string;
+  onChange: (v: number | undefined) => void;
+}
+
 function BusCard({
   title,
   lines,
   highlight,
+  override,
 }: {
   title: string;
   lines: [string, string][];
   highlight: string;
+  override?: BusOverride;
 }) {
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -300,6 +343,23 @@ function BusCard({
           </div>
         ))}
       </dl>
+      {override && (
+        <label className="mt-3 block text-xs text-zinc-500">
+          Size
+          <select
+            className={`${selectCls} mt-1`}
+            value={override.value ?? ""}
+            onChange={(e) => override.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+          >
+            <option value="">{override.autoLabel}</option>
+            {override.options.map((o) => (
+              <option key={o} value={o}>
+                {o} {override.unit}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

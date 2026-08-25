@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultProject } from "../defaults";
 import { computeEstimate } from "../engine";
 import { generateTakeoffRows } from "../quickstart";
+import { GEAR_CATALOG } from "../tables";
 import type { Project } from "../types";
 
 // Full-chain automation on the user's scenario: 5x DCFC 240kW + 6x L2 Dual
@@ -65,8 +66,11 @@ describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 40A", () => {
   });
 
   it("auto-costs the suggested gear (switchgear + sub-panel + transformer + breakers) without any manual entry", () => {
-    // 2500A switchgear $58,540 flows into the estimate directly...
-    expect(r.peripherals.gearMainSwitchgear).toBeCloseTo(58540, 2);
+    // The suggested 2500A switchgear prices at its catalog rate directly...
+    const sg2500 = GEAR_CATALOG.find(
+      (g) => g.item === "Main switchgear" && g.size === "2500A" && g.voltage === "480V",
+    )!;
+    expect(r.peripherals.gearMainSwitchgear).toBeCloseTo(sg2500.unitCost, 2);
     // ...and the 208V side gear prices automatically: 600A sub-panel $5,387 +
     // 225KVA transformer $7,144 + branch breakers at budgetary catalog prices
     // (5x 400A@480V $1,200 + 12x 50A@208V $75 + 1x 350A@480V transformer

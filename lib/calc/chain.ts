@@ -1,6 +1,7 @@
+import { effectiveInstallMethod } from "./install";
 import type { PanelSchedule } from "./panel";
 import { WIRE_TABLE } from "./tables";
-import type { LoadType, Material, Setup, TakeoffRowInput } from "./types";
+import type { ConduitMaterial, LoadType, Material, Setup, TakeoffRowInput } from "./types";
 
 const SQRT3 = Math.sqrt(3);
 
@@ -52,6 +53,10 @@ export function buildServiceChain(
 
   const mat = cfg.material;
   const cf = setup.continuousLoadFactor;
+  // Hybrid installs run the chargers in surface EMT but trench the service
+  // section — those buried segments go in PVC regardless of the Setup toggle.
+  const chainConduit: ConduitMaterial | undefined =
+    effectiveInstallMethod(setup) === "hybrid" ? "PVC" : undefined;
 
   function segment(
     id: string,
@@ -84,6 +89,7 @@ export function buildServiceChain(
       location,
       units: 1,
       oneWayDistFt: distFt,
+      conduitOverride: chainConduit,
       synthetic: true,
     });
   }

@@ -107,25 +107,52 @@ interface ModelCal {
   hardware: number;
   /** Conduit + install hardware + terminations per unit — wire billed separately on the Wire Runs block. */
   install: number;
+  /** Same allowance with surface EMT conduit (garage installs) — strut racks/straps are their own Estimate line. */
+  installEmt: number;
   /** The wire the engine picked for this model's runs at calibration distances (mode). */
   defaultWire: string;
   defaultMaterial: string;
 }
 
+// The strut rack/strap lines get their own Estimate row, so the per-unit EMT
+// install allowance must not double-count them.
+const EMT_SUPPORT_LINES = ["Strut trapeze racks (every 10 ft, NEC 358.30)", "Strut conduit straps"];
+
 function calibrateModel(lt: LoadType): ModelCal {
   const N = 6;
-  const p = buildQuickProject(bareInput({ lines: [{ loadTypeId: lt.id, count: N }] }), defaultProject(), "cal");
-  const r = computeEstimate(p);
   // Wire cost (charger runs AND service chain) moves to the editable Wire Runs
   // block, so the per-unit allowance keeps only conduit/install/terminations.
-  const wireTotal = r.rows.reduce((s, row) => s + row.wireCost, 0);
-  const install = (r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal) / N;
-  const own = r.rows.filter((row) => row.loadTypeId === lt.id && row.selectedWire);
+  const installFor = (method: "trench" | "surface") => {
+    const p = buildQuickProject(
+      bareInput({ lines: [{ loadTypeId: lt.id, count: N }], installMethod: method }),
+      defaultProject(),
+      "cal",
+    );
+    const r = computeEstimate(p);
+    const wireTotal = r.rows.reduce((s, row) => s + row.wireCost, 0);
+    const supports = r.peripherals.lines.hardware
+      .filter((h) => EMT_SUPPORT_LINES.includes(h.name))
+      .reduce((s, h) => s + h.qty * h.unitCost, 0);
+    return {
+      install: Math.round((r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal - supports) / N),
+      rows: r.rows,
+    };
+  };
+  const trench = installFor("trench");
+  const emt = installFor("surface");
+  const own = trench.rows.filter((row) => row.loadTypeId === lt.id && row.selectedWire);
   const tally = new Map<string, number>();
   for (const row of own) tally.set(`${row.selectedWire}|${row.material}`, (tally.get(`${row.selectedWire}|${row.material}`) ?? 0) + 1);
   const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "|Cu";
   const [defaultWire, defaultMaterial] = best.split("|");
-  return { lt, hardware: HARDWARE_ALLOWANCE[lt.id] ?? 0, install: Math.round(install), defaultWire, defaultMaterial: defaultMaterial || "Cu" };
+  return {
+    lt,
+    hardware: HARDWARE_ALLOWANCE[lt.id] ?? 0,
+    install: trench.install,
+    installEmt: emt.install,
+    defaultWire,
+    defaultMaterial: defaultMaterial || "Cu",
+  };
 }
 
 function calibrateCategory(id: string): { civil: number; signage: number } {
@@ -138,9 +165,13 @@ function calibrateCategory(id: string): { civil: number; signage: number } {
   };
 }
 
-function calibrateEquipment(): { base: number; perDay: number } {
+function calibrateEquipment(method: "trench" | "surface" = "trench"): { base: number; perDay: number } {
   const run = (count: number) => {
-    const p = buildQuickProject(bareInput({ lines: [{ loadTypeId: "DCFC 100kW", count }] }), defaultProject(), "cal");
+    const p = buildQuickProject(
+      bareInput({ lines: [{ loadTypeId: "DCFC 100kW", count }], installMethod: method }),
+      defaultProject(),
+      "cal",
+    );
     return { days: p.financial.laborBusinessDays, cost: computeEstimate(p).equipment.subtotal };
   };
   const a = run(4);
@@ -163,7 +194,8 @@ async function main() {
   const models = chargerModels.map(calibrateModel);
   const dcfcCal = calibrateCategory("DCFC 200kW");
   const l2Cal = calibrateCategory("L2 Single 40A");
-  const equipCal = calibrateEquipment();
+  const equipCal = calibrateEquipment("trench");
+  const equipCalEmt = calibrateEquipment("surface");
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "RFC Estimator";
@@ -196,13 +228,13 @@ async function main() {
   };
 
   // ------------------------------------------------------------------ RateCard
-  [22, 14, 16, 10, 9, 12, 11, 12, 9, 9, 10, 9, 10, 13, 9, 3, 36, 12, 9, 9, 10].forEach(
+  [22, 14, 16, 10, 9, 12, 11, 12, 9, 9, 10, 9, 10, 13, 9, 14, 36, 12, 9, 9, 10].forEach(
     (w, i) => (rate.getColumn(i + 1).width = w),
   );
   rate.getCell("A1").value = "Rate Card — every price the template uses. Edit the yellow cells; formulas follow.";
   rate.getCell("A1").font = { bold: true, size: 13 };
 
-  head(rate, 3, ["Model", "Hardware $/u", "Install $/u (excl. wire)", "Category", "Voltage", "Breaker A", "Circuits/u", "Unit input A", "Ports/u", "kW/port", "A/circuit", "Runs/u", "Cond/run", "Default wire", "Material"]);
+  head(rate, 3, ["Model", "Hardware $/u", "Install $/u (excl. wire)", "Category", "Voltage", "Breaker A", "Circuits/u", "Unit input A", "Ports/u", "kW/port", "A/circuit", "Runs/u", "Cond/run", "Default wire", "Material", "Install EMT $/u"]);
   models.forEach((m, i) => {
     const row = 4 + i;
     const e = electrical(m.lt);
@@ -225,12 +257,15 @@ async function main() {
     rate.getCell(row, 13).value = m.lt.conductorsPerRun;
     rate.getCell(row, 14).value = m.defaultWire;
     rate.getCell(row, 15).value = m.defaultMaterial;
+    rate.getCell(row, 16).value = m.installEmt;
+    rate.getCell(row, 16).numFmt = MONEY;
+    rate.getCell(row, 16).fill = YELLOW;
   });
   const modelEnd = 3 + models.length;
   rate.getCell(modelEnd + 1, 1).value =
-    "Install $/u = conduit, terminations & install hardware (engine-calibrated) — wire is priced on the Intake's Wire Runs block. Hardware $/u are budgetary — swap in CTX/vendor quotes.";
+    "Install $/u = conduit, terminations & install hardware (engine-calibrated) — wire is priced on the Intake's Wire Runs block. 'Install EMT $/u' is the same allowance with surface EMT conduit (garage installs; strut racks are a separate Estimate line). Hardware $/u are budgetary — swap in CTX/vendor quotes.";
   rate.getCell(modelEnd + 1, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
-  wb.definedNames.add(`RateCard!$A$4:$O$${modelEnd}`, "ModelTable");
+  wb.definedNames.add(`RateCard!$A$4:$P$${modelEnd}`, "ModelTable");
 
   let gRow = modelEnd + 3;
   const priceTable = (title: string, rows: [number, number][], sizeName: string, tableName: string) => {
@@ -328,6 +363,11 @@ async function main() {
     ["CommL2", "Commissioning $/L2", 250, MONEY],
     ["EquipBase", "Equipment rentals base $", equipCal.base, MONEY],
     ["EquipPerDay", "Equipment rentals $/labor-day", equipCal.perDay, MONEY],
+    ["EquipBaseEmt", "Equipment base $ (surface EMT — lift, no dig gear)", equipCalEmt.base, MONEY],
+    ["EquipPerDayEmt", "Equipment $/labor-day (surface EMT)", equipCalEmt.perDay, MONEY],
+    ["EmtRackCost", "Strut trapeze rack $ (strut+rod+anchors, NEC 358.30)", 28, MONEY],
+    ["EmtStrapCost", "Strut conduit strap $ (per pipe per rack)", 3.25, MONEY],
+    ["EmtFtPerDay", "Surface EMT route-ft per crew-day", 100],
   ];
   scalars.forEach(([name, text, value, fmt], i) => {
     const row = 10 + i;
@@ -393,7 +433,10 @@ async function main() {
     intake.getCell(row, 3).value = { formula: `IFERROR(VLOOKUP($A${row},ModelTable,2,FALSE),"")` };
     intake.getCell(row, 3).numFmt = MONEY;
     intake.getCell(row, 4).value = { formula: `IFERROR(VLOOKUP($A${row},ModelTable,4,FALSE),"")` };
-    intake.getCell(row, 5).value = { formula: `IFERROR($B${row}*VLOOKUP($A${row},ModelTable,3,FALSE),0)` };
+    // Install allowance follows the method: col 3 = trenched PVC, col 16 = surface EMT.
+    intake.getCell(row, 5).value = {
+      formula: `IFERROR($B${row}*VLOOKUP($A${row},ModelTable,IF(InstallMethod="Trenched",3,16),FALSE),0)`,
+    };
     intake.getCell(row, 5).numFmt = MONEY;
     intake.getCell(row, 6).value = { formula: `IFERROR($B${row}*VLOOKUP($A${row},ModelTable,2,FALSE),0)` };
     intake.getCell(row, 6).numFmt = MONEY;
@@ -423,26 +466,45 @@ async function main() {
   inputCell(38, 15);
   label(intake, 39, "Terrain");
   inputCell(39, "flat").dataValidation = { type: "list", allowBlank: false, formulae: ['"flat,sloped,hilly,rocky"'] };
-  label(intake, 40, "Trench length (ft) — overtype if surveyed");
-  inputCell(40, {
+  label(intake, 40, "Install method (Trenched / Surface EMT / Hybrid)");
+  inputCell(40, "Trenched").dataValidation = {
+    type: "list",
+    allowBlank: false,
+    formulae: ['"Trenched,Surface EMT,Hybrid"'],
+  };
+  intake.getCell(40, 3).value =
+    "Surface EMT = garage ceiling racks, no digging. Hybrid = EMT inside, trench only the utility→switchgear section.";
+  intake.getCell(40, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
+  label(intake, 41, "Conduit route (ft) — the path the runs follow; overtype if surveyed");
+  inputCell(41, {
     formula: "IF(NDcfc>0,RunFtDcfc+StepFt*(NDcfc-1),0)+IF(NumL2>0,RunFtL2+StepFt*(NumL2-1),0)",
   } as ExcelJS.CellValue);
-  label(intake, 41, "Construction labor days — overtype if known");
-  inputCell(41, {
-    formula: "IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc+1*NumL2+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE),0))",
+  label(intake, 42, "Trench length (ft) — auto from the method; overtype if surveyed");
+  // Hybrid counts only the service legs that actually exist (runs > 0):
+  // single-voltage sites have no step-down TX or sub-panel feeder to bury.
+  inputCell(42, {
+    formula:
+      'IF(InstallMethod="Surface EMT",0,IF(InstallMethod="Hybrid",SUMPRODUCT(($D$53:$D$55>0)*$F$53:$F$55),RouteFt))',
+  } as ExcelJS.CellValue);
+  label(intake, 43, "Construction labor days — overtype if known");
+  inputCell(43, {
+    formula:
+      'IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc+1*NumL2+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE)+IF(InstallMethod="Trenched",0,RouteFt/EmtFtPerDay),0))',
   } as ExcelJS.CellValue);
   wb.definedNames.add("Intake!$B$36", "RunFtDcfc");
   wb.definedNames.add("Intake!$B$37", "RunFtL2");
   wb.definedNames.add("Intake!$B$38", "StepFt");
   wb.definedNames.add("Intake!$B$39", "Terrain");
-  wb.definedNames.add("Intake!$B$40", "TrenchFt");
-  wb.definedNames.add("Intake!$B$41", "LaborDays");
+  wb.definedNames.add("Intake!$B$40", "InstallMethod");
+  wb.definedNames.add("Intake!$B$41", "RouteFt");
+  wb.definedNames.add("Intake!$B$42", "TrenchFt");
+  wb.definedNames.add("Intake!$B$43", "LaborDays");
 
   // ---- Wire Runs & Feeders: every run's size, material and length is a
   // yellow cell (defaults auto-fill from the model + site distances; overtype
   // freely — that is how the shop edited the V18 workbooks).
-  label(intake, 43, "WIRE RUNS & FEEDERS — size, material, runs and one-way ft are editable", true);
-  head(intake, 44, ["Run", "Wire size", "Material", "Runs", "Cond/run", "One-way ft", "$/ft", "Wire $"]);
+  label(intake, 45, "WIRE RUNS & FEEDERS — size, material, runs and one-way ft are editable", true);
+  head(intake, 46, ["Run", "Wire size", "Material", "Runs", "Cond/run", "One-way ft", "$/ft", "Wire $"]);
   const wireDropdown = `RateCard!$A$${wireFirst}:$A$${wireLast}`;
   const wireInput = (row: number, col: number, value: ExcelJS.CellValue, list?: string) => {
     const c = intake.getCell(row, col);
@@ -452,7 +514,7 @@ async function main() {
     if (list) c.dataValidation = { type: "list", allowBlank: true, formulae: [list] };
     return c;
   };
-  const W_FIRST = 45;
+  const W_FIRST = 47;
   for (let i = 0; i < 6; i++) {
     const row = W_FIRST + i;
     const src = CH_FIRST + i;
@@ -476,26 +538,26 @@ async function main() {
       "Service: utility → 480V switchgear",
       "600 kcmil",
       "Al",
-      'IF(NDcfc>0,MAX(1,ROUNDUP(Panel!$F$13*1.25/VLOOKUP($B$51,WireTable,IF($C$51="Cu",4,5),FALSE),0)),0)',
+      'IF(NDcfc>0,MAX(1,ROUNDUP(Panel!$F$13*1.25/VLOOKUP($B$53,WireTable,IF($C$53="Cu",4,5),FALSE),0)),0)',
       25,
     ],
     [
       "Feeder: switchgear → step-down TX",
       "4/0 AWG",
       "Al",
-      'IF(TxKvaSuggested>0,MAX(1,ROUNDUP(Panel!$F$37*1.25/VLOOKUP($B$52,WireTable,IF($C$52="Cu",4,5),FALSE),0)),0)',
+      'IF(TxKvaSuggested>0,MAX(1,ROUNDUP(Panel!$F$37*1.25/VLOOKUP($B$54,WireTable,IF($C$54="Cu",4,5),FALSE),0)),0)',
       15,
     ],
     [
       "Service/feeder → 208V panel",
       "350 kcmil",
       "Al",
-      'IF(NumL2>0,MAX(1,ROUNDUP(IF(TxKvaSuggested>0,TxKvaSuggested*1000/(208*SQRT(3)),Panel!$F$26)*1.25/VLOOKUP($B$53,WireTable,IF($C$53="Cu",4,5),FALSE),0)),0)',
+      'IF(NumL2>0,MAX(1,ROUNDUP(IF(TxKvaSuggested>0,TxKvaSuggested*1000/(208*SQRT(3)),Panel!$F$26)*1.25/VLOOKUP($B$55,WireTable,IF($C$55="Cu",4,5),FALSE),0)),0)',
       15,
     ],
   ];
   feeders.forEach(([name, size, mat, runsFormula, ft], i) => {
-    const row = 51 + i;
+    const row = 53 + i;
     intake.getCell(row, 1).value = name;
     wireInput(row, 2, size, wireDropdown);
     wireInput(row, 3, mat, '"Cu,Al"');
@@ -504,7 +566,7 @@ async function main() {
     intake.getCell(row, 5).value = 4;
     wireInput(row, 6, ft);
   });
-  for (let row = W_FIRST; row <= 53; row++) {
+  for (let row = W_FIRST; row <= 55; row++) {
     intake.getCell(row, 7).value = {
       formula: `IF(OR($B$${row}="",$D$${row}=0),0,IF($C$${row}="Cu",VLOOKUP($B$${row},WireTable,2,FALSE),VLOOKUP($B$${row},WireTable,3,FALSE)))`,
     };
@@ -512,24 +574,24 @@ async function main() {
     intake.getCell(row, 8).value = { formula: `$D$${row}*$E$${row}*$F$${row}*$G$${row}` };
     intake.getCell(row, 8).numFmt = MONEY;
   }
-  label(intake, 54, "Wire total", true);
-  intake.getCell(54, 8).value = { formula: "SUM(H45:H53)" };
-  intake.getCell(54, 8).numFmt = MONEY;
-  intake.getCell(54, 8).font = { bold: true };
-  wb.definedNames.add("Intake!$H$54", "WireTotal");
+  label(intake, 56, "Wire total", true);
+  intake.getCell(56, 8).value = { formula: "SUM(H47:H55)" };
+  intake.getCell(56, 8).numFmt = MONEY;
+  intake.getCell(56, 8).font = { bold: true };
+  wb.definedNames.add("Intake!$H$56", "WireTotal");
 
   // ---- Labor breakdown: itemize by role/phase; the total feeds the Estimate
   // (mirrors the app's Financials table). Row 1 defaults to the classic
   // crew rate × schedule days, so an untouched sheet prices exactly as before.
-  label(intake, 56, "LABOR BREAKDOWN — add roles/phases; the total feeds the estimate", true);
-  head(intake, 57, ["Role / phase", "Days", "$ / day", "Labor $"]);
+  label(intake, 58, "LABOR BREAKDOWN — add roles/phases; the total feeds the estimate", true);
+  head(intake, 59, ["Role / phase", "Days", "$ / day", "Labor $"]);
   const laborRows: [string | null, ExcelJS.CellValue, ExcelJS.CellValue][] = [
     ["Electrical crew", { formula: "LaborDays" } as ExcelJS.CellValue, { formula: "LaborDayRate" } as ExcelJS.CellValue],
     [null, 0, 0],
     [null, 0, 0],
   ];
   laborRows.forEach(([name, days, rate], i) => {
-    const row = 58 + i;
+    const row = 60 + i;
     const nameCell = intake.getCell(row, 1);
     if (name) nameCell.value = name;
     nameCell.fill = YELLOW;
@@ -539,13 +601,13 @@ async function main() {
     intake.getCell(row, 4).value = { formula: `$B$${row}*$C$${row}` };
     intake.getCell(row, 4).numFmt = MONEY;
   });
-  label(intake, 61, "Labor total (before contingency)", true);
-  intake.getCell(61, 4).value = { formula: "SUM(D58:D60)" };
-  intake.getCell(61, 4).numFmt = MONEY;
-  intake.getCell(61, 4).font = { bold: true };
-  wb.definedNames.add("Intake!$D$61", "LaborBase");
+  label(intake, 63, "Labor total (before contingency)", true);
+  intake.getCell(63, 4).value = { formula: "SUM(D60:D62)" };
+  intake.getCell(63, 4).numFmt = MONEY;
+  intake.getCell(63, 4).font = { bold: true };
+  wb.definedNames.add("Intake!$D$63", "LaborBase");
 
-  label(intake, 63, "INCLUDED SERVICES (Yes / No)", true);
+  label(intake, 65, "INCLUDED SERVICES (Yes / No)", true);
   const services: [string, string][] = [
     ["Charger hardware", "IncHardware"],
     ["Site plan design (AutoCAD)", "IncSitePlan"],
@@ -555,13 +617,13 @@ async function main() {
     ["Private utility scan (GPR)", "IncGpr"],
   ];
   services.forEach(([name, defName], i) => {
-    const row = 64 + i;
+    const row = 66 + i;
     label(intake, row, name);
     inputCell(row, "Yes").dataValidation = { type: "list", allowBlank: false, formulae: ['"Yes,No"'] };
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
 
-  label(intake, 71, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
+  label(intake, 73, "COMMERCIAL TERMS (from the RFC_V18 / Hoopa proposal structure)", true);
   const commercial: [string, string, number | string, string?][] = [
     ["Hardware price factor", "HardwareFactor", 1, undefined],
     ["Rebate / incentive amount ($)", "RebateAmt", 0, MONEY],
@@ -570,31 +632,31 @@ async function main() {
     ["Service plan $/year (post-warranty)", "ServicePlanYr", 0, MONEY],
   ];
   commercial.forEach(([text, defName, value, fmt], i) => {
-    const row = 72 + i;
+    const row = 74 + i;
     label(intake, row, text);
     inputCell(row, value as ExcelJS.CellValue, fmt);
     wb.definedNames.add(`Intake!$B$${row}`, defName);
   });
-  intake.getCell(72, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
-  intake.getCell(72, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
+  intake.getCell(74, 3).value = "1 = RateCard prices as-is; 1.155 = vendor cost × 1.05 contingency × 1.10 markup";
+  intake.getCell(74, 3).font = { italic: true, size: 8, color: { argb: "FF666666" } };
 
-  label(intake, 78, "CBC 11B-812 accessible stalls required", true);
-  intake.getCell(78, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
-  label(intake, 79, "Main gear (auto — Panel sheet)", true);
-  intake.getCell(79, 2).value = {
+  label(intake, 80, "Accessible stalls (CBC 11B-228.3: L2 and DCFC counted separately)", true);
+  intake.getCell(80, 2).value = { formula: `AdaVan&" van + "&AdaStd&" standard + "&AdaAmb&" ambulatory"` };
+  label(intake, 81, "Main gear (auto — Panel sheet)", true);
+  intake.getCell(81, 2).value = {
     formula:
       'IF(NDcfc>0,SgSuggested&"A switchgear @ 480V","208V service")&IF(TxKvaSuggested>0," + "&TxKvaSuggested&" kVA step-down TX","")',
   };
-  label(intake, 80, "TOTAL ESTIMATE", true);
-  intake.getCell(80, 1).font = { bold: true, size: 14 };
-  intake.getCell(80, 2).value = { formula: "TotalCost" };
-  intake.getCell(80, 2).numFmt = MONEY;
-  intake.getCell(80, 2).font = { bold: true, size: 14 };
-  intake.getCell(80, 2).fill = HEADER_FILL;
-  label(intake, 81, "CUSTOMER TOTAL (after rebate)", true);
-  intake.getCell(81, 2).value = { formula: "CustomerTotal" };
-  intake.getCell(81, 2).numFmt = MONEY;
-  intake.getCell(81, 2).font = { bold: true };
+  label(intake, 82, "TOTAL ESTIMATE", true);
+  intake.getCell(82, 1).font = { bold: true, size: 14 };
+  intake.getCell(82, 2).value = { formula: "TotalCost" };
+  intake.getCell(82, 2).numFmt = MONEY;
+  intake.getCell(82, 2).font = { bold: true, size: 14 };
+  intake.getCell(82, 2).fill = HEADER_FILL;
+  label(intake, 83, "CUSTOMER TOTAL (after rebate)", true);
+  intake.getCell(83, 2).value = { formula: "CustomerTotal" };
+  intake.getCell(83, 2).numFmt = MONEY;
+  intake.getCell(83, 2).font = { bold: true };
   intake.views = [{ state: "frozen", ySplit: 2 }];
 
   // ------------------------------------------------------------------ Panel
@@ -623,13 +685,18 @@ async function main() {
   panel.getCell(13, 6).value = { formula: "F11+F12" };
   label(panel, 14, "480V bus demand amps (×125%)", true);
   panel.getCell(14, 6).value = { formula: "F13*1.25" };
-  label(panel, 15, "Suggested main switchgear (A)", true);
+  label(panel, 15, "Main switchgear (A) — auto, or type an override in D15", true);
+  panel.getCell(15, 4).fill = YELLOW;
+  panel.getCell(15, 4).border = { bottom: { style: "thin" } };
+  panel.getCell(15, 4).dataValidation = { type: "list", allowBlank: true, formulae: ["SgSizes"] };
+  panel.getCell(15, 5).value = "← override";
+  panel.getCell(15, 5).font = { italic: true, size: 8, color: { argb: "FF666666" } };
   panel.getCell(15, 6).value = {
-    formula: 'IF(NDcfc>0,INDEX(SgSizes,MIN(ROWS(SgSizes),COUNTIF(SgSizes,"<"&F14)+1)),0)',
+    formula: 'IF(NDcfc>0,IF(ISNUMBER($D$15),$D$15,INDEX(SgSizes,MIN(ROWS(SgSizes),COUNTIF(SgSizes,"<"&F14)+1))),0)',
   };
   wb.definedNames.add("Panel!$F$15", "SgSuggested");
   label(panel, 16, "Switchgear price (website catalog)", true);
-  panel.getCell(16, 6).value = { formula: "IF(NDcfc>0,VLOOKUP(SgSuggested,SgTable,2,FALSE),0)" };
+  panel.getCell(16, 6).value = { formula: "IF(NDcfc>0,IFERROR(VLOOKUP(SgSuggested,SgTable,2,FALSE),0),0)" };
   panel.getCell(16, 6).numFmt = MONEY;
 
   label(panel, 18, "PANEL SCHEDULE 2 — 208V PANEL (LEVEL 2)", true);
@@ -648,14 +715,19 @@ async function main() {
   panel.getCell(26, 6).value = { formula: "SUM(F20:F25)" };
   label(panel, 27, "208V bus demand amps (×125%)", true);
   panel.getCell(27, 6).value = { formula: "F26*1.25" };
-  label(panel, 28, "Suggested 208V panel (A)", true);
+  label(panel, 28, "208V panel (A) — auto, or type an override in D28", true);
+  panel.getCell(28, 4).fill = YELLOW;
+  panel.getCell(28, 4).border = { bottom: { style: "thin" } };
+  panel.getCell(28, 4).dataValidation = { type: "list", allowBlank: true, formulae: ["PnlSizes"] };
+  panel.getCell(28, 5).value = "← override";
+  panel.getCell(28, 5).font = { italic: true, size: 8, color: { argb: "FF666666" } };
   panel.getCell(28, 6).value = {
-    formula: 'IF(NumL2>0,INDEX(PnlSizes,MIN(ROWS(PnlSizes),COUNTIF(PnlSizes,"<"&F27)+1)),0)',
+    formula: 'IF(NumL2>0,IF(ISNUMBER($D$28),$D$28,INDEX(PnlSizes,MIN(ROWS(PnlSizes),COUNTIF(PnlSizes,"<"&F27)+1))),0)',
   };
   label(panel, 29, "Panel type");
   panel.getCell(29, 6).value = { formula: 'IF(NumL2=0,"—",IF(F28>=1000,"Distribution panel","Sub-panel"))' };
   label(panel, 30, "Panel price", true);
-  panel.getCell(30, 6).value = { formula: "IF(NumL2>0,VLOOKUP(F28,PnlTable,2,FALSE),0)" };
+  panel.getCell(30, 6).value = { formula: "IF(NumL2>0,IFERROR(VLOOKUP(F28,PnlTable,2,FALSE),0),0)" };
   panel.getCell(30, 6).numFmt = MONEY;
 
   label(panel, 32, "STEP-DOWN TRANSFORMER (480V → 208V, only when both levels exist)", true);
@@ -664,13 +736,18 @@ async function main() {
   wb.definedNames.add("Panel!$F$33", "TxKvaConnected");
   label(panel, 34, "Demand kVA (×125%)");
   panel.getCell(34, 6).value = { formula: "F33*1.25" };
-  label(panel, 35, "Suggested transformer (kVA)", true);
+  label(panel, 35, "Transformer (kVA) — auto, or type an override in D35", true);
+  panel.getCell(35, 4).fill = YELLOW;
+  panel.getCell(35, 4).border = { bottom: { style: "thin" } };
+  panel.getCell(35, 4).dataValidation = { type: "list", allowBlank: true, formulae: ["TxSizes"] };
+  panel.getCell(35, 5).value = "← override";
+  panel.getCell(35, 5).font = { italic: true, size: 8, color: { argb: "FF666666" } };
   panel.getCell(35, 6).value = {
-    formula: 'IF(F33>0,INDEX(TxSizes,MIN(ROWS(TxSizes),COUNTIF(TxSizes,"<"&F34)+1)),0)',
+    formula: 'IF(F33>0,IF(ISNUMBER($D$35),$D$35,INDEX(TxSizes,MIN(ROWS(TxSizes),COUNTIF(TxSizes,"<"&F34)+1))),0)',
   };
   wb.definedNames.add("Panel!$F$35", "TxKvaSuggested");
   label(panel, 36, "Transformer price", true);
-  panel.getCell(36, 6).value = { formula: "IF(F35>0,VLOOKUP(F35,TxTable,2,FALSE),0)" };
+  panel.getCell(36, 6).value = { formula: "IF(F35>0,IFERROR(VLOOKUP(F35,TxTable,2,FALSE),0),0)" };
   panel.getCell(36, 6).numFmt = MONEY;
   label(panel, 37, "Primary FLA at 480V (selected TX)");
   panel.getCell(37, 6).value = { formula: "IF(F35>0,F35*1000/(480*SQRT(3)),0)" };
@@ -712,6 +789,9 @@ async function main() {
   panel.getCell(53, 1).value =
     "A $0 unit price means no catalog price for that size — add it on the RateCard before quoting.";
   panel.getCell(53, 1).font = { italic: true, size: 9, color: { argb: "FFB45309" } };
+  panel.getCell(54, 1).value =
+    "Yellow D-column cells override the auto gear size (D15 switchgear, D28 panel, D35 transformer) — the primary breaker, feeder runs on the Intake, and prices all re-derive. Clear the cell to go back to auto.";
+  panel.getCell(54, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
   panel.views = [{ state: "frozen", ySplit: 2 }];
 
   // -------------------------------------------------- Plan-set panel schedules
@@ -965,56 +1045,68 @@ async function main() {
   eLine(7, "Wire runs (Intake block) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
   eLine(9, "Trenching / asphalt cut (terrain-adjusted)", "TrenchFt*TrenchRate*VLOOKUP(Terrain,TerrainTable,2,FALSE)");
-  eLine(10, "Civil (concrete, rebar, wheel stops)", "IF(NTotal>0,CivilBase,0)+NDcfc*CivilDcfc+NumL2*CivilL2");
-  eLine(11, "Signage, striping & bollards", "NDcfc*SignageDcfc+NumL2*SignageL2");
-  eLine(12, "Accessible EVCS stalls + ramp (ADA sheet)", "AdaCost");
-  eLine(13, "Spoils haul-off / dump", "TrenchFt*VLOOKUP(Terrain,TerrainTable,5,FALSE)");
-  eLine(14, "Private utility scan (GPR)", 'IF(IncGpr="Yes",MAX(1,ROUNDUP(TrenchFt/GprFtPerDay,0))*GprDayRate,0)');
-  eLine(15, "Equipment rentals", "IF(NTotal>0,EquipBase+EquipPerDay*LaborDays,0)");
-  eLine(16, "Permit issuance (AHJ)", 'IF(IncPermits="Yes",200+60*NTotal,0)');
-  eLine(17, "Utility application + transformer pad", 'IF(IncPermits="Yes",IF(NDcfc>0,2500+TransformerPad,800),0)');
-  eLine(18, "Construction subtotal", "SUM(B7:B17)");
-  estimate.getCell(18, 1).font = { bold: true };
-  eLine(19, "Contingency", "B18*ContingencyPct");
-  eLine(20, "Construction total (loaded)", "B18+B19");
-  estimate.getCell(20, 1).font = { bold: true };
-  estimate.getCell(20, 2).font = { bold: true };
-  wb.definedNames.add("Estimate!$B$20", "ConstructionTotal");
+  // NEC 358.30: racks every 10 ft along the route (+1 end rack), one strut
+  // strap per conduit per rack ≈ one per 10 conduit-ft. Hybrid keeps the
+  // service feeders (rows 53-55) underground, so only charger runs get straps.
+  eLine(
+    10,
+    "Surface EMT supports — strut racks @ 10 ft + straps (NEC 358.30)",
+    'IF(InstallMethod="Trenched",0,(ROUNDUP(RouteFt/10,0)+1)*EmtRackCost+ROUNDUP((SUMPRODUCT(Intake!$D$47:$D$52,Intake!$F$47:$F$52)+IF(InstallMethod="Surface EMT",SUMPRODUCT(Intake!$D$53:$D$55,Intake!$F$53:$F$55),0))/10,0)*EmtStrapCost)',
+  );
+  eLine(11, "Civil (concrete, rebar, wheel stops)", "IF(NTotal>0,CivilBase,0)+NDcfc*CivilDcfc+NumL2*CivilL2");
+  eLine(12, "Signage, striping & bollards", "NDcfc*SignageDcfc+NumL2*SignageL2");
+  eLine(13, "Accessible EVCS stalls + ramp (ADA sheet)", "AdaCost");
+  eLine(14, "Spoils haul-off / dump", "TrenchFt*VLOOKUP(Terrain,TerrainTable,5,FALSE)");
+  eLine(15, "Private utility scan (GPR)", 'IF(OR(IncGpr="No",TrenchFt<=0),0,MAX(1,ROUNDUP(TrenchFt/GprFtPerDay,0))*GprDayRate)');
+  eLine(
+    16,
+    "Equipment rentals",
+    'IF(NTotal<=0,0,IF(InstallMethod="Surface EMT",EquipBaseEmt+EquipPerDayEmt*LaborDays,EquipBase+EquipPerDay*LaborDays))',
+  );
+  eLine(17, "Permit issuance (AHJ)", 'IF(IncPermits="Yes",200+60*NTotal,0)');
+  eLine(18, "Utility application + transformer pad", 'IF(IncPermits="Yes",IF(NDcfc>0,2500+TransformerPad,800),0)');
+  eLine(19, "Construction subtotal", "SUM(B7:B18)");
+  estimate.getCell(19, 1).font = { bold: true };
+  eLine(20, "Contingency", "B19*ContingencyPct");
+  eLine(21, "Construction total (loaded)", "B19+B20");
+  estimate.getCell(21, 1).font = { bold: true };
+  estimate.getCell(21, 2).font = { bold: true };
+  wb.definedNames.add("Estimate!$B$21", "ConstructionTotal");
 
-  eLine(22, "Labor (breakdown total, contingency-loaded)", "LaborBase*(1+ContingencyPct)");
-  wb.definedNames.add("Estimate!$B$22", "LaborCost");
-  eLine(23, "Sales tax on construction", "ConstructionTotal*TaxPct");
-  eLine(24, "Permit valuation (construction + labor)", "ConstructionTotal+LaborCost");
-  estimate.getCell(24, 1).font = { italic: true, size: 9 };
-  wb.definedNames.add("Estimate!$B$24", "Valuation");
+  eLine(23, "Labor (breakdown total, contingency-loaded)", "LaborBase*(1+ContingencyPct)");
+  wb.definedNames.add("Estimate!$B$23", "LaborCost");
+  eLine(24, "Sales tax on construction", "ConstructionTotal*TaxPct");
+  eLine(25, "Permit valuation (construction + labor)", "ConstructionTotal+LaborCost");
+  estimate.getCell(25, 1).font = { italic: true, size: 9 };
+  wb.definedNames.add("Estimate!$B$25", "Valuation");
 
-  eHeader(26, "Equipment purchase invoice");
-  eLine(27, "Charger hardware (RateCard × price factor)", `IF(IncHardware="Yes",SUM(Intake!F${CH_FIRST}:F${CH_LAST})*HardwareFactor,0)`);
-  eLine(28, "Commissioning", 'IF(IncHardware="Yes",CommDcfc*NDcfc+CommL2*NumL2,0)');
-  eLine(29, "Network (EVOLV) fees — ports × $/mo × contract", 'IF(IncHardware="Yes",NPorts*NetworkFeeMo*12*ContractYears,0)');
-  eLine(30, "Service plan over contract (post-warranty years)", 'IF(IncHardware="Yes",ServicePlanYr*ContractYears,0)');
-  eLine(31, "Sales tax on charger hardware", "B27*TaxPct");
+  eHeader(27, "Equipment purchase invoice");
+  eLine(28, "Charger hardware (RateCard × price factor)", `IF(IncHardware="Yes",SUM(Intake!F${CH_FIRST}:F${CH_LAST})*HardwareFactor,0)`);
+  eLine(29, "Commissioning", 'IF(IncHardware="Yes",CommDcfc*NDcfc+CommL2*NumL2,0)');
+  eLine(30, "Network (EVOLV) fees — ports × $/mo × contract", 'IF(IncHardware="Yes",NPorts*NetworkFeeMo*12*ContractYears,0)');
+  eLine(31, "Service plan over contract (post-warranty years)", 'IF(IncHardware="Yes",ServicePlanYr*ContractYears,0)');
+  eLine(32, "Sales tax on charger hardware", "B28*TaxPct");
 
-  eHeader(33, "Design invoice");
-  eLine(34, "Site plan design (AutoCAD)", 'IF(IncSitePlan="Yes",2500+150*NTotal+IF(NDcfc>0,1000,0),0)');
-  eLine(35, "SLD / electrical engineering (PE)", 'IF(IncSLD="Yes",IF(NDcfc>0,6000+900*NDcfc+150*NumL2,2500+150*NumL2),0)');
-  estimate.getCell(36, 3).value = { formula: 'IF(IncCpm="Yes",MAX(24,ROUND(CpmPct*Valuation/PmRate,0)),0)' };
-  estimate.getCell(36, 3).numFmt = "0";
-  eLine(36, "Construction PM — hours in col C", "C36*PmRate");
-  eLine(37, "Plan check (AHJ, % of valuation for DCFC)", 'IF(IncPermits="Yes",IF(NDcfc>0,500+0.02*Valuation,300),0)');
-  eLine(38, "Design subtotal", "SUM(B34:B37)");
-  estimate.getCell(38, 1).font = { bold: true };
+  eHeader(34, "Design invoice");
+  eLine(35, "Site plan design (AutoCAD)", 'IF(IncSitePlan="Yes",2500+150*NTotal+IF(NDcfc>0,1000,0),0)');
+  eLine(36, "SLD / electrical engineering (PE)", 'IF(IncSLD="Yes",IF(NDcfc>0,6000+900*NDcfc+150*NumL2,2500+150*NumL2),0)');
+  estimate.getCell(37, 3).value = { formula: 'IF(IncCpm="Yes",MAX(24,ROUND(CpmPct*Valuation/PmRate,0)),0)' };
+  estimate.getCell(37, 3).numFmt = "0";
+  eLine(37, "Construction PM — hours in col C", "C37*PmRate");
+  eLine(38, "Plan check (AHJ, % of valuation for DCFC)", 'IF(IncPermits="Yes",IF(NDcfc>0,500+0.02*Valuation,300),0)');
+  eLine(39, "Design subtotal", "SUM(B35:B38)");
+  estimate.getCell(39, 1).font = { bold: true };
 
-  eLine(40, "TOTAL PROJECT COST", "ConstructionTotal+LaborCost+B23+B27+B28+B29+B30+B31+B38");
-  estimate.getCell(40, 1).font = { bold: true, size: 14 };
-  estimate.getCell(40, 2).font = { bold: true, size: 14 };
-  estimate.getCell(40, 2).fill = HEADER_FILL;
-  wb.definedNames.add("Estimate!$B$40", "TotalCost");
-  eLine(41, "Less: rebates / incentives (CALeVIP etc.)", "-RebateAmt");
-  eLine(42, "CUSTOMER TOTAL (after rebate)", "TotalCost-RebateAmt");
-  estimate.getCell(42, 1).font = { bold: true, size: 12 };
-  estimate.getCell(42, 2).font = { bold: true, size: 12 };
-  wb.definedNames.add("Estimate!$B$42", "CustomerTotal");
+  eLine(41, "TOTAL PROJECT COST", "ConstructionTotal+LaborCost+B24+B28+B29+B30+B31+B32+B39");
+  estimate.getCell(41, 1).font = { bold: true, size: 14 };
+  estimate.getCell(41, 2).font = { bold: true, size: 14 };
+  estimate.getCell(41, 2).fill = HEADER_FILL;
+  wb.definedNames.add("Estimate!$B$41", "TotalCost");
+  eLine(42, "Less: rebates / incentives (CALeVIP etc.)", "-RebateAmt");
+  eLine(43, "CUSTOMER TOTAL (after rebate)", "TotalCost-RebateAmt");
+  estimate.getCell(43, 1).font = { bold: true, size: 12 };
+  estimate.getCell(43, 2).font = { bold: true, size: 12 };
+  wb.definedNames.add("Estimate!$B$43", "CustomerTotal");
   estimate.views = [{ state: "frozen", ySplit: 2 }];
 
   // ------------------------------------------------------------ Costs Internal
@@ -1024,17 +1116,17 @@ async function main() {
   // G20 to the permit Valuation.
   fillCostsInternal(costsInternal, {
     lines: [
-      { formula: "Estimate!B7" }, // Wires, Conduits and Peripherals ← make-ready
+      { formula: "Estimate!B7+Estimate!B10" }, // Wires, Conduits and Peripherals ← make-ready + EMT strut supports
       { formula: "Panel!F16" }, // Main Distribution Switchgear
       { formula: "Panel!F30+Panel!F36+Panel!F49" }, // Sub-panels, transformers, breakers
-      { formula: "Estimate!B11" }, // Bollards, Signage ← signage/striping/bollards
+      { formula: "Estimate!B12" }, // Bollards, Signage ← signage/striping/bollards
       { formula: "Estimate!B9" }, // Asphalt, Paving, and Striping ← trenching
-      { formula: "Estimate!B10" }, // Concrete Improvements ← civil
-      { formula: "Estimate!B12" }, // ADA
-      { formula: "Estimate!B13" }, // Dump/ Waste ← spoils haul-off
-      { formula: "Estimate!B16" }, // Permits ← AHJ issuance
-      { formula: "Estimate!B17+Estimate!B14" }, // Utility ← application + pad + GPR scan
-      { formula: "Estimate!B15" }, // Construction Equipment ← rentals
+      { formula: "Estimate!B11" }, // Concrete Improvements ← civil
+      { formula: "Estimate!B13" }, // ADA
+      { formula: "Estimate!B14" }, // Dump/ Waste ← spoils haul-off
+      { formula: "Estimate!B17" }, // Permits ← AHJ issuance
+      { formula: "Estimate!B18+Estimate!B15" }, // Utility ← application + pad + GPR scan
+      { formula: "Estimate!B16" }, // Construction Equipment ← rentals
     ],
     contingency: { formula: "ContingencyPct" },
     laborContingency: { formula: "ContingencyPct" },
@@ -1042,32 +1134,51 @@ async function main() {
     // sheet's rate × days × contingency chain still equals LaborBase loaded.
     dailyRate: { formula: "IF(LaborDays>0,LaborBase/LaborDays,0)" },
     businessDays: { formula: "LaborDays" },
-    // Design invoice minus the AHJ plan check (B37, permitting-side):
+    // Design invoice minus the AHJ plan check (B38, permitting-side):
     // site plan + SLD + CPM hours × rate.
-    constructionPm: { formula: "Estimate!B34+Estimate!B35+Estimate!B36" },
+    constructionPm: { formula: "Estimate!B35+Estimate!B36+Estimate!B37" },
   });
 
   // ------------------------------------------------------------------ ADA
-  [40, 16, 60].forEach((w, i) => (ada.getColumn(i + 1).width = w));
-  ada.getCell("A1").value = "Accessible EVCS — CBC 11B-812 (auto from Intake)";
+  // CBC 11B-228.3.2: "Each combination of charging level and EV connector
+  // type … shall be considered as a facility" — the table runs separately
+  // for L2 and DCFC, then the site total is the SUM of the two lookups.
+  [34, 12, 10, 12, 12, 10, 40].forEach((w, i) => (ada.getColumn(i + 1).width = w));
+  ada.getCell("A1").value = "Accessible EVCS — CBC 11B-228.3 / 11B-812 (auto from Intake)";
   ada.getCell("A1").font = { bold: true, size: 13 };
-  label(ada, 3, "Total chargers (from Intake)");
-  ada.getCell(3, 2).value = { formula: "NTotal" };
-  label(ada, 4, "Van accessible (12 ft + 5 ft aisle)");
-  ada.getCell(4, 2).value = { formula: "IF(NTotal<=0,0,IF(NTotal<=100,1,1+ROUNDUP((NTotal-100)/300,0)))" };
-  label(ada, 5, "Standard accessible (9 ft + 5 ft aisle)");
-  ada.getCell(5, 2).value = {
-    formula: "IF(NTotal<=4,0,IF(NTotal<=50,1,IF(NTotal<=75,2,IF(NTotal<=100,3,3+ROUNDUP((NTotal-100)/60,0)))))",
+  ada.getCell("A2").value =
+    "Each charging level (L2, DCFC) counts as its own facility per 11B-228.3.2 — the table below runs once per level, then sums.";
+  ada.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
+
+  head(ada, 3, ["Facility (charging level)", "Chargers", "Van", "Standard", "Ambulatory", "Total"]);
+  const adaLevel = (row: number, name: string, countFormula: string) => {
+    ada.getCell(row, 1).value = name;
+    ada.getCell(row, 2).value = { formula: countFormula };
+    ada.getCell(row, 3).value = {
+      formula: `IF($B$${row}<=0,0,IF($B$${row}<=100,1,1+ROUNDUP(($B$${row}-100)/300,0)))`,
+    };
+    ada.getCell(row, 4).value = {
+      formula: `IF($B$${row}<=4,0,IF($B$${row}<=50,1,IF($B$${row}<=75,2,IF($B$${row}<=100,3,3+ROUNDUP(($B$${row}-100)/60,0)))))`,
+    };
+    ada.getCell(row, 5).value = {
+      formula: `IF($B$${row}<=25,0,IF($B$${row}<=50,1,IF($B$${row}<=75,2,IF($B$${row}<=100,3,3+ROUNDUP(($B$${row}-100)/50,0)))))`,
+    };
+    ada.getCell(row, 6).value = { formula: `C${row}+D${row}+E${row}` };
   };
-  label(ada, 6, "Ambulatory (10 ft, no aisle)");
-  ada.getCell(6, 2).value = {
-    formula: "IF(NTotal<=25,0,IF(NTotal<=50,1,IF(NTotal<=75,2,IF(NTotal<=100,3,3+ROUNDUP((NTotal-100)/50,0)))))",
-  };
-  wb.definedNames.add("ADA!$B$4", "AdaVan");
-  wb.definedNames.add("ADA!$B$5", "AdaStd");
-  wb.definedNames.add("ADA!$B$6", "AdaAmb");
-  label(ada, 7, "Total accessible stalls", true);
-  ada.getCell(7, 2).value = { formula: "AdaVan+AdaStd+AdaAmb" };
+  adaLevel(4, "Level 2 (208/240V AC)", "NumL2");
+  adaLevel(5, "Level 3 / DCFC", "NDcfc");
+  ada.getCell(6, 1).value = "SITE TOTAL (sum of facilities)";
+  ada.getCell(6, 1).font = { bold: true };
+  ada.getCell(6, 2).value = { formula: "NTotal" };
+  ada.getCell(6, 3).value = { formula: "C4+C5" };
+  ada.getCell(6, 4).value = { formula: "D4+D5" };
+  ada.getCell(6, 5).value = { formula: "E4+E5" };
+  ada.getCell(6, 6).value = { formula: "C6+D6+E6" };
+  for (let c = 2; c <= 6; c++) ada.getCell(6, c).font = { bold: true };
+  wb.definedNames.add("ADA!$C$6", "AdaVan");
+  wb.definedNames.add("ADA!$D$6", "AdaStd");
+  wb.definedNames.add("ADA!$E$6", "AdaAmb");
+
   label(ada, 9, "Terrain regrade factor (2% slope rule)");
   ada.getCell(9, 2).value = { formula: "VLOOKUP(Terrain,TerrainTable,4,FALSE)" };
   label(ada, 10, "ADA construction cost", true);
@@ -1078,10 +1189,11 @@ async function main() {
   ada.getCell(10, 2).numFmt = MONEY;
   wb.definedNames.add("ADA!$B$10", "AdaCost");
 
-  ada.getCell(13, 1).value = "CBC Table 11B-228.3.2.1 (2022 CBC — van divisor is 300; verify with your AHJ):";
+  ada.getCell(13, 1).value =
+    "CBC Table 11B-228.3.2.1 — applied PER FACILITY (per charging level), not to the combined count (van divisor 300 per 2022/2025 CBC; verify with your AHJ):";
   ada.getCell(13, 1).font = { bold: true };
   const codeTable = [
-    ["Total EVCS", "Van", "Standard", "Ambulatory"],
+    ["EVCS per facility", "Van", "Standard", "Ambulatory"],
     ["1 – 4", "1", "0", "0"],
     ["5 – 25", "1", "1", "0"],
     ["26 – 50", "1", "1", "1"],
@@ -1101,9 +1213,10 @@ async function main() {
     });
   });
   [
+    "11B-228.3.2: each charging level AND connector type is a separate facility — mixing CCS + NACS on one power level can add facilities; verify with the AHJ.",
     "Slope ≤ 2% in every direction under stalls and aisles — regrading is the big cost on sloped lots.",
     "EVCS markings must NOT be blue (11B-812.9); stencil 'EV CHARGING ONLY' in 12-in letters.",
-    "ISA signs: none if ≤4 EVCS; van space only for 5-25; all van + standard for 26+. Never on ambulatory.",
+    "ISA signs (per facility): none if ≤4 EVCS; van space only for 5-25; all van + standard for 26+. Never on ambulatory.",
     "Accessible EVCS do NOT count toward regular ADA parking minimums (11B-208.1).",
     "Charger operable parts must sit 15-48 in from grade with 30×48 in clear floor space.",
   ].forEach((n, i) => {
@@ -1148,6 +1261,12 @@ async function main() {
     ["   Defaults auto-fill from the model and site distances; overtyping a yellow cell replaces its default formula. On long DCFC or", false],
     ["   feeder runs, extra parallel runs split the amps so each set can use smaller wire — often cheaper than one fat conductor.", false],
     ["   LABOR BREAKDOWN: itemize by role/phase (foreman, crew, flagger…); the total feeds the estimate, contingency-loaded.", false],
+    ["   INSTALL METHOD (Intake B40): 'Trenched' = underground PVC (the classic outdoor lot). 'Surface EMT' = garage install on", false],
+    ["   strut trapeze racks every 10 ft (NEC 358.30) — zero trenching, racks/straps priced on the Estimate, install allowance", false],
+    ["   switches to the EMT column, dig-gear rentals swap for a scissor lift. 'Hybrid' = chargers in EMT inside the structure,", false],
+    ["   trench only the utility → switchgear service section (feeder lengths, rows 53-55).", false],
+    ["   PANEL SHEET OVERRIDES: type a size in the yellow D-cells (D15 switchgear, D28 panel, D35 transformer) to force gear one", false],
+    ["   frame up/down — the primary breaker, Intake feeder runs and prices all re-derive. Clear the cell to go back to auto.", false],
     ["3. Every price lives on the RateCard (yellow) — hardware, install allowance, gear catalog, wire $/ft (incl. 450 kcmil Cu & Al),", false],
     ["   labor, tax, contingency. Change there, everything follows.", false],
     ["4. Costs Internal shows the estimate in the RFC_V18 layout (cell-for-cell Hoopa D-00025). Panel 480V / 208V are plan-set", false],
@@ -1165,7 +1284,10 @@ async function main() {
     ["KEY ASSUMPTIONS (2025-26 CA market, sources on file)", true],
     ["• Buses, breakers and the transformer size at 125% of connected input amps (NEC 625 continuous loads), matching the app.", false],
     ["• Terrain multipliers: trenching ×1.2 sloped / ×1.5 hilly / ×2.5 rocky; ADA regrade ×1.4/×1.7/×1.8 (2% slope rule). Solid rock: quote.", false],
-    ["• ADA per CBC 11B-812: van $6.5k, standard $4.9k (shop bid rate), ambulatory $3.5k flat-lot, ramp $5.2k. Markings must NOT be blue.", false],
+    ["• ADA per CBC 11B-228.3: L2 and DCFC count as SEPARATE facilities — the stall table runs once per level, then sums (see ADA sheet).", false],
+    ["• ADA stall rates: van $6.5k, standard $4.9k (shop bid rate), ambulatory $3.5k flat-lot, ramp $5.2k. Markings must NOT be blue.", false],
+    ["• Surface EMT: strut trapeze $28 + $3.25/strap per pipe per rack (every 10 ft, NEC 358.30); EMT hangs ~100 route-ft/crew-day.", false],
+    ["   Open-air decks are damp/wet locations — swap set-screw fittings for listed raintight compression (≈2-3× price) per 358.42.", false],
     ["• Permits: L2-only = streamlined flat fees (AB 1236); DCFC = plan check ≈ 2% of construction valuation + issuance + utility fees.", false],
     ["• Design: site plan $2.5k + $150/charger (+$1k DCFC); SLD $6k + $900/DCFC + $150/L2 (PE). CPM = 5% of construction at $358/h.", false],
     ["• 450 kcmil: ampacity and the Al $/ft are interpolated (not NEC 310.16 / not on the vendor list) — verify before quoting.", false],
@@ -1213,6 +1335,21 @@ async function main() {
     );
   }
 
+  // Surface-EMT sanity: engine must zero the trench and carry strut racks.
+  {
+    const p = buildQuickProject(
+      bareInput({ lines: [{ loadTypeId: "L2 Dual 40A", count: 8 }], installMethod: "surface" }),
+      defaultProject(),
+      "chk",
+    );
+    const r = computeEstimate(p);
+    const racks = r.peripherals.lines.hardware.find((h) => h.name.startsWith("Strut trapeze"))?.qty ?? 0;
+    const ok = r.peripherals.asphaltTrenching === 0 && racks > 0 && p.setup.conduitType === "EMT";
+    console.log(
+      `${ok ? "PASS" : "FAIL"} surface EMT: trench $${r.peripherals.asphaltTrenching}, ${racks} strut racks, conduit ${p.setup.conduitType}`,
+    );
+  }
+
   // Mirror the Estimate chain for the default intake vs the app (which has no
   // network-fee line — add it to the app side so the comparison is apples-to-apples).
   const appProject = buildQuickProject({ ...defaultQuickInput(), terrain: "flat" }, defaultProject(), "chk");
@@ -1252,7 +1389,8 @@ async function main() {
   const install =
     6 * models.find((m) => m.lt.id === "DCFC 200kW")!.install +
     5 * models.find((m) => m.lt.id === "L2 Single 40A")!.install;
-  const adaCost = (ADA_UNIT_COST.van + ADA_UNIT_COST.standard) * t.adaRegradeFactor + ADA_UNIT_COST.ramp;
+  // Per-level ADA (CBC 11B-228.3.2): 6 DCFC → 1 van + 1 std; 5 L2 → 1 van + 1 std.
+  const adaCost = (2 * ADA_UNIT_COST.van + 2 * ADA_UNIT_COST.standard) * t.adaRegradeFactor + ADA_UNIT_COST.ramp;
   const constr =
     install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor +
     Math.round(CIVIL_BASE) + nD * dcfcCal.civil + nL * l2Cal.civil +

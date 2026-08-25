@@ -8,15 +8,19 @@
 // (2025-26 US / California market) meant to be overridden with real quotes.
 
 import { computeEstimate } from "./engine";
+import { INSTALL_METHOD_INFO, SURFACE_FT_PER_CREW_DAY, effectiveInstallMethod } from "./install";
 import { generateTakeoffRows } from "./quickstart";
 import { findLoadType } from "./tables";
 import type {
   EstimateResult,
+  InstallMethod,
   LoadType,
   Project,
   QuickEstimateInput,
   Terrain,
 } from "./types";
+
+export { INSTALL_METHOD_INFO } from "./install";
 
 // ---------------------------------------------------------------------------
 // Terrain
@@ -115,6 +119,33 @@ export function adaStallBreakdown(nChargers: number): AdaBreakdown {
 /** Total accessible EVCS required (sum of all three 11B-812 types). */
 export function adaStallCount(nChargers: number): number {
   return adaStallBreakdown(nChargers).total;
+}
+
+/**
+ * CBC 11B-228.3.2: "Each combination of charging level … shall be considered
+ * as a facility" — the table applies to L2 and DCFC (and L1) SEPARATELY,
+ * then the site total is the sum. 10 L2 + 4 DCFC therefore needs 2 van + 1
+ * standard (one lookup per level), not the single combined-14 lookup.
+ * Strictly each connector type is its own facility too — sites mixing CCS
+ * and NACS on the same power level should verify with the AHJ.
+ */
+export function adaStallBreakdownByLevel(nL2: number, nDCFC: number): {
+  l2: AdaBreakdown;
+  dcfc: AdaBreakdown;
+  combined: AdaBreakdown;
+} {
+  const l2 = adaStallBreakdown(nL2);
+  const dcfc = adaStallBreakdown(nDCFC);
+  return {
+    l2,
+    dcfc,
+    combined: {
+      van: l2.van + dcfc.van,
+      standard: l2.standard + dcfc.standard,
+      ambulatory: l2.ambulatory + dcfc.ambulatory,
+      total: l2.total + dcfc.total,
+    },
+  };
 }
 
 /** Default per-stall construction allowances by type on a FLAT lot (striping,
@@ -223,30 +254,60 @@ export function countChargers(input: QuickEstimateInput, loadTypes: LoadType[]):
 }
 
 /**
- * Trench length: one leg per charger level, each running from the power
- * source to its own bank (RunFtDcfc / RunFtL2 in the RFC template).
+ * Conduit route length: one leg per charger level, each running from the
+ * power source to its own bank (RunFtDcfc / RunFtL2 in the RFC template).
+ * On a trenched job this is the trench; on a surface-EMT job it is the
+ * ceiling rack the strut supports follow.
  */
-export function trenchLengthFt(input: QuickEstimateInput, counts: ChargerCounts): number {
+export function routeLengthFt(input: QuickEstimateInput, counts: ChargerCounts): number {
   const dcfcLeg = counts.nDCFC > 0 ? input.firstRunFtDcfc + input.stepFt * (counts.nDCFC - 1) : 0;
   const l2Leg = counts.nL2 > 0 ? input.firstRunFtL2 + input.stepFt * (counts.nL2 - 1) : 0;
   return dcfcLeg + l2Leg;
 }
 
-/** Backfills the split distance fields on projects saved before the L2/L3 split. */
-export function normalizeQuickInput(q: QuickEstimateInput): QuickEstimateInput {
+/** @deprecated renamed routeLengthFt — kept for older imports. */
+export const trenchLengthFt = routeLengthFt;
+
+/**
+ * Footage that actually gets dug, by install method: the whole route when
+ * trenched, nothing for surface EMT, and just the service section (utility →
+ * switchgear → transformer pads, from the service-chain distances) on a hybrid.
+ */
+export function trenchedFt(method: InstallMethod, routeFt: number, serviceFt: number): number {
+  return method === "trench" ? routeFt : method === "hybrid" ? serviceFt : 0;
+}
+
+/**
+ * Backfills fields added after older projects were saved (split distances,
+ * install method). Pass the project's Setup so a legacy save keeps its
+ * meaning: EMT conduit implied a no-dig surface install — backfilling those
+ * as "trench" would turn a garage job into a dig job on the next rebuild.
+ */
+export function normalizeQuickInput(q: QuickEstimateInput, setup?: Project["setup"]): QuickEstimateInput {
   const legacy = (q as QuickEstimateInput & { firstRunFt?: number }).firstRunFt;
   return {
     ...q,
     firstRunFtDcfc: q.firstRunFtDcfc ?? legacy ?? 100,
     firstRunFtL2: q.firstRunFtL2 ?? legacy ?? 100,
+    installMethod: q.installMethod ?? (setup ? effectiveInstallMethod(setup) : "trench"),
   };
 }
 
-/** Crew-days: mobilization + per-charger install + trench production, terrain-adjusted. */
-export function estimateLaborDays(counts: ChargerCounts, trenchFt: number, terrain: Terrain): number {
+/**
+ * Crew-days: mobilization + per-charger install + route production,
+ * terrain-adjusted. Trenching digs ~40 ft/day; overhead EMT on strut racks
+ * hangs ~100 route-ft/day (NECA labor units, incl. trapezes) and skips the
+ * terrain labor factor — the garage floor is flat regardless of the lot.
+ */
+export function estimateLaborDays(
+  counts: ChargerCounts,
+  trenchFt: number,
+  terrain: Terrain,
+  surfaceFt = 0,
+): number {
   if (counts.nChargers === 0) return 0;
   const base = 8 + 2.5 * counts.nDCFC + 1.0 * counts.nL2 + trenchFt / 40;
-  return Math.ceil(base * TERRAIN_INFO[terrain].laborFactor);
+  return Math.ceil(base * TERRAIN_INFO[terrain].laborFactor + surfaceFt / SURFACE_FT_PER_CREW_DAY);
 }
 
 export function sitePlanFee(counts: ChargerCounts): number {
@@ -292,6 +353,7 @@ export function defaultQuickInput(): QuickEstimateInput {
     firstRunFtL2: 100,
     stepFt: 15,
     terrain: "flat",
+    installMethod: "trench",
     includeChargerHardware: true,
     includeSitePlanDesign: true,
     includeSldDesign: true,
@@ -314,14 +376,35 @@ export function buildQuickProject(
   idSeed = "qs",
 ): Project {
   const p: Project = JSON.parse(JSON.stringify(base));
-  input = normalizeQuickInput(input);
+  input = normalizeQuickInput(input, base.setup);
   p.quick = { ...input, lines: input.lines.map((l) => ({ ...l })) };
 
   const counts = countChargers(input, p.loadTypes);
   const terrain = TERRAIN_INFO[input.terrain];
-  const trenchFt = trenchLengthFt(input, counts);
-  const laborDays = estimateLaborDays(counts, trenchFt, input.terrain);
-  const ada = adaStallBreakdown(counts.nChargers);
+  const method: InstallMethod = input.installMethod ?? "trench";
+  const routeFt = routeLengthFt(input, counts);
+  const chainCfg = {
+    enabled: true,
+    material: p.setup.serviceChain?.material ?? ("Al" as const),
+    utilityToSwitchgearFt: p.setup.serviceChain?.utilityToSwitchgearFt ?? 25,
+    switchgearToTransformerFt: p.setup.serviceChain?.switchgearToTransformerFt ?? 15,
+    transformerToSubpanelFt: p.setup.serviceChain?.transformerToSubpanelFt ?? 15,
+  };
+  // Hybrid digs only the service section. The step-down TX and 208V
+  // sub-panel legs exist only on mixed-voltage sites (chain.ts builds them
+  // when both levels are present) — single-voltage sites dig just the
+  // utility-to-gear leg.
+  const mixedVoltage = counts.nDCFC > 0 && counts.nL2 > 0;
+  const serviceFt =
+    counts.nChargers === 0
+      ? 0
+      : chainCfg.utilityToSwitchgearFt +
+        (mixedVoltage ? chainCfg.switchgearToTransformerFt + chainCfg.transformerToSubpanelFt : 0);
+  const trenchFt = trenchedFt(method, routeFt, serviceFt);
+  const surfaceFt = method === "trench" ? 0 : routeFt;
+  const laborDays = estimateLaborDays(counts, trenchFt, input.terrain, surfaceFt);
+  // CBC 11B-228.3.2: L2 and DCFC are separate "facilities" — table applied per level, then summed.
+  const ada = adaStallBreakdownByLevel(counts.nL2, counts.nDCFC).combined;
 
   // --- Takeoff + service chain + auto gear -------------------------------
   // Each level runs its own distance ladder from its own first-run input:
@@ -337,17 +420,14 @@ export function buildQuickProject(
     ...p.setup,
     clientName: input.clientName,
     siteAddress: input.siteAddress,
-    scopeOfWork: scopeText(input, p.loadTypes),
+    scopeOfWork: scopeText(input, p.loadTypes, trenchFt > 0),
+    conduitType: method === "trench" ? "PVC" : "EMT",
+    installMethod: method,
+    surfaceRouteFt: surfaceFt,
     trenchLengthFt: trenchFt,
     terrain: input.terrain,
     trenchCostMultiplier: terrain.trenchFactor,
-    serviceChain: {
-      enabled: true,
-      material: p.setup.serviceChain?.material ?? "Al",
-      utilityToSwitchgearFt: p.setup.serviceChain?.utilityToSwitchgearFt ?? 25,
-      switchgearToTransformerFt: p.setup.serviceChain?.switchgearToTransformerFt ?? 15,
-      transformerToSubpanelFt: p.setup.serviceChain?.transformerToSubpanelFt ?? 15,
-    },
+    serviceChain: chainCfg,
   };
 
   // --- Civil / peripherals -------------------------------------------------
@@ -364,6 +444,9 @@ export function buildQuickProject(
     bollardsQty: counts.nDCFC * 4,
     dataBoxQty: counts.nChargers > 0 ? 1 : 0,
     christyBoxQty: trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / 200)) : 0,
+    // Surface EMT needs a pull point roughly every 100 ft (NEC 358.26 caps
+    // bends at 360° between pull points) instead of in-ground Christy boxes.
+    junctionBoxQty: surfaceFt > 0 ? Math.ceil(surfaceFt / 100) : p.peripherals.junctionBoxQty,
     adaQtyOverride: undefined, // per-type path below wins
     adaVanQty: ada.van,
     adaStdQty: ada.standard,
@@ -387,25 +470,45 @@ export function buildQuickProject(
   };
 
   // --- Equipment durations -------------------------------------------------
-  const trenchDays = trenchFt > 0 ? Math.ceil((trenchFt / 80) * terrain.trenchFactor) : 0;
+  // Dig gear follows the trenched footage (zero on a pure surface job, just
+  // the service section on a hybrid); surface installs swap in a scissor
+  // lift for the ceiling rack work instead.
+  const digging = trenchFt > 0;
+  const trenchDays = digging ? Math.ceil((trenchFt / 80) * terrain.trenchFactor) : 0;
   const siteMonths = Math.max(1, Math.ceil(laborDays / 22));
+  const liftMonths = surfaceFt > 0 ? Math.max(1, Math.ceil(surfaceFt / SURFACE_FT_PER_CREW_DAY / 22)) : 0;
   p.equipment = p.equipment.map((item) => {
     switch (item.name) {
       case "Mini excavator":
+        return { ...item, qty: digging ? 1 : 0, durationValue: digging ? siteMonths : 0 };
       case "Storage container":
       case "Portable restroom":
         return { ...item, qty: 1, durationValue: siteMonths };
+      case "Scissor lift":
+        return { ...item, qty: surfaceFt > 0 ? 1 : 0, durationValue: Math.max(liftMonths, surfaceFt > 0 ? 1 : 0) };
       case "Saw cutter":
       case "Compactor":
-        return { ...item, qty: 1, durationValue: Math.max(1, trenchDays) };
+        return { ...item, qty: digging ? 1 : 0, durationValue: Math.max(digging ? 1 : 0, trenchDays) };
       case "Jack hammer":
-        return { ...item, qty: 1, durationValue: input.terrain === "rocky" ? Math.max(2, trenchDays) : 1 };
+        return { ...item, qty: digging ? 1 : 0, durationValue: digging ? (input.terrain === "rocky" ? Math.max(2, trenchDays) : 1) : 0 };
       case "Dump truck":
-        return { ...item, qty: input.terrain === "hilly" || input.terrain === "rocky" ? 1 : item.qty, durationValue: Math.max(1, Math.ceil(trenchDays / 2)) };
+        return { ...item, qty: digging && (input.terrain === "hilly" || input.terrain === "rocky") ? 1 : digging ? item.qty : 0, durationValue: Math.max(digging ? 1 : 0, Math.ceil(trenchDays / 2)) };
       default:
         return item;
     }
   });
+  // Older saved projects predate the Scissor lift default — add it when the
+  // install needs one and the list doesn't carry it.
+  if (surfaceFt > 0 && !p.equipment.some((e) => e.name === "Scissor lift")) {
+    p.equipment.push({
+      name: "Scissor lift",
+      qty: 1,
+      rate: 1150,
+      rateBasis: "per month",
+      durationValue: Math.max(1, liftMonths),
+      delivery: 150,
+    });
+  }
 
   // --- Design invoice, hardware, labor ------------------------------------
   const hardwareCost = input.includeChargerHardware
@@ -452,7 +555,7 @@ export function buildQuickProject(
   return p;
 }
 
-function scopeText(input: QuickEstimateInput, loadTypes: LoadType[]): string {
+function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: boolean): string {
   const parts = input.lines
     .filter((l) => l.count > 0 && findLoadType(loadTypes, l.loadTypeId))
     .map((l) => `${l.count} × ${l.loadTypeId}`);
@@ -461,9 +564,11 @@ function scopeText(input: QuickEstimateInput, loadTypes: LoadType[]): string {
   if (input.includeSitePlanDesign) services.push("site plan design");
   if (input.includeSldDesign) services.push("SLD/electrical design");
   if (input.includePermits) services.push("permitting");
-  if (input.includePrivateScan) services.push("private utility scan");
+  // A GPR scan only exists where something gets dug — surface-EMT builds never price one.
+  if (input.includePrivateScan && hasTrench) services.push("private utility scan");
   if (input.includeCpm) services.push("construction PM");
-  return `Turnkey EVCS install: ${parts.join(" + ")} on a ${TERRAIN_INFO[input.terrain].label.toLowerCase()}${
+  const method = INSTALL_METHOD_INFO[input.installMethod ?? "trench"];
+  return `Turnkey EVCS install: ${parts.join(" + ")} on a ${TERRAIN_INFO[input.terrain].label.toLowerCase()}, ${method.label.toLowerCase()}${
     services.length ? `, incl. ${services.join(", ")}` : ""
   }.`;
 }

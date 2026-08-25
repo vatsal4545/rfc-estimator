@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultProject } from "../defaults";
 import { computeEstimate } from "../engine";
+import { GEAR_CATALOG } from "../tables";
 import type { Project } from "../types";
 
 // Replay of the real "L-11101 VN Village Center" workbook: 6x DCFC 100kW at
@@ -50,7 +51,11 @@ describe("VN Village Center replay (real project)", () => {
   it("prices the 1000A switchgear from the catalog, not the re-typed $36,813", () => {
     const sg = project.peripherals.gear[0];
     expect(sg.size).toBe("1000A");
-    expect(r.peripherals.gearMainSwitchgear).toBeCloseTo(36812.5, 2);
+    const catalog = GEAR_CATALOG.find(
+      (g) => g.item === "Main switchgear" && g.size === "1000A" && g.voltage === "480V",
+    )!;
+    expect(r.peripherals.gearMainSwitchgear).toBeCloseTo(catalog.unitCost, 2);
+    expect(r.peripherals.gearMainSwitchgear).not.toBeCloseTo(36813, 0);
   });
 
   it("suggests the same 1000A switchgear their INPUT SHEET recorded", () => {

@@ -5,8 +5,9 @@ import {
   ADA_UNIT_COST,
   GPR_ITEM_NAME,
   HARDWARE_ALLOWANCE,
+  INSTALL_METHOD_INFO,
   TERRAIN_INFO,
-  adaStallBreakdown,
+  adaStallBreakdownByLevel,
   buildQuickProject,
   countChargers,
   defaultQuickInput,
@@ -14,7 +15,8 @@ import {
   estimateTimeline,
   timelineTotal,
 } from "@/lib/calc/autoplan";
-import type { QuickEstimateInput, Terrain } from "@/lib/calc/types";
+import { effectiveInstallMethod, surfaceRouteFt } from "@/lib/calc/install";
+import type { InstallMethod, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
 import { newId } from "@/lib/id";
 import { useProject } from "./ProjectContext";
@@ -42,9 +44,9 @@ const SERVICE_TOGGLES: {
 ];
 
 export function QuickEstimateTab() {
-  const { project, setProject, result } = useProject();
+  const { project, setProject } = useProject();
   const [input, setInput] = useState<QuickEstimateInput>(
-    () => (project.quick ? normalizeQuickInput(project.quick) : defaultQuickInput()),
+    () => (project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput()),
   );
 
   const chargerModels = project.loadTypes.filter((lt) => lt.category !== "Feeder");
@@ -138,6 +140,36 @@ export function QuickEstimateTab() {
           </Field>
         </div>
         <div className="mb-5">
+          <div className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">Installation method</div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {(Object.keys(INSTALL_METHOD_INFO) as InstallMethod[]).map((m) => {
+              const info = INSTALL_METHOD_INFO[m];
+              const active = (input.installMethod ?? "trench") === m;
+              return (
+                <button
+                  key={m}
+                  onClick={() => set("installMethod", m)}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    active
+                      ? "border-blue-600 bg-blue-50 dark:bg-blue-950/40"
+                      : "border-zinc-200 hover:border-zinc-400 dark:border-zinc-700"
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{info.label}</div>
+                  <div className="mt-0.5 text-xs text-zinc-500">{info.blurb}</div>
+                  <div className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-400">
+                    {info.trench === "full"
+                      ? "digs the whole route"
+                      : info.trench === "service"
+                        ? "digs only the service section"
+                        : "no digging — strut racks every 10 ft"}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mb-5">
           <div className="mb-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300">Terrain</div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
             {(Object.keys(TERRAIN_INFO) as Terrain[]).map((t) => {
@@ -213,7 +245,10 @@ export function QuickEstimateTab() {
 function AdaCodeCard({ input }: { input: QuickEstimateInput }) {
   const { project } = useProject();
   const counts = countChargers(input, project.loadTypes);
-  const ada = adaStallBreakdown(counts.nChargers);
+  // CBC 11B-228.3.2: each charging level is its own "facility" — the
+  // 11B-228.3.2.1 table runs separately for L2 and DCFC, then sums.
+  const byLevel = adaStallBreakdownByLevel(counts.nL2, counts.nDCFC);
+  const ada = byLevel.combined;
   if (ada.total === 0) return null;
   const regrade = TERRAIN_INFO[input.terrain].adaRegradeFactor;
   const estCost =
@@ -222,16 +257,34 @@ function AdaCodeCard({ input }: { input: QuickEstimateInput }) {
       ada.ambulatory * ADA_UNIT_COST.ambulatory) *
       regrade +
     ADA_UNIT_COST.ramp;
+  const fmt = (b: typeof ada) =>
+    [
+      `${b.van} van`,
+      b.standard > 0 ? `${b.standard} standard` : "",
+      b.ambulatory > 0 ? `${b.ambulatory} ambulatory` : "",
+    ]
+      .filter(Boolean)
+      .join(" + ");
+  const mixed = counts.nL2 > 0 && counts.nDCFC > 0;
   return (
     <div className="mb-5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
       <span className="font-semibold text-amber-900 dark:text-amber-200">
-        Accessibility code (CBC 11B-812):
+        Accessibility code (CBC 11B-228.3 / 11B-812):
       </span>{" "}
       <span className="text-amber-900 dark:text-amber-100">
-        {counts.nChargers} charger{counts.nChargers === 1 ? "" : "s"} require {ada.van} van-accessible
-        {ada.standard > 0 && ` + ${ada.standard} standard`}
-        {ada.ambulatory > 0 && ` + ${ada.ambulatory} ambulatory`} EVCS stall
-        {ada.total === 1 ? "" : "s"} — budgeted ≈ {money(estCost)} incl. ramp
+        {mixed ? (
+          <>
+            each charging level counts as its own facility — L2 ({counts.nL2}): {fmt(byLevel.l2)}; DCFC (
+            {counts.nDCFC}): {fmt(byLevel.dcfc)}. Site total {fmt(ada)} accessible EVCS stall
+            {ada.total === 1 ? "" : "s"}
+          </>
+        ) : (
+          <>
+            {counts.nChargers} charger{counts.nChargers === 1 ? "" : "s"} require {fmt(ada)} EVCS stall
+            {ada.total === 1 ? "" : "s"}
+          </>
+        )}{" "}
+        — budgeted ≈ {money(estCost)} incl. ramp
         {regrade > 1 && ` and ${TERRAIN_INFO[input.terrain].label.toLowerCase()} regrading to the 2% slope limit`}
         . Added to the estimate automatically.
       </span>
@@ -280,7 +333,26 @@ function BuildSummary() {
         <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
           <Assumption label="Chargers" value={`${num(rollups.nDCFC)} DCFC + ${num(rollups.nL2)} L2`} detail={`${num(rollups.nCircuits)} circuits`} />
           <Assumption label="Main switchgear" value={panel.bus480 ? `${panel.bus480.suggestedBusA}A @ 480V` : "208V service"} detail={panel.transformer ? `+ ${panel.transformer.suggestedKva} kVA step-down` : undefined} />
-          <Assumption label="Trenching" value={`${num(project.setup.trenchLengthFt)} ft × ${project.setup.trenchCostMultiplier ?? 1}`} detail={`${TERRAIN_INFO[project.setup.terrain ?? "flat"].label} · ${money(peripherals.asphaltTrenching)}`} />
+          <Assumption
+            label="Install method"
+            value={INSTALL_METHOD_INFO[effectiveInstallMethod(project.setup)].label}
+            detail={
+              effectiveInstallMethod(project.setup) === "trench"
+                ? `${num(project.setup.trenchLengthFt)} ft trench · ${money(peripherals.asphaltTrenching)}`
+                : `${num(surfaceRouteFt(project.setup, result.rollups.longestRunFt))} ft EMT route · ${num(
+                    result.peripherals.lines.hardware.find((h) => h.name.startsWith("Strut trapeze"))?.qty ?? 0,
+                  )} strut racks @ 10 ft (NEC 358.30)`
+            }
+          />
+          <Assumption
+            label="Trenching"
+            value={project.setup.trenchLengthFt > 0 ? `${num(project.setup.trenchLengthFt)} ft × ${project.setup.trenchCostMultiplier ?? 1}` : "none"}
+            detail={
+              project.setup.trenchLengthFt > 0
+                ? `${TERRAIN_INFO[project.setup.terrain ?? "flat"].label} · ${money(peripherals.asphaltTrenching)}`
+                : "surface EMT — no digging"
+            }
+          />
           <Assumption label="Construction labor" value={`${num(f.laborBusinessDays)} business days`} detail={`${money(costs.labor)} crew cost`} />
           <Assumption label="Site plan design" value={money(f.autoCadDesignCost)} detail="AutoCAD layout, ADA, equipment placement" />
           <Assumption label="SLD / electrical design" value={money(f.electricalEngDesignCost)} detail="PE-stamped single-line & load calcs" />

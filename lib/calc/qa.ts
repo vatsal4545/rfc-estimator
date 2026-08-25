@@ -1,3 +1,4 @@
+import { effectiveInstallMethod } from "./install";
 import type { EstimateResult, QACheck, Setup, TakeoffRowComputed } from "./types";
 
 export function computeQA(
@@ -50,11 +51,13 @@ export function computeQA(
     },
     {
       label: "Trench length set",
-      ok: setup.conduitType === "EMT" || setup.trenchLengthFt > 0,
+      ok: effectiveInstallMethod(setup) === "surface" || setup.trenchLengthFt > 0,
       detail:
-        setup.conduitType === "EMT" || setup.trenchLengthFt > 0
+        effectiveInstallMethod(setup) === "surface" || setup.trenchLengthFt > 0
           ? "OK"
-          : "PVC selected but trench length is 0",
+          : effectiveInstallMethod(setup) === "hybrid"
+            ? "Hybrid install but the service-trench length is 0"
+            : "Trenched install but trench length is 0",
     },
   ];
 }

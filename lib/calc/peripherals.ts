@@ -1,3 +1,10 @@
+import {
+  EMT_SUPPORT_RATES,
+  effectiveInstallMethod,
+  strutStrapCount,
+  surfaceRouteFt,
+  trapezeCount,
+} from "./install";
 import { CONDUIT_TABLE, GEAR_CATALOG } from "./tables";
 import type {
   CivilItem,
@@ -13,6 +20,7 @@ import type {
 
 function pvcCementGallons(conduitLines: MaterialsConduitLine[]): number {
   return conduitLines.reduce((sum, line) => {
+    if (line.conduitType !== "PVC") return sum;
     const table = CONDUIT_TABLE.find((c) => c.tradeSize === line.tradeSize);
     if (!table || table.cementFtPerGal === 0) return sum;
     return sum + line.totalFt / table.cementFtPerGal;
@@ -41,20 +49,55 @@ export function computePeripherals(
   const gearMainSwitchgear = mainSwitchgear.reduce((s, g) => s + g.total, 0);
   const gearOtherTotal = otherGear.reduce((s, g) => s + g.total, 0);
 
-  const isPVC = setup.conduitType === "PVC";
+  const method = effectiveInstallMethod(setup);
+  const surfaceMounted = method !== "trench";
+  const routeFt = surfaceMounted ? surfaceRouteFt(setup, rollups.longestRunFt) : 0;
+
+  // Per-material conduit footage (feeder runs only, matching the legacy
+  // couplings line): a hybrid's buried PVC service section must not collect
+  // strut straps or EMT couplings.
+  const emtFeederFt = conduitLines
+    .filter((l) => l.conduitType === "EMT")
+    .reduce((s, l) => s + l.feederFt, 0);
+  const pvcFeederFt = conduitLines
+    .filter((l) => l.conduitType === "PVC")
+    .reduce((s, l) => s + l.feederFt, 0);
 
   const hardware: HardwareItem[] = [
     { name: "Nuts", qty: input.nutsQty, unitCost: 0.109, auto: false },
     { name: "Washers", qty: input.washersQty, unitCost: 0.099, auto: false },
     { name: "Elbows", qty: input.elbowsQty, unitCost: 6.929, auto: false },
-    { name: "Couplings", qty: Math.ceil(rollups.totalConduitFt / 10), unitCost: 1.3, auto: true },
+    { name: "Couplings", qty: Math.ceil(pvcFeederFt / 10), unitCost: 1.3, auto: true },
+    {
+      name: "EMT set-screw couplings",
+      qty: Math.ceil(emtFeederFt / 10),
+      unitCost: EMT_SUPPORT_RATES.couplingEach,
+      auto: true,
+    },
+    // NEC 358.30: EMT secured every 10 ft and within 3 ft of terminations.
+    // Racks (strut + rod + anchors) run the common route; every conduit gets
+    // its own strut strap on every rack.
+    {
+      name: "Strut trapeze racks (every 10 ft, NEC 358.30)",
+      qty: surfaceMounted ? trapezeCount(routeFt) : 0,
+      unitCost: EMT_SUPPORT_RATES.trapezeMaterial,
+      auto: true,
+    },
+    {
+      name: "Strut conduit straps",
+      qty: surfaceMounted ? strutStrapCount(emtFeederFt) : 0,
+      unitCost: EMT_SUPPORT_RATES.strutStrapEach,
+      auto: true,
+    },
     { name: "Junction box", qty: input.junctionBoxQty, unitCost: 177, auto: false },
     { name: "Data box", qty: input.dataBoxQty, unitCost: 1500, auto: false },
     { name: "Ground rods", qty: rollups.nChargers + rollups.nFeeders, unitCost: 34.87, auto: true },
     { name: "Charger anchor bolts", qty: rollups.nDCFC * 6 + rollups.nL2 * 4 + rollups.nFeeders * 4, unitCost: 5, auto: true },
+    // Counts only the PVC lines, so a hybrid's trenched service section still
+    // gets cement while the EMT branch runs don't.
     {
       name: "PVC cement",
-      qty: isPVC ? pvcCementGallons(conduitLines) : 0,
+      qty: pvcCementGallons(conduitLines),
       unitCost: 18.8,
       auto: true,
     },
@@ -90,26 +133,37 @@ export function computePeripherals(
         { name: "ADA asphalt / paving allowance", qty: adaQty, unitCost: adaUnitCost, auto: input.adaQtyOverride === undefined },
       ];
 
+  // Trenched footage: the whole route on a trench job, just the service
+  // section on a hybrid (autoplan pre-fills it with the chain distances),
+  // zero on a pure surface-EMT install.
+  const trenchQtyFt = method === "surface" ? 0 : setup.trenchLengthFt;
+
+  // Charger pads / slab restoration follow the dig: full scope when trenched,
+  // gear pads + DCFC pads only on a hybrid, none for pure surface EMT
+  // (garage chargers wall-mount or anchor to the existing slab).
+  const rebarQty =
+    method === "trench"
+      ? rollups.nDCFC * 3 + rollups.nL2 * 2 + rollups.nFeeders * 2
+      : method === "hybrid"
+        ? rollups.nDCFC * 3 + rollups.nFeeders * 2
+        : 0;
+  const concreteQty =
+    (method === "trench"
+      ? rollups.nDCFC * 1 + rollups.nL2 * 0.5 + rollups.nFeeders * 1.5
+      : method === "hybrid"
+        ? rollups.nDCFC * 1 + rollups.nFeeders * 1.5
+        : 0) + 15;
+
   const civil: CivilItem[] = [
-    { name: "Trenching / asphalt cut", qty: isPVC ? setup.trenchLengthFt : 0, unitCost: trenchRatePerFt, auto: true },
+    { name: "Trenching / asphalt cut", qty: trenchQtyFt, unitCost: trenchRatePerFt, auto: true },
     ...adaLines,
     { name: "ADA ramp", qty: adaRamp > 0 ? 1 : 0, unitCost: adaRamp, auto: false },
     { name: "Plywood", qty: input.plywoodQty, unitCost: 55, auto: false },
     { name: "2x4 lumber", qty: input.lumberQty, unitCost: 10, auto: false },
     { name: "Sono tubes", qty: input.sonoTubesQty, unitCost: 19, auto: false },
     { name: "Christy box", qty: input.christyBoxQty, unitCost: 160, auto: false },
-    {
-      name: "Rebar",
-      qty: isPVC ? rollups.nDCFC * 3 + rollups.nL2 * 2 + rollups.nFeeders * 2 : 0,
-      unitCost: 25.65,
-      auto: true,
-    },
-    {
-      name: "Concrete",
-      qty: (isPVC ? rollups.nDCFC * 1 + rollups.nL2 * 0.5 + rollups.nFeeders * 1.5 : 0) + 15,
-      unitCost: 193.54,
-      auto: true,
-    },
+    { name: "Rebar", qty: rebarQty, unitCost: 25.65, auto: true },
+    { name: "Concrete", qty: concreteQty, unitCost: 193.54, auto: true },
     { name: "Wheel stops", qty: rollups.nChargers, unitCost: 70.58, auto: true },
     { name: "GFI test (service > 1000A)", qty: input.gfiTestQty, unitCost: input.gfiTestUnitCost ?? 2000, auto: false },
     { name: "Dump / waste", qty: input.dumpWasteCost > 0 ? 1 : 0, unitCost: input.dumpWasteCost, auto: false },

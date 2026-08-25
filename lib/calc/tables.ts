@@ -111,13 +111,19 @@ export const DEFAULT_LOAD_TYPES: LoadType[] = [
 ];
 
 export const GEAR_CATALOG: GearCatalogRow[] = [
+  // Main switchgear 480V: the shop's own budgetary ladder. 2000A/2500A were
+  // re-set Aug 2026 to fix the old price inversion (2500A had been priced
+  // below the 2000A unit); every other size is the original list. NOARK MxS
+  // assembled-budgetary comparison research is on file (memory:
+  // switchgear-price-research) — RFQ NOARK Pomona or Butcher Power Products
+  // for real quotes before contract.
   { item: "Main switchgear", size: "400A", voltage: "480V", unitCost: 20426.82 },
   { item: "Main switchgear", size: "800A", voltage: "480V", unitCost: 31187 },
   { item: "Main switchgear", size: "1000A", voltage: "480V", unitCost: 36812.5 },
   { item: "Main switchgear", size: "1200A", voltage: "480V", unitCost: 43292.68 },
   { item: "Main switchgear", size: "1600A", voltage: "480V", unitCost: 56750 },
-  { item: "Main switchgear", size: "2000A", voltage: "480V", unitCost: 60000 },
-  { item: "Main switchgear", size: "2500A", voltage: "480V", unitCost: 58540, note: "Priced below the 2000A unit — verify" },
+  { item: "Main switchgear", size: "2000A", voltage: "480V", unitCost: 55000, note: "Re-set Aug 2026 (was $60k) — keeps the ladder monotonic" },
+  { item: "Main switchgear", size: "2500A", voltage: "480V", unitCost: 60000, note: "Re-set Aug 2026 (was $58.5k, priced below the 2000A unit)" },
   { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 65000 },
   { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 67500 },
   { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 70000 },

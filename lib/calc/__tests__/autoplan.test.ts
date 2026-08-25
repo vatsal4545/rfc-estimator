@@ -49,13 +49,15 @@ describe("buildQuickProject", () => {
     expect(p.peripherals.permitFeeTotal).toBe(200 + 60 * 11);
     expect(p.peripherals.utilityAppFee).toBe(2500);
     expect(p.peripherals.bollardsQty).toBe(24);
-    // CBC 11B-812: 5-25 chargers → 1 van + 1 standard + 0 ambulatory.
-    expect(p.peripherals.adaVanQty).toBe(1);
-    expect(p.peripherals.adaStdQty).toBe(1);
+    // CBC 11B-228.3.2: each charging level is its own facility — the table
+    // runs separately for the 6 DCFC (1 van + 1 std) and the 5 L2 (1 van +
+    // 1 std), then sums: 2 van + 2 standard + 0 ambulatory.
+    expect(p.peripherals.adaVanQty).toBe(2);
+    expect(p.peripherals.adaStdQty).toBe(2);
     expect(p.peripherals.adaAmbQty).toBe(0);
     expect(p.peripherals.adaQtyOverride).toBeUndefined();
     expect(r.peripherals.adaAllowance).toBe(
-      ADA_UNIT_COST.van + ADA_UNIT_COST.standard + ADA_UNIT_COST.ramp,
+      2 * ADA_UNIT_COST.van + 2 * ADA_UNIT_COST.standard + ADA_UNIT_COST.ramp,
     );
     expect(r.costs.totalCost).toBeGreaterThan(0);
 

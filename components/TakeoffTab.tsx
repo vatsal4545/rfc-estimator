@@ -201,6 +201,7 @@ export function TakeoffTab() {
               <th className="px-3 py-2">Units</th>
               <th className="px-3 py-2">Dist (ft)</th>
               <th className="px-3 py-2" title="Parallel conductor sets per unit — blank = auto from the model">Runs/u</th>
+              <th className="px-3 py-2" title="Breaker override (A) — blank = auto: next standard size ≥ 125% of continuous amps (NEC 625.41). The ground wire re-sizes from it (250.122).">Breaker (A)</th>
               <th className="px-3 py-2">Wire override</th>
               <th className="px-3 py-2">Wire</th>
               <th className="px-3 py-2">Ground</th>
@@ -219,6 +220,7 @@ export function TakeoffTab() {
                   <td className="px-3 py-2">{row.units}</td>
                   <td className="px-3 py-2">{row.oneWayDistFt}</td>
                   <td className="px-3 py-2">{row.resolvedRunsPerUnit}</td>
+                  <td className="px-3 py-2">{row.ocpdA || "—"}</td>
                   <td className="px-3 py-2">—</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {row.resolvedRunsPerUnit} × {row.selectedWire} <span className="text-zinc-400">{row.material}</span>
@@ -285,6 +287,22 @@ export function TakeoffTab() {
                   />
                 </td>
                 <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min={0}
+                    className={`${inputCls} w-20`}
+                    value={row.ocpdOverrideA ?? ""}
+                    placeholder={String(row.ocpdA || "auto")}
+                    title="Breaker override (A) — blank or 0 = auto-sized. Undersizing below 125% of continuous amps, or exceeding the wire's protection limit (NEC 240.4), gets flagged."
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      update(row.id, {
+                        ocpdOverrideA: e.target.value === "" || !Number.isFinite(v) || v <= 0 ? undefined : v,
+                      });
+                    }}
+                  />
+                </td>
+                <td className="px-3 py-2">
                   <select
                     className={`${selectCls} w-28`}
                     value={row.sizeOverride ?? ""}
@@ -317,7 +335,7 @@ export function TakeoffTab() {
             )}
             {result.rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-zinc-400">
+                <td colSpan={13} className="px-3 py-8 text-center text-zinc-400">
                   No runs yet — add a charger or gear feeder to get started.
                 </td>
               </tr>
@@ -326,7 +344,7 @@ export function TakeoffTab() {
           {result.rows.length > 0 && (
             <tfoot className="bg-zinc-50 dark:bg-zinc-900">
               <tr className="font-medium">
-                <td colSpan={9} className="px-3 py-2 text-right">
+                <td colSpan={10} className="px-3 py-2 text-right">
                   Feeder materials total
                 </td>
                 <td className="px-3 py-2 text-right">{money(result.rollups.feederMaterialsTotal)}</td>

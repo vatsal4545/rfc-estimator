@@ -81,18 +81,80 @@ export function PeripheralsTab() {
   return (
     <div>
       <Section title="A. Electrical gear" subtitle="Unit cost is looked up from the gear catalog; override if you have a live quote.">
-        {p.useAutoGear && (
-          <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-            Auto gear is ON — the estimate prices the switchgear, sub-panel, transformer and breakers straight from
-            the Panel schedule tab, and the list below is ignored.{" "}
-            <button
-              className="font-medium underline"
-              onClick={() => updateP("useAutoGear", false)}
-            >
-              Switch to manual gear
-            </button>
-          </div>
-        )}
+        {p.useAutoGear ? (
+          <>
+            <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+              Auto gear is ON — the rows below track the Panel schedule live: change charger counts on the
+              Takeoff and the switchgear, sub-panel, transformer and breakers re-size and re-price here
+              automatically. Force a different size with the pickers on the Panel schedule tab.{" "}
+              <button className="font-medium underline" onClick={() => updateP("useAutoGear", false)}>
+                Switch to manual gear
+              </button>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                  <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-3 py-2">Size</th>
+                    <th className="px-3 py-2">Voltage</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2 text-right">Catalog cost</th>
+                    <th className="px-3 py-2 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                  {result.panel.suggestedGear.map((g, idx) => {
+                    const catalog = GEAR_CATALOG.find(
+                      (c) => c.item === g.item && c.size === g.size && c.voltage === g.voltage,
+                    );
+                    const unitCost = catalog?.unitCost ?? 0;
+                    return (
+                      <tr key={idx}>
+                        <td className="px-3 py-2">{g.item}</td>
+                        <td className="px-3 py-2">{g.size}</td>
+                        <td className="px-3 py-2">{g.voltage}</td>
+                        <td className="px-3 py-2 text-right">{g.qty}</td>
+                        <td className="px-3 py-2 text-right">
+                          {unitCost > 0 ? (
+                            money(unitCost)
+                          ) : (
+                            <span className="text-amber-600">no catalog price</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">{money(g.qty * unitCost)}</td>
+                      </tr>
+                    );
+                  })}
+                  {result.panel.suggestedGear.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-6 text-center text-zinc-400">
+                        Add chargers on the Takeoff tab — the gear derives from them.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot className="bg-zinc-50 dark:bg-zinc-900">
+                  <tr className="font-medium">
+                    <td colSpan={5} className="px-3 py-2 text-right">
+                      Gear total (live)
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {money(result.peripherals.gearMainSwitchgear + result.peripherals.gearOtherTotal)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </>
+        ) : (
+          <>
+        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          Manual gear — this list is frozen: it does NOT follow charger-count changes on the Takeoff.{" "}
+          <button className="font-medium underline" onClick={() => updateP("useAutoGear", true)}>
+            Switch to auto gear (re-sizes &amp; re-prices from the Panel schedule)
+          </button>
+        </div>
         <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
             <thead className="bg-zinc-50 dark:bg-zinc-900">
@@ -180,6 +242,8 @@ export function PeripheralsTab() {
         <button onClick={addGear} className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
           + Add gear line
         </button>
+          </>
+        )}
       </Section>
 
       <Section title="B. Hardware, civil, signage — manual counts" subtitle="Ground rods, anchor bolts, rebar, concrete, signs, striping and wheel stops are auto-derived from the Takeoff counts. Everything below is what you still count by hand.">

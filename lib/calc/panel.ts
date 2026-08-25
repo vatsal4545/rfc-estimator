@@ -4,15 +4,16 @@ import {
   findLoadType,
   nextStandardSize,
 } from "./tables";
-import type { GearSelection, LoadType, TakeoffRowComputed } from "./types";
+import type { GearOverrides, GearSelection, LoadType, TakeoffRowComputed } from "./types";
 
 const SQRT3 = Math.sqrt(3);
 
 // Bus ratings available in the gear catalog. Suggestions stay on sizes the
-// estimate can actually price.
-const SWITCHGEAR_480V_A = [400, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
-const SUBPANEL_208V_A = [150, 250, 400, 600, 800, 1000];
-const TRANSFORMER_KVA = [75, 112.5, 150, 175, 225, 300, 500];
+// estimate can actually price. Exported so the UI's override pickers offer
+// the same catalog.
+export const SWITCHGEAR_480V_A = [400, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+export const SUBPANEL_208V_A = [150, 250, 400, 600, 800, 1000];
+export const TRANSFORMER_KVA = [75, 112.5, 150, 175, 225, 300, 500];
 
 export interface BranchCircuit {
   loadTypeId: string;
@@ -32,7 +33,12 @@ export interface BusSummary {
   circuitCount: number;
   connectedAmps: number; // sum of continuous unit input amps
   demandAmps: number; // connected x 125% (NEC 625.41/625.42 continuous)
+  /** Bus in use: the manual override when set, else the code minimum. */
   suggestedBusA: number;
+  /** Auto-sized code minimum (next catalog size >= demand) — kept for display next to an override. */
+  autoBusA: number;
+  /** True when suggestedBusA comes from a manual override. */
+  overridden: boolean;
 }
 
 export interface PanelSchedule {
@@ -43,6 +49,10 @@ export interface PanelSchedule {
     connectedKva: number;
     demandKva: number; // x 125%
     suggestedKva: number;
+    /** Auto-sized code minimum kVA — kept for display next to an override. */
+    autoKva: number;
+    /** True when suggestedKva comes from a manual override. */
+    overridden: boolean;
     primaryAmps480: number; // RAW connected primary current (no 125% factor)
     primaryBreakerA: number; // 125% of the selected transformer's rated primary FLA
   };
@@ -63,6 +73,7 @@ export interface PanelSchedule {
 export function computePanelSchedule(
   rows: TakeoffRowComputed[],
   loadTypes: LoadType[],
+  overrides?: GearOverrides,
 ): PanelSchedule {
   const notes: string[] = [];
   const chargerRows = rows.filter((r) => r.category === "L2" || r.category === "DCFC");
@@ -104,13 +115,20 @@ export function computePanelSchedule(
   if (rows208.length > 0) {
     const connectedAmps = rows208.reduce((s, r) => s + r.units * unitInputAmps(r), 0);
     const demandAmps = connectedAmps * 1.25;
+    const autoBusA = nextStandardSize(SUBPANEL_208V_A, demandAmps);
+    const overrideA = overrides?.subpanel208A;
     bus208 = {
       voltage: 208,
       circuitCount: branches.filter((b) => b.voltage === 208).reduce((s, b) => s + b.circuits, 0),
       connectedAmps,
       demandAmps,
-      suggestedBusA: nextStandardSize(SUBPANEL_208V_A, demandAmps),
+      suggestedBusA: overrideA && overrideA > 0 ? overrideA : autoBusA,
+      autoBusA,
+      overridden: !!overrideA && overrideA > 0,
     };
+    if (bus208.overridden && bus208.suggestedBusA < demandAmps) {
+      notes.push(`208V panel override ${bus208.suggestedBusA}A is below the ${Math.ceil(demandAmps)}A demand (NEC 625 continuous) — undersized.`);
+    }
     if (demandAmps > SUBPANEL_208V_A[SUBPANEL_208V_A.length - 1]) {
       notes.push("208V demand exceeds the largest cataloged panel — split the L2 load across multiple sub-panels.");
     }
@@ -121,7 +139,9 @@ export function computePanelSchedule(
     // Step-down transformer for the L2 load, fed from the 480V gear.
     const connectedKva = (bus208.connectedAmps * 208 * SQRT3) / 1000;
     const demandKva = connectedKva * 1.25; // transformer sized at 125% continuous
-    const suggestedKva = nextStandardSize(TRANSFORMER_KVA, demandKva);
+    const autoKva = nextStandardSize(TRANSFORMER_KVA, demandKva);
+    const overrideKva = overrides?.transformerKva;
+    const suggestedKva = overrideKva && overrideKva > 0 ? overrideKva : autoKva;
     // primaryAmps480 is the RAW connected current the transformer reflects
     // onto the 480V bus — the 125% factor is applied exactly once per
     // consumer: by the bus demand calc below, and by the breaker sizing here
@@ -132,9 +152,14 @@ export function computePanelSchedule(
       connectedKva,
       demandKva,
       suggestedKva,
+      autoKva,
+      overridden: !!overrideKva && overrideKva > 0,
       primaryAmps480,
       primaryBreakerA: nextStandardSize(STANDARD_BREAKERS_A, transformerFla480 * 1.25),
     };
+    if (transformer.overridden && suggestedKva < demandKva) {
+      notes.push(`Transformer override ${suggestedKva} kVA is below the ${demandKva.toFixed(1)} kVA demand (125% continuous) — undersized.`);
+    }
     if (demandKva > TRANSFORMER_KVA[TRANSFORMER_KVA.length - 1]) {
       notes.push("208V load exceeds the largest cataloged transformer — use multiple transformers.");
     }
@@ -146,6 +171,8 @@ export function computePanelSchedule(
     const connected480 = rows480.reduce((s, r) => s + r.units * unitInputAmps(r), 0);
     const withTransformer = connected480 + (transformer ? transformer.primaryAmps480 : 0);
     const demandAmps = withTransformer * 1.25;
+    const autoBusA = nextStandardSize(SWITCHGEAR_480V_A, demandAmps);
+    const overrideA = overrides?.switchgear480A;
     bus480 = {
       voltage: 480,
       circuitCount:
@@ -153,8 +180,13 @@ export function computePanelSchedule(
         (transformer ? 1 : 0),
       connectedAmps: withTransformer,
       demandAmps,
-      suggestedBusA: nextStandardSize(SWITCHGEAR_480V_A, demandAmps),
+      suggestedBusA: overrideA && overrideA > 0 ? overrideA : autoBusA,
+      autoBusA,
+      overridden: !!overrideA && overrideA > 0,
     };
+    if (bus480.overridden && bus480.suggestedBusA < demandAmps) {
+      notes.push(`Switchgear override ${bus480.suggestedBusA}A is below the ${Math.ceil(demandAmps)}A demand (NEC 625 continuous) — undersized.`);
+    }
   }
 
   // Suggested gear list, on catalog size strings so Peripherals can price it.

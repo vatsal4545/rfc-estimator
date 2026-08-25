@@ -10,6 +10,7 @@
 import ExcelJS from "exceljs";
 import { GPR_ITEM_NAME, TERRAIN_INFO, estimateTimeline, timelineTotal } from "./calc/autoplan";
 import { laborBreakdown } from "./calc/costs";
+import { INSTALL_METHOD_INFO, effectiveInstallMethod, surfaceRouteFt } from "./calc/install";
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
 import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
@@ -445,7 +446,7 @@ function fillMaterials(ws: WS, project: Project, result: EstimateResult): void {
   row++;
   const condFirst = row;
   for (const l of m.conduitLines.filter((l) => l.totalFt > 0)) {
-    ws.getCell(row, 1).value = l.tradeSize;
+    ws.getCell(row, 1).value = `${l.tradeSize} ${l.conduitType}`;
     ws.getCell(row, 2).value = l.feederFt;
     ws.getCell(row, 3).value = l.dataFt;
     ws.getCell(row, 4).value = f(`B${row}+C${row}`, l.totalFt);
@@ -918,9 +919,26 @@ function fillAssumptions(ws: WS, project: Project, result: EstimateResult): void
         ] as [string, string][])
       : []),
     ["Terrain", `${info.label} — trenching ×${info.trenchFactor}, labor ×${info.laborFactor}, ADA regrade ×${info.adaRegradeFactor}`],
-    ["Trench length", `${project.setup.trenchLengthFt} ft (longest run)`],
     [
-      "Accessible EVCS (CBC 11B-812 table)",
+      "Install method",
+      (() => {
+        const m = effectiveInstallMethod(project.setup);
+        const mi = INSTALL_METHOD_INFO[m];
+        const racks =
+          result.peripherals.lines.hardware.find((h) => h.name.startsWith("Strut trapeze"))?.qty ?? 0;
+        // Resolve the route the same way the engine does — a blank
+        // surfaceRouteFt means "derived from the longest run", not 0 ft.
+        const routeFt = surfaceRouteFt(project.setup, result.rollups.longestRunFt);
+        return m === "trench"
+          ? `${mi.label} — ${project.setup.trenchLengthFt} ft trench`
+          : `${mi.label} — ${routeFt} ft EMT route, ${racks} strut trapeze racks every 10 ft (NEC 358.30)${
+              m === "hybrid" ? `, ${project.setup.trenchLengthFt} ft service trench` : ", no digging"
+            }`;
+      })(),
+    ],
+    ["Trench length", `${project.setup.trenchLengthFt} ft`],
+    [
+      "Accessible EVCS (CBC 11B-228.3: table applied per charging level, then summed)",
       project.peripherals.adaVanQty !== undefined ||
       project.peripherals.adaStdQty !== undefined ||
       project.peripherals.adaAmbQty !== undefined

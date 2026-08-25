@@ -1,3 +1,4 @@
+import { effectiveInstallMethod } from "./install";
 import type { EquipmentRentalItem, EquipmentResult, Rollups, Setup } from "./types";
 
 // "Temporary fencing" tracks the job's longest run the same way Equipment!D6
@@ -11,7 +12,12 @@ export function computeEquipment(
   setup: Setup,
   rollups: Rollups,
 ): EquipmentResult {
-  const autoFencingQty = setup.conduitType === "PVC" ? rollups.longestRunFt * 2 + 60 : 0;
+  // Fencing follows the open trench: the whole route on a trench job, just
+  // the service section on a hybrid, none on a pure surface-EMT install.
+  const method = effectiveInstallMethod(setup);
+  const fencedFt =
+    method === "trench" ? rollups.longestRunFt : method === "hybrid" ? setup.trenchLengthFt : 0;
+  const autoFencingQty = fencedFt > 0 ? fencedFt * 2 + 60 : 0;
   const withTotals = items.map((item) => {
     const qty = item.name === AUTO_QTY_ITEM ? autoFencingQty : item.qty;
     return { ...item, qty, total: qty * item.rate * item.durationValue + (qty > 0 ? item.delivery : 0) };
@@ -27,6 +33,7 @@ export function defaultEquipmentItems(conduitType: "PVC" | "EMT", maxRunFt: numb
     { name: "Dump truck", qty: 0, rate: 520, rateBasis: "per day", durationValue: 1, delivery: 0 },
     { name: "Forklift", qty: 1, rate: 563, rateBasis: "per day", durationValue: 2, delivery: 400 },
     { name: "Trench plates", qty: 0, rate: 5.18, rateBasis: "per day", durationValue: 30, delivery: 0 },
+    { name: "Scissor lift", qty: 0, rate: 1150, rateBasis: "per month", durationValue: 1, delivery: 150 },
     { name: "Storage container", qty: 1, rate: 185, rateBasis: "per month", durationValue: 1, delivery: 400 },
     { name: "Portable restroom", qty: 1, rate: 267, rateBasis: "per month", durationValue: 1, delivery: 65 },
     { name: "Lowboy transport", qty: 1, rate: 1000, rateBasis: "each way", durationValue: 1, delivery: 0 },
