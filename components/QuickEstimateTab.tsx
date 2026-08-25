@@ -118,20 +118,22 @@ export function QuickEstimateTab() {
 
         {/* 2 — site */}
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">2 · Site</div>
-        <div className="mb-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Client">
             <input className={inputCls} value={input.clientName} onChange={(e) => set("clientName", e.target.value)} />
           </Field>
           <Field label="Site address">
             <input className={inputCls} value={input.siteAddress} onChange={(e) => set("siteAddress", e.target.value)} />
           </Field>
-          <Field label="Distance to nearest L3 / DCFC charger (ft)" hint="One-way, power source → first DCFC">
+        </div>
+        <div className="mb-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Distance to nearest L3 / DCFC (ft)" hint="One-way, power source → first DCFC">
             <input type="number" className={inputCls} value={input.firstRunFtDcfc} onChange={(e) => set("firstRunFtDcfc", Number(e.target.value))} />
           </Field>
-          <Field label="Distance to nearest L2 charger (ft)" hint="One-way, power source → first L2">
+          <Field label="Distance to nearest L2 (ft)" hint="One-way, power source → first L2">
             <input type="number" className={inputCls} value={input.firstRunFtL2} onChange={(e) => set("firstRunFtL2", Number(e.target.value))} />
           </Field>
-          <Field label="Spacing per extra charger (ft)">
+          <Field label="Spacing per extra charger (ft)" hint="Added per extra charger of the same level">
             <input type="number" className={inputCls} value={input.stepFt} onChange={(e) => set("stepFt", Number(e.target.value))} />
           </Field>
         </div>
