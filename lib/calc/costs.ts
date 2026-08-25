@@ -3,9 +3,31 @@ import type {
   CostsResult,
   EquipmentResult,
   FinancialInput,
+  LaborItem,
   MaterialsResult,
   PeripheralsResult,
 } from "./types";
+
+/**
+ * The labor cost lines: the itemized breakdown when one was entered,
+ * otherwise a single derived crew line (rate × schedule days). `blendedRate`
+ * is base / schedule-days — what the Costs Internal sheet shows as the daily
+ * cost so its rate × days × contingency chain still ties.
+ */
+export function laborBreakdown(financial: FinancialInput): {
+  items: LaborItem[];
+  itemized: boolean;
+  base: number;
+  blendedRate: number;
+} {
+  const itemized = (financial.laborItems?.length ?? 0) > 0;
+  const items: LaborItem[] = itemized
+    ? financial.laborItems!
+    : [{ id: "crew", name: "Electrical crew", days: financial.laborBusinessDays, dailyRate: financial.laborDailyRate }];
+  const base = items.reduce((s, i) => s + i.days * i.dailyRate, 0);
+  const blendedRate = financial.laborBusinessDays > 0 ? base / financial.laborBusinessDays : 0;
+  return { items, itemized, base, blendedRate };
+}
 
 /**
  * Mirrors the real Costs Internal -> Summary chain (see the Boatman RFC_V18
@@ -41,9 +63,9 @@ export function computeCosts(
   });
 
   const electricalSupplyConstructionTotal = lines.reduce((s, l) => s + l.finalCost, 0);
-  const laborRate =
-    financial.laborDailyRate * ((financial.applyContingencyToLabor ?? true) ? 1 + financial.contingencyPct : 1);
-  const labor = laborRate * financial.laborBusinessDays;
+  const labor =
+    laborBreakdown(financial).base *
+    ((financial.applyContingencyToLabor ?? true) ? 1 + financial.contingencyPct : 1);
   const salesTaxOnConstruction = electricalSupplyConstructionTotal * financial.salesTaxPct;
 
   const equipmentPurchaseInvoice =

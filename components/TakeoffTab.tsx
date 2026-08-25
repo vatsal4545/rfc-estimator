@@ -200,7 +200,8 @@ export function TakeoffTab() {
               <th className="px-3 py-2">Location</th>
               <th className="px-3 py-2">Units</th>
               <th className="px-3 py-2">Dist (ft)</th>
-              <th className="px-3 py-2">Override</th>
+              <th className="px-3 py-2" title="Parallel conductor sets per unit — blank = auto from the model">Runs/u</th>
+              <th className="px-3 py-2">Wire override</th>
               <th className="px-3 py-2">Wire</th>
               <th className="px-3 py-2">Ground</th>
               <th className="px-3 py-2">Conduit</th>
@@ -217,6 +218,7 @@ export function TakeoffTab() {
                   <td className="px-3 py-2">{row.location}</td>
                   <td className="px-3 py-2">{row.units}</td>
                   <td className="px-3 py-2">{row.oneWayDistFt}</td>
+                  <td className="px-3 py-2">{row.resolvedRunsPerUnit}</td>
                   <td className="px-3 py-2">—</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {row.resolvedRunsPerUnit} × {row.selectedWire} <span className="text-zinc-400">{row.material}</span>
@@ -268,6 +270,21 @@ export function TakeoffTab() {
                   />
                 </td>
                 <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min={1}
+                    className={`${inputCls} w-16`}
+                    value={row.runsPerUnitOverride ?? ""}
+                    placeholder={String(row.resolvedRunsPerUnit)}
+                    title="Parallel conductor sets per unit — blank = auto. On DCFC/feeder runs an extra set splits the amps, letting each set use smaller wire (helps when voltage drop governs)."
+                    onChange={(e) =>
+                      update(row.id, {
+                        runsPerUnitOverride: e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
+                      })
+                    }
+                  />
+                </td>
+                <td className="px-3 py-2">
                   <select
                     className={`${selectCls} w-28`}
                     value={row.sizeOverride ?? ""}
@@ -300,7 +317,7 @@ export function TakeoffTab() {
             )}
             {result.rows.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-3 py-8 text-center text-zinc-400">
+                <td colSpan={12} className="px-3 py-8 text-center text-zinc-400">
                   No runs yet — add a charger or gear feeder to get started.
                 </td>
               </tr>
@@ -309,7 +326,7 @@ export function TakeoffTab() {
           {result.rows.length > 0 && (
             <tfoot className="bg-zinc-50 dark:bg-zinc-900">
               <tr className="font-medium">
-                <td colSpan={8} className="px-3 py-2 text-right">
+                <td colSpan={9} className="px-3 py-2 text-right">
                   Feeder materials total
                 </td>
                 <td className="px-3 py-2 text-right">{money(result.rollups.feederMaterialsTotal)}</td>
@@ -318,6 +335,14 @@ export function TakeoffTab() {
             </tfoot>
           )}
         </table>
+      </div>
+
+      <div className="mt-2 text-xs text-zinc-500">
+        <span className="font-medium">“Voltage drop governs”</span> = the run is long enough that the max-voltage-drop
+        limit (Setup tab) picked a fatter wire than the current alone needs — compliant, just pricier. On DCFC and
+        feeder runs, typing a bigger number in <span className="font-medium">Runs/u</span> splits the amps across
+        parallel sets so each can use smaller wire; compare the row total both ways and keep the cheaper one. On L2
+        runs each port is its own circuit, so extra runs don’t help — the upsized wire is the cost of the distance.
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">

@@ -62,7 +62,7 @@ describe("Quick-generate — 5x DCFC 240kW + 6x L2 Dual 40A (user scenario)", ()
     const l2 = result.rows[5]; // 175 ft — VD pushes past the 8 AWG ampacity minimum
     expect(l2.ocpdA).toBe(50);
     expect(l2.selectedWire).toBe("4 AWG");
-    expect(l2.flag).toBe("Voltage drop governs - consider more runs");
+    expect(l2.flag).toBe("Voltage drop governs - wire upsized for the long run");
     expect(l2.groundSize).toBe("10 AWG");
     expect(l2.resolvedRunsPerUnit).toBe(2);
 

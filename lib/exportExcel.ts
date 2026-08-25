@@ -9,6 +9,7 @@
 
 import ExcelJS from "exceljs";
 import { GPR_ITEM_NAME, TERRAIN_INFO, estimateTimeline, timelineTotal } from "./calc/autoplan";
+import { laborBreakdown } from "./calc/costs";
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
 import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
@@ -85,7 +86,7 @@ export async function buildEstimateWorkbook(
       formula: "IF('Cost Detail'!$B$8,'Cost Detail'!$B$4,0)",
       cached: (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0,
     },
-    dailyRate: { formula: "'Cost Detail'!$B$6", cached: fin.laborDailyRate },
+    dailyRate: { formula: "'Cost Detail'!$B$6", cached: laborBreakdown(fin).blendedRate },
     businessDays: { formula: "'Cost Detail'!$B$7", cached: fin.laborBusinessDays },
     // Site plan + SLD + PM hours×rate — everything on the Design invoice
     // except the plan check / permit fee (permitting-side).
@@ -160,11 +161,14 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
     "Editable inputs — change these (or any qty / unit cost) and the totals recalculate.";
   ws.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
 
-  // Inputs block (absolute refs used by the formulas below).
+  // Inputs block (absolute refs used by the formulas below). With an
+  // itemized labor breakdown the daily rate is the blended base/days, so
+  // the rate x days formula chain still equals the itemized total.
+  const labor = laborBreakdown(fin);
   const inputs: [string, string, number | boolean, string?][] = [
     ["B4", "Contingency %", fin.contingencyPct, PCT],
     ["B5", "Sales tax %", fin.salesTaxPct, PCT],
-    ["B6", "Labor daily rate", fin.laborDailyRate, MONEY],
+    ["B6", labor.itemized ? "Labor daily rate (blended — see Assumptions)" : "Labor daily rate", labor.blendedRate, MONEY],
     ["B7", "Labor business days", fin.laborBusinessDays],
     ["B8", "Apply contingency to labor", fin.applyContingencyToLabor ?? true],
     ["B9", "PM hours (CPM)", fin.pmHours],
@@ -927,7 +931,17 @@ function fillAssumptions(ws: WS, project: Project, result: EstimateResult): void
       "Accessible EVCS code notes",
       "Slope ≤2% all directions under stalls/aisles (regrade driver on sloped lots) · markings must NOT be blue (11B-812.9) · ISA signs: none ≤4 EVCS, van-only 5-25, van+standard 26+ · accessible EVCS do NOT count toward ADA parking counts (11B-208.1) · operable parts 15-48in reach",
     ],
-    ["Construction labor", `${project.financial.laborBusinessDays} business days`],
+    [
+      "Construction labor",
+      (() => {
+        const lb = laborBreakdown(project.financial);
+        return lb.itemized
+          ? `${project.financial.laborBusinessDays} business days · itemized: ${lb.items
+              .map((i) => `${i.name || "line"} ${i.days}d × $${i.dailyRate}`)
+              .join(" + ")} = $${Math.round(lb.base).toLocaleString("en-US")}`
+          : `${project.financial.laborBusinessDays} business days × $${project.financial.laborDailyRate}/day`;
+      })(),
+    ],
     ["CPM", `${project.financial.pmHours} h × $${project.financial.pmHourlyRate}/h`],
     [
       "Private utility scan",

@@ -1,5 +1,6 @@
 "use client";
 
+import { laborBreakdown } from "@/lib/calc/costs";
 import { COSTS_INTERNAL_LABELS } from "@/lib/costsInternalSheet";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
@@ -30,7 +31,11 @@ export function CostsInternalTab() {
   const contingency = fin.contingencyPct;
   const laborContingency = (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0;
   const days = fin.laborBusinessDays;
-  const rate = fin.laborDailyRate;
+  // Blended daily rate: with an itemized labor breakdown (Financials tab)
+  // this is base / schedule-days, so the sheet's rate x days x contingency
+  // chain still ties to the engine's labor cost.
+  const labor = laborBreakdown(fin);
+  const rate = labor.blendedRate;
   // Construction PM row: all design costs except the AHJ plan check.
   const constructionPm = fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
   const laborLoaded = rate * (1 + laborContingency) * days;
@@ -123,30 +128,48 @@ export function CostsInternalTab() {
           </div>
 
           {/* Labor box — J3:K7 */}
-          <table className="border-collapse" style={{ border: `2px solid #000` }}>
-            <tbody>
-              <tr style={{ backgroundColor: BANNER }} className="font-bold text-white">
-                <td className={cell} style={{ minWidth: 170 }}>Labor</td>
-                <td className={cell} style={{ minWidth: 110 }} />
-              </tr>
-              <tr>
-                <td className="border border-zinc-300 px-2 py-1 text-left">Daily Cost</td>
-                <td className="border border-zinc-300 px-2 py-1 text-right">{money(rate)}</td>
-              </tr>
-              <tr>
-                <td className="border border-zinc-300 px-2 py-1 text-left">Total Business Days</td>
-                <td className={cell}>{num(days)}</td>
-              </tr>
-              <tr>
-                <td className="border border-zinc-300 px-2 py-1 text-left">Total Months</td>
-                <td className={cell}>{num(days / 30, 2)}</td>
-              </tr>
-              <tr>
-                <td className="border border-zinc-300 px-2 py-1 text-left">Total Labor</td>
-                <td className="border border-zinc-300 px-2 py-1 text-right">{money(days * rate)}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div>
+            <table className="border-collapse" style={{ border: `2px solid #000` }}>
+              <tbody>
+                <tr style={{ backgroundColor: BANNER }} className="font-bold text-white">
+                  <td className={cell} style={{ minWidth: 170 }}>Labor</td>
+                  <td className={cell} style={{ minWidth: 110 }} />
+                </tr>
+                <tr>
+                  <td className="border border-zinc-300 px-2 py-1 text-left">Daily Cost{labor.itemized ? " (blended)" : ""}</td>
+                  <td className="border border-zinc-300 px-2 py-1 text-right">{money(rate)}</td>
+                </tr>
+                <tr>
+                  <td className="border border-zinc-300 px-2 py-1 text-left">Total Business Days</td>
+                  <td className={cell}>{num(days)}</td>
+                </tr>
+                <tr>
+                  <td className="border border-zinc-300 px-2 py-1 text-left">Total Months</td>
+                  <td className={cell}>{num(days / 30, 2)}</td>
+                </tr>
+                <tr>
+                  <td className="border border-zinc-300 px-2 py-1 text-left">Total Labor</td>
+                  <td className="border border-zinc-300 px-2 py-1 text-right">{money(labor.base)}</td>
+                </tr>
+              </tbody>
+            </table>
+            {labor.itemized && (
+              <table className="mt-4 border-collapse" style={{ border: `2px solid #000` }}>
+                <tbody>
+                  <tr style={{ backgroundColor: BANNER }} className="font-bold text-white">
+                    <td className={cell} colSpan={3}>Labor breakdown (Financials tab)</td>
+                  </tr>
+                  {labor.items.map((it) => (
+                    <tr key={it.id}>
+                      <td className="border border-zinc-300 px-2 py-1 text-left" style={{ minWidth: 170 }}>{it.name || "—"}</td>
+                      <td className={cell}>{num(it.days)} d × {money(it.dailyRate)}</td>
+                      <td className="border border-zinc-300 px-2 py-1 text-right">{money(it.days * it.dailyRate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -335,10 +335,26 @@ export interface EquipmentResult {
   subtotal: number;
 }
 
+/** One line of the itemized labor breakdown (foreman, crew, flagger…). */
+export interface LaborItem {
+  id: string;
+  name: string;
+  days: number;
+  dailyRate: number;
+}
+
 export interface FinancialInput {
   contingencyPct: number; // 0.10
   laborDailyRate: number;
   laborBusinessDays: number;
+  /**
+   * Optional itemized labor. When present (non-empty), labor cost =
+   * Σ days × dailyRate (contingency per the toggle) and laborDailyRate
+   * becomes a derived blended rate. When absent, labor is the simple
+   * laborDailyRate × laborBusinessDays. laborBusinessDays stays the
+   * SCHEDULE duration either way (drives equipment rental & timeline).
+   */
+  laborItems?: LaborItem[];
   /**
    * Both source workbooks load the labor daily rate with the same 10%
    * contingency as the construction lines (Costs Internal "ZERO IMPACT

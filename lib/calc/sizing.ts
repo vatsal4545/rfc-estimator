@@ -131,7 +131,12 @@ export function computeTakeoffRow(
       ? 0
       : (lt.kwPerPort * 1000) / (volts * setup.powerFactor * (phases === 3 ? SQRT3 : 1)));
 
-  const parallelDivisor = lt.runsAreParallel ? runsPerUnit : 1;
+  // Parallel-capable: multiple runs land on ONE input and split the current
+  // (DCFC and feeders — a 2nd run halves amps per set, so smaller wire and
+  // less voltage drop). L2 runs are one circuit per port: more runs never
+  // split the load there, they'd just be extra circuits.
+  const parallelCapable = lt.runsAreParallel || lt.category !== "L2";
+  const parallelDivisor = parallelCapable ? runsPerUnit : 1;
 
   // OCPD left at 0 on the LoadType means auto-size: next standard breaker at
   // or above 125% of the per-circuit current (NEC 625.41 continuous load).
@@ -214,7 +219,13 @@ export function computeTakeoffRow(
   } else if (exceedsTable) {
     flag = "Exceeds conductor table - use parallel runs";
   } else if (idxVD > idxAmp) {
-    flag = "Voltage drop governs - consider more runs";
+    // The wire was upsized to hold voltage sag under the Setup limit, not for
+    // current. On parallel-capable runs an extra run splits the amps and can
+    // beat the fatter wire on cost; on per-port circuits (L2) more runs
+    // wouldn't help — the upsized wire is simply the price of the distance.
+    flag = parallelCapable
+      ? "Voltage drop governs - add a parallel run (Runs column) or keep the upsized wire"
+      : "Voltage drop governs - wire upsized for the long run";
   } else if (overrideValid && input.sizeOverride !== wireSizeAtIndex(Math.max(1, Math.min(25, maxIdx)))) {
     flag = "Manual override in use";
   } else if (idxDesignMin > Math.max(idxAmp, idxVD)) {
