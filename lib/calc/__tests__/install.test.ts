@@ -104,7 +104,9 @@ describe("Install method — hybrid (EMT chargers + service trench)", () => {
 
   it("trenches only the service section (chain distances)", () => {
     expect(p.setup.trenchLengthFt).toBe(25 + 15 + 15);
-    expect(r.peripherals.asphaltTrenching).toBeCloseTo(55 * 40.81, 2);
+    // Trench cut on the 55 ft service section plus the terrain-independent
+    // stall patch-back (16 stalls x 162 SF x $5).
+    expect(r.peripherals.asphaltTrenching).toBeCloseTo(55 * 40.81 + 16 * 162 * 5, 2);
   });
 
   it("runs the service chain in PVC while charger runs stay EMT", () => {
