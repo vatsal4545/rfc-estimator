@@ -18,6 +18,33 @@ import type {
   SignageItem,
 } from "./types";
 
+/**
+ * Civil unit rates and pad volumes. Sources (Aug 2026, SoCal): 2500 PSI
+ * ready-mix quotes cluster $146-195/yd delivered (most CA plants price 2500
+ * at the 3000 PSI 5-sack rate); batch plants add a ~$125 short-load fee under
+ * 8 yd, which nearly every EV pad pour hits. Asphalt saw-cut patch-back runs
+ * $4-12/SF — $5 is the large-area rate. Consumables lump sums price out the
+ * per-pad forming/anchoring kit: wedge anchors ($7.50), conduit ells
+ * ($20-55), 2x4s ($6), plywood ($42), plus nuts/washers/waste.
+ * Pad volumes are calibrated to field orders: 5 DCFC pads + 1 switchgear pad
+ * + bollard footings rounds up to the 7 yd actually ordered.
+ */
+export const CIVIL_RATES = {
+  bollardEach: 110,
+  concretePerYard: 165, // 2500 PSI delivered
+  concreteShortLoadFee: 125,
+  shortLoadThresholdYd: 8,
+  asphaltPerSf: 5,
+  stallSf: 162, // 9 x 18 ft stall
+  consumablesPerL2: 275,
+  consumablesPerDcfc: 550,
+  ydPerDcfcPad: 0.75,
+  ydPerL2Pad: 0.35,
+  ydSwitchgearPad: 1.75,
+  ydXfmrSubPanelPad: 0.5,
+  ydPerBollard: 0.08,
+} as const;
+
 function pvcCementGallons(conduitLines: MaterialsConduitLine[]): number {
   return conduitLines.reduce((sum, line) => {
     if (line.conduitType !== "PVC") return sum;
@@ -147,28 +174,69 @@ export function computePeripherals(
       : method === "hybrid"
         ? rollups.nDCFC * 3 + rollups.nFeeders * 2
         : 0;
-  const concreteQty =
-    (method === "trench"
-      ? rollups.nDCFC * 1 + rollups.nL2 * 0.5 + rollups.nFeeders * 1.5
-      : method === "hybrid"
-        ? rollups.nDCFC * 1 + rollups.nFeeders * 1.5
-        : 0) + 15;
+  // Concrete order: pad volumes summed then rounded UP to whole yards the way
+  // a batch plant sells it. DCFC pads follow the dig (trench + hybrid); L2
+  // pedestal pads pour only on full-trench jobs (hybrids surface-feed the L2
+  // bank); pure surface EMT anchors to the existing slab — no pour. The
+  // switchgear pad rides with any DCFC scope, the step-down TX + sub-panel
+  // pad only exists on mixed-voltage sites, and every bollard adds a footing.
+  const mixedVoltage = rollups.nDCFC > 0 && rollups.nL2 > 0;
+  const padYards =
+    method === "surface"
+      ? 0
+      : rollups.nDCFC * CIVIL_RATES.ydPerDcfcPad +
+        (method === "trench" ? rollups.nL2 * CIVIL_RATES.ydPerL2Pad : 0) +
+        (rollups.nDCFC > 0 ? CIVIL_RATES.ydSwitchgearPad : 0) +
+        (mixedVoltage ? CIVIL_RATES.ydXfmrSubPanelPad : 0) +
+        input.bollardsQty * CIVIL_RATES.ydPerBollard;
+  const concreteQty = input.concreteYardsOverride ?? (padYards > 0 ? Math.ceil(padYards) : 0);
+  const concreteRate = input.concreteUnitCost ?? CIVIL_RATES.concretePerYard;
+  const shortLoadFee =
+    concreteQty > 0 && concreteQty < CIVIL_RATES.shortLoadThresholdYd
+      ? (input.concreteShortLoadFee ?? CIVIL_RATES.concreteShortLoadFee)
+      : 0;
+
+  // Stall patch-back: most sites repave the charger stalls in asphalt after
+  // the trench work. Dual-port L2s serve two stalls, DCFCs one.
+  const stallCount = rollups.nL2 * 2 + rollups.nDCFC;
+  const asphaltSfAuto = method === "surface" ? 0 : stallCount * CIVIL_RATES.stallSf;
+  const asphaltSf = input.asphaltSfOverride ?? asphaltSfAuto;
+  const asphaltRate = input.asphaltPerSf ?? CIVIL_RATES.asphaltPerSf;
+
+  // Forming & anchoring kit per pad: wedge anchors, conduit ells, form
+  // lumber/plywood, nuts/washers/waste — priced as a lump per charger.
+  const consumablesLump =
+    rollups.nDCFC * (input.consumablesPerDcfc ?? CIVIL_RATES.consumablesPerDcfc) +
+    rollups.nL2 * (input.consumablesPerL2 ?? CIVIL_RATES.consumablesPerL2);
 
   const civil: CivilItem[] = [
     { name: "Trenching / asphalt cut", qty: trenchQtyFt, unitCost: trenchRatePerFt, auto: true },
+    {
+      name: "Asphalt paving — parking stalls",
+      qty: asphaltSf,
+      unitCost: asphaltRate,
+      auto: input.asphaltSfOverride === undefined,
+    },
     ...adaLines,
     { name: "ADA ramp", qty: adaRamp > 0 ? 1 : 0, unitCost: adaRamp, auto: false },
     { name: "Plywood", qty: input.plywoodQty, unitCost: 55, auto: false },
     { name: "2x4 lumber", qty: input.lumberQty, unitCost: 10, auto: false },
+    {
+      name: "Forming & anchoring consumables",
+      qty: consumablesLump > 0 ? 1 : 0,
+      unitCost: consumablesLump,
+      auto: true,
+    },
     { name: "Sono tubes", qty: input.sonoTubesQty, unitCost: 19, auto: false },
     { name: "Christy box", qty: input.christyBoxQty, unitCost: 160, auto: false },
     { name: "Rebar", qty: rebarQty, unitCost: 25.65, auto: true },
-    { name: "Concrete", qty: concreteQty, unitCost: 193.54, auto: true },
+    { name: "Concrete (2500 PSI, yd)", qty: concreteQty, unitCost: concreteRate, auto: input.concreteYardsOverride === undefined },
+    { name: "Concrete short-load fee (< 8 yd)", qty: shortLoadFee > 0 ? 1 : 0, unitCost: shortLoadFee, auto: true },
     { name: "Wheel stops", qty: rollups.nChargers, unitCost: 70.58, auto: true },
     { name: "GFI test (service > 1000A)", qty: input.gfiTestQty, unitCost: input.gfiTestUnitCost ?? 2000, auto: false },
     { name: "Dump / waste", qty: input.dumpWasteCost > 0 ? 1 : 0, unitCost: input.dumpWasteCost, auto: false },
   ];
-  const asphaltTrenching = civil.find((c) => c.name === "Trenching / asphalt cut")!.qty * trenchRatePerFt;
+  const asphaltTrenching = trenchQtyFt * trenchRatePerFt + asphaltSf * asphaltRate;
   const adaAllowance =
     (adaByType
       ? adaVanQty * adaVanCost + adaStdQty * adaStdCost + adaAmbQty * adaAmbCost
@@ -177,6 +245,7 @@ export function computePeripherals(
     .filter(
       (c) =>
         c.name !== "Trenching / asphalt cut" &&
+        c.name !== "Asphalt paving — parking stalls" &&
         !c.name.startsWith("ADA ") &&
         c.name !== "Dump / waste",
     )
@@ -186,7 +255,7 @@ export function computePeripherals(
   const signage: SignageItem[] = [
     { name: "Signs", qty: rollups.nChargers, unitCost: 40, auto: true },
     { name: "Sign posts", qty: rollups.nL2 + Math.ceil(rollups.nDCFC / 2), unitCost: 56.1, auto: true },
-    { name: "Bollards", qty: input.bollardsQty, unitCost: 110, auto: false },
+    { name: "Bollards", qty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
     { name: "Striping", qty: (rollups.nL2 * 2 + rollups.nDCFC) / 10, unitCost: 1500, auto: true },
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);

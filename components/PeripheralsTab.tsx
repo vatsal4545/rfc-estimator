@@ -1,7 +1,8 @@
 "use client";
 
-import { ADA_UNIT_COST, adaStallBreakdown } from "@/lib/calc/autoplan";
+import { ADA_UNIT_COST, BOLLARD_RULE, adaStallBreakdown } from "@/lib/calc/autoplan";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
+import { CIVIL_RATES } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
@@ -70,6 +71,9 @@ export function PeripheralsTab() {
   }
 
   const customItems = p.customItems ?? [];
+  const civilLines = result.peripherals.lines.civil;
+  const concreteLine = civilLines.find((c) => c.name.startsWith("Concrete ("));
+  const asphaltLine = civilLines.find((c) => c.name === "Asphalt paving — parking stalls");
 
   function updateCustom(idx: number, patch: Partial<(typeof customItems)[number]>) {
     updateP(
@@ -258,7 +262,10 @@ export function PeripheralsTab() {
           <Field label="Sono tubes (ea)"><input type="number" className={inputCls} value={p.sonoTubesQty} onChange={(e) => updateP("sonoTubesQty", Number(e.target.value))} /></Field>
           <Field label="Christy box (ea)"><input type="number" className={inputCls} value={p.christyBoxQty} onChange={(e) => updateP("christyBoxQty", Number(e.target.value))} /></Field>
           <Field label="GFI test (ea, service > 1000A)"><input type="number" className={inputCls} value={p.gfiTestQty} onChange={(e) => updateP("gfiTestQty", Number(e.target.value))} /></Field>
-          <Field label="Bollards (ea)"><input type="number" className={inputCls} value={p.bollardsQty} onChange={(e) => updateP("bollardsQty", Number(e.target.value))} /></Field>
+          <Field
+            label="Bollards (ea)"
+            hint={`Auto-filled: ${BOLLARD_RULE.perCharger}/charger + ${BOLLARD_RULE.switchgear}-5 at switchgear + ${BOLLARD_RULE.stepDownSubPanel} at step-down TX & sub-panel`}
+          ><input type="number" className={inputCls} value={p.bollardsQty} onChange={(e) => updateP("bollardsQty", Number(e.target.value))} /></Field>
           <Field label="Dump / waste ($)" hint="Not in the original workbook — real bids carry this line"><input type="number" className={inputCls} value={p.dumpWasteCost} onChange={(e) => updateP("dumpWasteCost", Number(e.target.value))} /></Field>
         </Grid>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -267,6 +274,52 @@ export function PeripheralsTab() {
           <Stat label="Signs (auto)" value={num(result.rollups.nChargers)} />
           <Stat label="Wheel stops (auto)" value={num(result.rollups.nChargers)} />
         </div>
+
+        <h3 className="mt-6 text-sm font-semibold text-zinc-800 dark:text-zinc-200">Civil rates &amp; quantities</h3>
+        <p className="text-xs text-zinc-500">
+          Concrete order is auto-sized from the pad volumes (DCFC / L2 / switchgear / step-down pads + bollard
+          footings) and rounded up to whole yards; loads under {CIVIL_RATES.shortLoadThresholdYd} yd carry the
+          short-load fee. Stall paving assumes {CIVIL_RATES.stallSf} SF per stall (9&times;18). Consumables cover the
+          per-pad forming &amp; anchoring kit — wedge anchors, conduit ells, plywood, lumber, nuts &amp; washers.
+        </p>
+        <Grid cols={4}>
+          <Field label="Concrete ($/yd, 2500 PSI)">
+            <input type="number" className={inputCls} value={p.concreteUnitCost ?? CIVIL_RATES.concretePerYard} onChange={(e) => updateP("concreteUnitCost", Number(e.target.value))} />
+          </Field>
+          <Field label="Concrete order (yd)" hint={`Blank = auto (${num(concreteLine?.qty ?? 0)} yd now)`}>
+            <input
+              type="number"
+              className={inputCls}
+              placeholder="auto"
+              value={p.concreteYardsOverride ?? ""}
+              onChange={(e) => updateP("concreteYardsOverride", e.target.value === "" ? undefined : Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Short-load fee ($)" hint={`Applied when order < ${CIVIL_RATES.shortLoadThresholdYd} yd`}>
+            <input type="number" className={inputCls} value={p.concreteShortLoadFee ?? CIVIL_RATES.concreteShortLoadFee} onChange={(e) => updateP("concreteShortLoadFee", Number(e.target.value))} />
+          </Field>
+          <Field label="Bollard unit cost ($)">
+            <input type="number" className={inputCls} value={p.bollardUnitCost ?? CIVIL_RATES.bollardEach} onChange={(e) => updateP("bollardUnitCost", Number(e.target.value))} />
+          </Field>
+          <Field label="Asphalt paving ($/SF)">
+            <input type="number" className={inputCls} value={p.asphaltPerSf ?? CIVIL_RATES.asphaltPerSf} onChange={(e) => updateP("asphaltPerSf", Number(e.target.value))} />
+          </Field>
+          <Field label="Asphalt area (SF)" hint={`Blank = auto (${num(asphaltLine?.qty ?? 0)} SF now)`}>
+            <input
+              type="number"
+              className={inputCls}
+              placeholder="auto"
+              value={p.asphaltSfOverride ?? ""}
+              onChange={(e) => updateP("asphaltSfOverride", e.target.value === "" ? undefined : Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Consumables per L2 ($)">
+            <input type="number" className={inputCls} value={p.consumablesPerL2 ?? CIVIL_RATES.consumablesPerL2} onChange={(e) => updateP("consumablesPerL2", Number(e.target.value))} />
+          </Field>
+          <Field label="Consumables per DCFC ($)">
+            <input type="number" className={inputCls} value={p.consumablesPerDcfc ?? CIVIL_RATES.consumablesPerDcfc} onChange={(e) => updateP("consumablesPerDcfc", Number(e.target.value))} />
+          </Field>
+        </Grid>
 
         <h3 className="mt-6 text-sm font-semibold text-zinc-800 dark:text-zinc-200">Custom line items</h3>
         <p className="text-xs text-zinc-500">

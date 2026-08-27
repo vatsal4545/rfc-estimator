@@ -37,7 +37,6 @@ const MONEY = '"$"#,##0.00';
 const PCT = "0.00%";
 const YELLOW: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF6DD" } };
 const HEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EDF5" } };
-const CIVIL_BASE = 15 * 193.54;
 const SQRT3 = Math.sqrt(3);
 
 // ---------------------------------------------------------------------------
@@ -157,16 +156,6 @@ function calibrateModel(lt: LoadType): ModelCal {
   };
 }
 
-function calibrateCategory(id: string): { civil: number; signage: number } {
-  const N = 6;
-  const p = buildQuickProject(bareInput({ lines: [{ loadTypeId: id, count: N }] }), defaultProject(), "cal");
-  const r = computeEstimate(p);
-  return {
-    civil: Math.round((r.peripherals.concreteImprovements - CIVIL_BASE) / N),
-    signage: Math.round(r.peripherals.signageSubtotal / N),
-  };
-}
-
 function calibrateEquipment(method: "trench" | "surface" = "trench"): { base: number; perDay: number } {
   const run = (count: number) => {
     const p = buildQuickProject(
@@ -194,8 +183,6 @@ function nextSizeCountif(sizes: number[], x: number): number {
 async function main() {
   const chargerModels = DEFAULT_LOAD_TYPES.filter((lt) => lt.category !== "Feeder");
   const models = chargerModels.map(calibrateModel);
-  const dcfcCal = calibrateCategory("DCFC 200kW");
-  const l2Cal = calibrateCategory("L2 Single 40A");
   const equipCal = calibrateEquipment("trench");
   const equipCalEmt = calibrateEquipment("surface");
 
@@ -209,6 +196,7 @@ async function main() {
   const planSet480 = wb.addWorksheet("Panel 480V");
   const planSet208 = wb.addWorksheet("Panel 208V");
   const estimate = wb.addWorksheet("Estimate");
+  const periph = wb.addWorksheet("Peripherals");
   const costsInternal = wb.addWorksheet("Costs Internal", {
     properties: { tabColor: { argb: COSTS_INTERNAL_TAB_COLOR } },
   });
@@ -356,11 +344,24 @@ async function main() {
     ["AdaStdCost", "ADA standard stall $ (flat lot)", ADA_UNIT_COST.standard, MONEY],
     ["AdaAmbCost", "ADA ambulatory stall $ (flat lot)", ADA_UNIT_COST.ambulatory, MONEY],
     ["AdaRampCost", "ADA ramp $", ADA_UNIT_COST.ramp, MONEY],
-    ["CivilBase", "Civil mobilization base $", Math.round(CIVIL_BASE), MONEY],
-    ["CivilDcfc", "Civil $/DCFC (concrete, rebar, stops)", dcfcCal.civil, MONEY],
-    ["CivilL2", "Civil $/L2", l2Cal.civil, MONEY],
-    ["SignageDcfc", "Signage+bollards $/DCFC", dcfcCal.signage, MONEY],
-    ["SignageL2", "Signage $/L2", l2Cal.signage, MONEY],
+    // Civil rates behind the Peripherals sheet (Aug-2026 SoCal quotes on file):
+    // 2500 PSI ready-mix $146-195/yd delivered, short-load fee under 8 yd,
+    // asphalt saw-cut patch-back $4-12/SF, forming/anchoring kit per pad.
+    ["ConcreteRate", "Concrete $/yd (2500 PSI delivered)", 165, MONEY],
+    ["ShortLoadFee", "Concrete short-load fee (order < 8 yd)", 125, MONEY],
+    ["AsphaltRate", "Asphalt stall paving $/SF", 5, MONEY],
+    ["StallSqFt", "Stall patch-back SF per stall (9x18)", 162],
+    ["BollardCost", "Bollard installed $/ea", 110, MONEY],
+    ["BollardPerChg", "Bollards per charger", 2],
+    ["BollardAtGear", "Bollards at switchgear (4-5)", 4],
+    ["BollardAtStepdown", "Bollards at step-down TX + sub-panel", 3],
+    ["ConsumDcfc", "Forming consumables $/DCFC (anchors, ells, forms)", 550, MONEY],
+    ["ConsumL2", "Forming consumables $/L2", 275, MONEY],
+    ["PadYdDcfc", "Concrete yd per DCFC pad", 0.75],
+    ["PadYdL2", "Concrete yd per L2 pad", 0.35],
+    ["PadYdGear", "Concrete yd — switchgear pad", 1.75],
+    ["PadYdXfmr", "Concrete yd — step-down TX + sub-panel pad", 0.5],
+    ["PadYdBollard", "Concrete yd per bollard footing", 0.08],
     ["TransformerPad", "Utility transformer pad $ (DCFC)", 5000, MONEY],
     ["CommDcfc", "Commissioning $/DCFC", 1500, MONEY],
     ["CommL2", "Commissioning $/L2", 250, MONEY],
@@ -1212,7 +1213,11 @@ async function main() {
   eHeader(6, "Electrical supply & construction");
   eLine(7, "Wire runs (Takeoff + feeders) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
-  eLine(9, "Trenching / asphalt cut (terrain-adjusted)", "TrenchFt*TrenchRate*VLOOKUP(Terrain,TerrainTable,2,FALSE)");
+  eLine(
+    9,
+    "Trenching / asphalt cut (terrain-adj.) + stall paving",
+    "TrenchFt*TrenchRate*VLOOKUP(Terrain,TerrainTable,2,FALSE)+PeriphAsphalt",
+  );
   // NEC 358.30: racks every 10 ft along the route (+1 end rack), one strut
   // strap per conduit per rack ≈ one per 10 conduit-ft. Charger conduit-ft
   // come per-unit from the Takeoff sheet (runs × one-way ft per charger);
@@ -1223,8 +1228,8 @@ async function main() {
     "Surface EMT supports — strut racks @ 10 ft + straps (NEC 358.30)",
     `IF(InstallMethod="Trenched",0,(ROUNDUP(RouteFt/10,0)+1)*EmtRackCost+ROUNDUP((SUMPRODUCT(Takeoff!$F$${TK_FIRST}:$F$${TK_LAST},Takeoff!$H$${TK_FIRST}:$H$${TK_LAST})+IF(InstallMethod="Surface EMT",SUMPRODUCT(Intake!$D$${FDR_FIRST}:$D$${FDR_FIRST + 2},Intake!$F$${FDR_FIRST}:$F$${FDR_FIRST + 2}),0))/10,0)*EmtStrapCost)`,
   );
-  eLine(11, "Civil (concrete, rebar, wheel stops)", "IF(NTotal>0,CivilBase,0)+NDcfc*CivilDcfc+NumL2*CivilL2");
-  eLine(12, "Signage, striping & bollards", "NDcfc*SignageDcfc+NumL2*SignageL2");
+  eLine(11, "Civil — concrete, rebar, consumables (Peripherals sheet)", "PeriphCivil");
+  eLine(12, "Signage, striping & bollards (Peripherals sheet)", "PeriphSignage");
   eLine(13, "Accessible EVCS stalls + ramp (ADA sheet)", "AdaCost");
   eLine(14, "Spoils haul-off / dump", "TrenchFt*VLOOKUP(Terrain,TerrainTable,5,FALSE)");
   eLine(15, "Private utility scan (GPR)", 'IF(OR(IncGpr="No",TrenchFt<=0),0,MAX(1,ROUNDUP(TrenchFt/GprFtPerDay,0))*GprDayRate)');
@@ -1278,6 +1283,107 @@ async function main() {
   estimate.getCell(43, 2).font = { bold: true, size: 12 };
   wb.definedNames.add("Estimate!$B$43", "CustomerTotal");
   estimate.views = [{ state: "frozen", ySplit: 2 }];
+
+  // ---------------------------------------------------------------- Peripherals
+  // Itemized signage/protection + civil detail, mirroring the app engine's
+  // Peripherals tab. Quantities derive from the Intake counts; unit costs
+  // read the RateCard scalars (yellow there) or sit yellow here. The three
+  // subtotals feed the Estimate: PeriphSignage → B12, PeriphCivil → B11,
+  // PeriphAsphalt → B9's stall-paving term.
+  [46, 12, 12, 14].forEach((w, i) => (periph.getColumn(i + 1).width = w));
+  periph.getCell("A1").value = "Peripherals — signage, protection & civil detail (auto from Intake + RateCard)";
+  periph.getCell("A1").font = { bold: true, size: 13 };
+  periph.getCell("A2").value =
+    "Quantities follow the Intake charger counts; edit rates on the RateCard (or the yellow cells below). Trench-cut asphalt prices on the Estimate; the asphalt here is stall patch-back only.";
+  periph.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
+
+  const pLine = (
+    row: number,
+    name: string,
+    qty: { formula: string } | number,
+    unit: { formula: string } | number,
+    opts?: { yellowQty?: boolean; yellowUnit?: boolean },
+  ) => {
+    periph.getCell(row, 1).value = name;
+    periph.getCell(row, 2).value = typeof qty === "number" ? qty : { formula: qty.formula };
+    if (opts?.yellowQty) periph.getCell(row, 2).fill = YELLOW;
+    periph.getCell(row, 3).value = typeof unit === "number" ? unit : { formula: unit.formula };
+    periph.getCell(row, 3).numFmt = MONEY;
+    if (opts?.yellowUnit) periph.getCell(row, 3).fill = YELLOW;
+    periph.getCell(row, 4).value = { formula: `B${row}*C${row}` };
+    periph.getCell(row, 4).numFmt = MONEY;
+  };
+  const pSubtotal = (row: number, label: string, first: number, last: number, name: string) => {
+    periph.getCell(row, 1).value = label;
+    periph.getCell(row, 1).font = { bold: true };
+    periph.getCell(row, 4).value = { formula: `SUM(D${first}:D${last})` };
+    periph.getCell(row, 4).numFmt = MONEY;
+    periph.getCell(row, 4).font = { bold: true };
+    wb.definedNames.add(`Peripherals!$D$${row}`, name);
+  };
+
+  label(periph, 4, "SIGNAGE & PROTECTION", true);
+  head(periph, 5, ["Item", "Qty", "Unit $", "Total"]);
+  pLine(
+    6,
+    "Bollards (2/charger + 4-5 at switchgear + 3 at step-down/sub-panel)",
+    { formula: "NTotal*BollardPerChg+IF(NDcfc>0,BollardAtGear,0)+IF(AND(NDcfc>0,NumL2>0),BollardAtStepdown,0)" },
+    { formula: "BollardCost" },
+  );
+  pLine(7, "Signs", { formula: "NTotal" }, 40, { yellowUnit: true });
+  pLine(8, "Sign posts", { formula: "NumL2+ROUNDUP(NDcfc/2,0)" }, 56.1, { yellowUnit: true });
+  pLine(9, "Striping (per 10-stall lot)", { formula: "(NumL2*2+NDcfc)/10" }, 1500, { yellowUnit: true });
+  pSubtotal(10, "Signage & protection subtotal", 6, 9, "PeriphSignage");
+
+  label(periph, 12, "CONCRETE & CIVIL", true);
+  head(periph, 13, ["Item", "Qty", "Unit $", "Total"]);
+  // Pad volumes summed then rounded UP to whole yards the way the batch plant
+  // sells them — calibrated so 5 DCFC pads + the switchgear pad + bollard
+  // footings order 7 yd. L2 pads pour only on full-trench jobs; surface EMT
+  // anchors to the existing slab (no pour).
+  pLine(
+    14,
+    "Concrete order — 2500 PSI (yd, rounded up to whole yards)",
+    {
+      formula:
+        'IF(InstallMethod="Surface EMT",0,CEILING(NDcfc*PadYdDcfc+IF(InstallMethod="Trenched",NumL2*PadYdL2,0)+IF(NDcfc>0,PadYdGear,0)+IF(AND(NDcfc>0,NumL2>0),PadYdXfmr,0)+B6*PadYdBollard,1))',
+    },
+    { formula: "ConcreteRate" },
+  );
+  pLine(15, "Concrete short-load fee (order < 8 yd)", { formula: "IF(AND(B14>0,B14<8),1,0)" }, { formula: "ShortLoadFee" });
+  pLine(
+    16,
+    "Rebar (#4 mats — 3/DCFC pad, 2/L2 pad, 2/feeder)",
+    {
+      formula:
+        'IF(InstallMethod="Surface EMT",0,NDcfc*3+IF(InstallMethod="Trenched",NumL2*2,0)+IF(AND(NDcfc>0,NumL2>0),3,IF(NTotal>0,1,0))*2)',
+    },
+    25.65,
+    { yellowUnit: true },
+  );
+  pLine(17, "Forming & anchoring consumables — DCFC pads", { formula: "NDcfc" }, { formula: "ConsumDcfc" });
+  pLine(18, "Forming & anchoring consumables — L2 pads", { formula: "NumL2" }, { formula: "ConsumL2" });
+  pLine(19, "Wheel stops", { formula: "NTotal" }, 70.58, { yellowUnit: true });
+  pLine(20, "Christy boxes (1 per 200 trench-ft)", { formula: "IF(TrenchFt>0,MAX(1,ROUNDUP(TrenchFt/200,0)),0)" }, 160, { yellowUnit: true });
+  pLine(21, "GFI test (service > 1000A)", { formula: "IF(NDcfc>0,IF(SgSuggested>1000,1,0),0)" }, 2000, { yellowUnit: true });
+  pLine(22, "Plywood (manual count)", 0, 55, { yellowQty: true, yellowUnit: true });
+  pLine(23, "2x4 lumber (manual count)", 0, 10, { yellowQty: true, yellowUnit: true });
+  pLine(24, "Sono tubes (manual count)", 0, 19, { yellowQty: true, yellowUnit: true });
+  pSubtotal(25, "Civil subtotal (feeds Estimate B11)", 14, 24, "PeriphCivil");
+
+  label(periph, 27, "ASPHALT — STALL PATCH-BACK", true);
+  head(periph, 28, ["Item", "Qty (SF)", "Unit $", "Total"]);
+  pLine(
+    29,
+    "Asphalt paving — parking stalls (2 stalls/L2, 1/DCFC × SF/stall)",
+    { formula: 'IF(InstallMethod="Surface EMT",0,(NumL2*2+NDcfc)*StallSqFt)' },
+    { formula: "AsphaltRate" },
+  );
+  wb.definedNames.add("Peripherals!$D$29", "PeriphAsphalt");
+  periph.getCell(30, 1).value =
+    "Feeds the Estimate's trenching/asphalt row (B9). Overtype the qty formula with surveyed SF when the patch limits are drawn.";
+  periph.getCell(30, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+  periph.views = [{ state: "frozen", ySplit: 2 }];
 
   // ------------------------------------------------------------ Costs Internal
   // The RFC_V18 presentation view of the Estimate: same layout as the source
@@ -1460,6 +1566,9 @@ async function main() {
     ["   frame up/down — the primary breaker, Intake feeder runs and prices all re-derive. Clear the cell to go back to auto.", false],
     ["   ADA SHEET OVERRIDES: row 7 yellow cells replace the code-minimum stall counts (like the website's Peripherals tab);", false],
     ["   utility/permit fee rates (PermitBase, PermitPerChg, UtilAppDcfc, UtilAppL2) are yellow scalars on the RateCard.", false],
+    ["   PERIPHERALS SHEET: itemized bollards (2/charger + 4-5 at switchgear + 3 at step-down/sub-panel), concrete order rounded", false],
+    ["   up to whole yards (2500 PSI ConcreteRate + ShortLoadFee on the RateCard), asphalt stall patch-back (AsphaltRate $/SF),", false],
+    ["   forming consumables per pad, rebar, wheel stops. Its subtotals feed Estimate rows 9/11/12 — edit rates, not formulas.", false],
     ["3. Every price lives on the RateCard (yellow) — hardware, install allowance, gear catalog, wire $/ft (incl. 450 kcmil Cu & Al),", false],
     ["   labor, tax, contingency. Change there, everything follows.", false],
     ["4. Costs Internal shows the estimate in the RFC_V18 layout (cell-for-cell Hoopa D-00025). Panel 480V / 208V are plan-set", false],
@@ -1584,10 +1693,23 @@ async function main() {
     5 * models.find((m) => m.lt.id === "L2 Single 40A")!.install;
   // Per-level ADA (CBC 11B-228.3.2): 6 DCFC → 1 van + 1 std; 5 L2 → 1 van + 1 std.
   const adaCost = (2 * ADA_UNIT_COST.van + 2 * ADA_UNIT_COST.standard) * t.adaRegradeFactor + ADA_UNIT_COST.ramp;
+  // Peripherals-sheet mirror: bollards 2/charger + 4 at gear + 3 at the
+  // step-down pad; concrete order = pad volumes rounded up to whole yards;
+  // 3 chain legs on a mixed-voltage trench job; GFI fires (SG > 1000A here).
+  const bollardsM = n * 2 + 4 + 3;
+  const concreteYdM = Math.ceil(nD * 0.75 + nL * 0.35 + 1.75 + 0.5 + bollardsM * 0.08);
+  const civilMirror =
+    concreteYdM * 165 + (concreteYdM > 0 && concreteYdM < 8 ? 125 : 0) +
+    (nD * 3 + nL * 2 + 3 * 2) * 25.65 +
+    nD * 550 + nL * 275 +
+    n * 70.58 +
+    Math.max(1, Math.ceil(trench / 200)) * 160 +
+    2000;
+  const signageMirror = n * 40 + (nL + Math.ceil(nD / 2)) * 56.1 + bollardsM * 110 + ((nL * 2 + nD) / 10) * 1500;
+  const asphaltStallsM = (nL * 2 + nD) * 162 * 5;
   const constr =
-    install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor +
-    Math.round(CIVIL_BASE) + nD * dcfcCal.civil + nL * l2Cal.civil +
-    nD * dcfcCal.signage + nL * l2Cal.signage +
+    install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor + asphaltStallsM +
+    civilMirror + signageMirror +
     adaCost + trench * t.spoilsPerFt + 1500 +
     equipCal.base + equipCal.perDay * laborDays +
     (200 + 60 * n) + (2500 + 5000);

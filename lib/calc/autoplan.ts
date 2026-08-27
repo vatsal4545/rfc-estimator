@@ -337,6 +337,14 @@ export function sldDesignDays(counts: ChargerCounts): number {
 
 export const GPR_ITEM_NAME = "Private utility locating (GPR scan)";
 
+/**
+ * Bollard placement rule (field practice): 2 protecting every charger, 4
+ * around new switchgear (bump to 5 on tight lots — the count stays editable
+ * on the Peripherals tab), and 3 covering the step-down transformer +
+ * sub-panel pad, which only exists on mixed-voltage sites.
+ */
+export const BOLLARD_RULE = { perCharger: 2, switchgear: 4, stepDownSubPanel: 3 } as const;
+
 // ---------------------------------------------------------------------------
 // The builder
 // ---------------------------------------------------------------------------
@@ -441,7 +449,10 @@ export function buildQuickProject(
     ...p.peripherals,
     useAutoGear: true,
     customItems,
-    bollardsQty: counts.nDCFC * 4,
+    bollardsQty:
+      counts.nChargers * BOLLARD_RULE.perCharger +
+      (counts.nDCFC > 0 ? BOLLARD_RULE.switchgear : 0) +
+      (mixedVoltage ? BOLLARD_RULE.stepDownSubPanel : 0),
     dataBoxQty: counts.nChargers > 0 ? 1 : 0,
     christyBoxQty: trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / 200)) : 0,
     // Surface EMT needs a pull point roughly every 100 ft (NEC 358.26 caps

@@ -58,6 +58,7 @@ export async function buildEstimateWorkbook(
   wb.created = new Date();
 
   // Tab order = reading order; Summary is filled last (it references Cost Detail).
+  const intake = wb.addWorksheet("Intake");
   const summary = wb.addWorksheet("Summary");
   const costs = wb.addWorksheet("Cost Detail");
   const costsInternal = wb.addWorksheet("Costs Internal", {
@@ -96,6 +97,7 @@ export async function buildEstimateWorkbook(
       cached: fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
     },
   });
+  fillIntake(intake, project, result);
   fillTakeoff(takeoff, result);
   fillMaterials(materials, project, result);
   fillPanel(panel, project, result);
@@ -892,6 +894,99 @@ function fillEquipment(ws: WS, result: EstimateResult): void {
   ws.getCell(row, 7).font = { bold: true };
   for (const col of [3, 6, 7]) moneyCol(ws, col);
   ws.views = [{ state: "frozen", ySplit: 3 }];
+}
+
+// ---------------------------------------------------------------------------
+// Intake — the input record behind this estimate (values, not formulas)
+// ---------------------------------------------------------------------------
+
+function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
+  [36, 24, 50].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  const per = project.peripherals;
+  const q = project.quick;
+  const terrain = project.setup.terrain ?? "flat";
+  const info = TERRAIN_INFO[terrain];
+  const method = effectiveInstallMethod(project.setup);
+  const chain = project.setup.serviceChain;
+  const civil = result.peripherals.lines.civil;
+  const concreteLine = civil.find((c) => c.name.startsWith("Concrete ("));
+  const asphaltLine = civil.find((c) => c.name === "Asphalt paving — parking stalls");
+
+  let row = 1;
+  sectionTitle(ws, row, "Intake — project inputs");
+  row++;
+  ws.getCell(row, 1).value =
+    "Everything the estimate was built from. Edit inputs in the app and re-export; rates marked editable can also be tuned on the Peripherals tab.";
+  ws.getCell(row, 1).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+  row += 2;
+
+  const writeGroup = (title: string, rows: [string, string | number][]) => {
+    sectionTitle(ws, row, title);
+    row++;
+    for (const [label, value] of rows) {
+      ws.getCell(row, 1).value = label;
+      ws.getCell(row, 1).font = { bold: true };
+      ws.getCell(row, 2).value = value;
+      row++;
+    }
+    row++;
+  };
+
+  writeGroup("Site", [
+    ["Client", project.setup.clientName || "—"],
+    ["Site address", project.setup.siteAddress || "—"],
+    ["Scope of work", project.setup.scopeOfWork || "—"],
+  ]);
+
+  writeGroup("Chargers", [
+    ...(q
+      ? q.lines
+          .filter((l) => l.count > 0)
+          .map((l): [string, string | number] => [l.loadTypeId, l.count])
+      : []),
+    ["DCFC total", result.rollups.nDCFC],
+    ["L2 total", result.rollups.nL2],
+    ["Feeders", result.rollups.nFeeders],
+  ]);
+
+  writeGroup("Routing & site conditions", [
+    ["Install method", INSTALL_METHOD_INFO[method].label],
+    ["Terrain", `${info.label} — trench ×${info.trenchFactor}, labor ×${info.laborFactor}`],
+    ["Trench length (ft)", project.setup.trenchLengthFt],
+    ["Surface EMT route (ft)", surfaceRouteFt(project.setup, result.rollups.longestRunFt)],
+    ...(q
+      ? ([
+          ["First run — DCFC (ft)", q.firstRunFtDcfc],
+          ["First run — L2 (ft)", q.firstRunFtL2],
+          ["Step per charger (ft)", q.stepFt],
+        ] as [string, string | number][])
+      : []),
+    ...(chain
+      ? ([
+          ["Utility → switchgear (ft)", chain.utilityToSwitchgearFt],
+          ["Switchgear → transformer (ft)", chain.switchgearToTransformerFt],
+          ["Transformer → sub-panel (ft)", chain.transformerToSubpanelFt],
+        ] as [string, string | number][])
+      : []),
+  ]);
+
+  writeGroup("Civil quantities & editable rates", [
+    ["Bollards (2/charger + 4-5 switchgear + 3 step-down/sub-panel)", per.bollardsQty],
+    ["Bollard unit cost ($)", per.bollardUnitCost ?? 110],
+    ["Concrete order (yd, 2500 PSI)", concreteLine?.qty ?? 0],
+    ["Concrete rate ($/yd)", concreteLine?.unitCost ?? 165],
+    ["Asphalt stall paving (SF)", asphaltLine?.qty ?? 0],
+    ["Asphalt rate ($/SF)", asphaltLine?.unitCost ?? 5],
+    ["Consumables per L2 ($)", per.consumablesPerL2 ?? 275],
+    ["Consumables per DCFC ($)", per.consumablesPerDcfc ?? 550],
+    ["ADA stalls (van / std / amb)", `${per.adaVanQty ?? 0} / ${per.adaStdQty ?? 0} / ${per.adaAmbQty ?? 0}`],
+  ]);
+
+  writeGroup("Permits & utility", [
+    ["Plan check & permit fees ($)", per.permitFeeTotal],
+    ["Utility application fee ($)", per.utilityAppFee],
+    ["Transformer pad ($)", per.transformerPadCost],
+  ]);
 }
 
 // ---------------------------------------------------------------------------

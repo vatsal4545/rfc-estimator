@@ -12,6 +12,10 @@ Cell map (keep in sync with scripts/make-template.ts anchors, N_CH = 12):
   Panel:   SG F21 (D21 ovr) price F22, 208V panel F40 (D40 ovr),
            TX F47 (D47 ovr) price F48, primary breaker F50, branch rows 54-65
   ADA:     per-level rows 4-5, site total 6, override row 7, used row 8, cost B10
+  Peripherals: bollards B6, signage subtotal D10, concrete yd B14,
+           civil subtotal D25, asphalt stall paving D29
+  RateCard scalars: col R rows 10+, in scalars[] order (ConcreteRate R22,
+           AsphaltRate R24, BollardAtGear R28)
 """
 import os
 import sys
@@ -67,6 +71,19 @@ check("TX suggested", g("PANEL!F47"), 112.5)
 check("Breaker used = model rating (DCFC 200kW → 350A)", g("INTAKE!J53"), 350)
 check("Branch-breaker table reads used breaker", g("PANEL!B54"), 350)
 
+# Peripherals sheet: engine-mirror quantities for the default site
+# (6 DCFC + 5 L2, trenched, flat).
+check("Bollards = 2/charger + 4 gear + 3 step-down", g("PERIPHERALS!B6"), 29)
+check("Signage subtotal (signs+posts+bollards+striping)", g("PERIPHERALS!D10"), 6478.80)
+# Pad volumes 6*0.75 + 5*0.35 + 1.75 + 0.5 + 29*0.08 = 10.82 -> 11 yd ordered.
+check("Concrete order rounds up to whole yards", g("PERIPHERALS!B14"), 11)
+check("No short-load fee at 11 yd", g("PERIPHERALS!D15"), 0)
+check("Civil subtotal mirrors engine concreteImprovements", g("PERIPHERALS!D25"), 10458.48)
+check("Asphalt stall paving 16 stalls x 162 SF x $5", g("PERIPHERALS!D29"), 12960)
+check("Estimate B11 = Peripherals civil", g("ESTIMATE!B11"), 10458.48)
+check("Estimate B12 = Peripherals signage", g("ESTIMATE!B12"), 6478.80)
+check("Estimate B9 = trench cut + stall paving", g("ESTIMATE!B9"), 335 * 40.81 + 12960)
+
 # Takeoff sheet: one row per charger, distance ladder per level.
 check("Takeoff row 1 = first DCFC at first-run ft", g("TAKEOFF!H5"), 100)
 check("Takeoff row 2 steps by StepFt", g("TAKEOFF!H6"), 115)
@@ -86,10 +103,20 @@ if not (isinstance(tc, (int, float)) and tc > 100000):
     failures.append("TotalCost sane")
 j5_base = g("TAKEOFF!J5")
 
+# ---- Editable civil rates flow through (RateCard yellow scalars) --------------
+g = run({"'[RFC-Template.xlsx]RATECARD'!R22": 193.54}, "concrete-rate-edit")
+check("Concrete $/yd edit reprices the pour (11 yd x 193.54)", g("PERIPHERALS!D14"), 11 * 193.54)
+g = run({"'[RFC-Template.xlsx]RATECARD'!R24": 8}, "asphalt-rate-edit")
+check("Asphalt $/SF edit reprices stall paving", g("PERIPHERALS!D29"), 2592 * 8)
+g = run({"'[RFC-Template.xlsx]RATECARD'!R28": 5}, "gear-bollards-edit")
+check("Switchgear bollards 4 -> 5 bumps the count", g("PERIPHERALS!B6"), 30)
+
 # ---- Surface EMT ------------------------------------------------------------
 g = run({"'[RFC-Template.xlsx]INTAKE'!B46": "Surface EMT"}, "surface")
 check("TrenchFt = 0 (Surface EMT)", g("INTAKE!B48"), 0)
 check("Trench line $0", g("ESTIMATE!B9"), 0)
+check("No concrete pour on surface EMT", g("PERIPHERALS!B14"), 0)
+check("No stall paving on surface EMT", g("PERIPHERALS!D29"), 0)
 check("GPR $0 when nothing digs", g("ESTIMATE!B15"), 0)
 check("Spoils $0", g("ESTIMATE!B14"), 0)
 emt = g("ESTIMATE!B10")

@@ -340,6 +340,24 @@ export interface PeripheralsInput {
   adaVanUnitCost?: number; // default 6500
   adaStdUnitCost?: number; // default 4900
   adaAmbUnitCost?: number; // default 3500
+  /** Installed bollard unit cost. Default 110. */
+  bollardUnitCost?: number;
+  /**
+   * Concrete supply (2500 PSI delivered). The order quantity is auto-derived
+   * from pad volumes (DCFC pads, L2 pads, switchgear pad, step-down/sub-panel
+   * pad, bollard footings) and rounded UP to whole yards the way a batch
+   * plant sells it. Override the order size with concreteYardsOverride.
+   */
+  concreteUnitCost?: number; // default 165 $/yd
+  concreteYardsOverride?: number;
+  concreteShortLoadFee?: number; // default 125, charged when 0 < order < 8 yd
+  /** Asphalt patch-back on charger parking stalls, $/SF. Default 5. */
+  asphaltPerSf?: number;
+  /** Override the auto stall-paving area (SF). Default: stalls x 162 SF (9x18 stall). */
+  asphaltSfOverride?: number;
+  /** Forming & anchoring consumables lump sums (anchors, elbows, plywood, lumber, hardware). */
+  consumablesPerL2?: number; // default 275
+  consumablesPerDcfc?: number; // default 550
   permitFeeTotal: number;
   utilityAppFee: number;
   transformerPadCost: number;

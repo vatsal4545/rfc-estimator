@@ -115,7 +115,12 @@ describe("CPM engine — Bartell fixture (validated against CPM_Clean.xlsx)", ()
 
   it("matches Peripherals subtotals exactly (ADA asphalt was billed for 2 chargers, not 6, before the fix)", () => {
     expect(result.peripherals.hardwareSubtotal).toBeCloseTo(1108.66066667, 2);
-    expect(result.peripherals.civilSubtotal).toBeCloseTo(31365.54, 2);
+    // Civil intentionally diverges from CPM_Clean since the Aug-2026 civil
+    // model: stall asphalt 6 x 162 SF x $5 = 4,860; forming consumables
+    // 6 x $550 = 3,300; concrete re-based on pad volumes (6 DCFC pads +
+    // switchgear pad + 16 bollard footings = 7.53 -> 8 yd x $165 = 1,320,
+    // replacing the legacy 24 yd x $193.54).
+    expect(result.peripherals.civilSubtotal).toBeCloseTo(36200.58, 2);
     expect(result.peripherals.adaAllowance).toBeCloseTo(19500, 2);
     expect(result.peripherals.signageSubtotal).toBeCloseTo(3068.3, 2);
     expect(result.peripherals.permitsSubtotal).toBe(1000);

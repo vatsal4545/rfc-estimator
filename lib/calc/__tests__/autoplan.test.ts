@@ -48,7 +48,9 @@ describe("buildQuickProject", () => {
     expect(p.financial.chargerHardwareCost).toBe(6 * 92000 + 5 * 4000);
     expect(p.peripherals.permitFeeTotal).toBe(200 + 60 * 11);
     expect(p.peripherals.utilityAppFee).toBe(2500);
-    expect(p.peripherals.bollardsQty).toBe(24);
+    // 2 per charger (11) + 4 at the new switchgear + 3 at the step-down
+    // TX / sub-panel pad (mixed-voltage site) = 29.
+    expect(p.peripherals.bollardsQty).toBe(29);
     // CBC 11B-228.3.2: each charging level is its own facility — the table
     // runs separately for the 6 DCFC (1 van + 1 std) and the 5 L2 (1 van +
     // 1 std), then sums: 2 van + 2 standard + 0 ambulatory.
@@ -81,8 +83,11 @@ describe("buildQuickProject", () => {
     const rHilly = computeEstimate(hilly);
 
     expect(hilly.setup.trenchCostMultiplier).toBe(TERRAIN_INFO.hilly.trenchFactor);
-    expect(rHilly.peripherals.asphaltTrenching).toBeCloseTo(
-      rFlat.peripherals.asphaltTrenching * 1.5,
+    // Stall patch-back (16 stalls x 162 SF x $5) is terrain-independent;
+    // only the trench-cut component scales with the terrain factor.
+    const stallAsphalt = (5 * 2 + 6) * 162 * 5;
+    expect(rHilly.peripherals.asphaltTrenching - stallAsphalt).toBeCloseTo(
+      (rFlat.peripherals.asphaltTrenching - stallAsphalt) * 1.5,
       6,
     );
     expect(hilly.financial.laborBusinessDays).toBeGreaterThan(flat.financial.laborBusinessDays);
