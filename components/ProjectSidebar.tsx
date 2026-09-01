@@ -14,9 +14,12 @@ function relativeTime(ts: number): string {
 }
 
 function Row({ meta, active }: { meta: ProjectMeta; active: boolean }) {
-  const { switchProject, deleteProject, renameProject, duplicateProject, projects } = useProject();
+  const { switchProject, deleteProject, renameProject, duplicateProject } = useProject();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Inline two-click delete — native confirm() dialogs get suppressed by the
+  // browser after "prevent additional dialogs", silently breaking delete.
+  const [confirming, setConfirming] = useState(false);
 
   const commitRename = () => {
     setEditing(false);
@@ -74,23 +77,31 @@ function Row({ meta, active }: { meta: ProjectMeta; active: boolean }) {
         >
           ⧉
         </button>
-        <button
-          className="rounded p-0.5 text-zinc-400 hover:text-red-600"
-          title="Delete"
-          onClick={(e) => {
-            e.stopPropagation();
-            const last = projects.length <= 1;
-            if (
-              confirm(
-                `Delete "${displayName(meta)}"? This cannot be undone.${last ? " A fresh blank project will be created." : ""}`,
-              )
-            ) {
+        {confirming ? (
+          <button
+            className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-red-700"
+            title="Click again to permanently delete"
+            onClick={(e) => {
+              e.stopPropagation();
               deleteProject(meta.id);
-            }
-          }}
-        >
-          ✕
-        </button>
+            }}
+            onMouseLeave={() => setConfirming(false)}
+          >
+            Delete?
+          </button>
+        ) : (
+          <button
+            className="rounded p-0.5 text-zinc-400 hover:text-red-600"
+            title="Delete"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirming(true);
+              setTimeout(() => setConfirming(false), 4000);
+            }}
+          >
+            ✕
+          </button>
+        )}
       </div>
     </div>
   );
