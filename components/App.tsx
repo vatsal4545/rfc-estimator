@@ -7,6 +7,7 @@ import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
 import { PeripheralsTab } from "./PeripheralsTab";
 import { ProjectProvider, useProject } from "./ProjectContext";
+import { ProjectSidebar } from "./ProjectSidebar";
 import { QuickEstimateTab } from "./QuickEstimateTab";
 import { ResultsTab } from "./ResultsTab";
 import { SetupTab } from "./SetupTab";
@@ -28,7 +29,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 function Toolbar() {
-  const { project, setProject, resetProject, result } = useProject();
+  const { project, setProject, newProject, result } = useProject();
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelBusy, setExcelBusy] = useState(false);
 
@@ -89,12 +90,9 @@ function Toolbar() {
         onChange={(e) => e.target.files?.[0] && importJSON(e.target.files[0])}
       />
       <button
-        onClick={() => {
-          if (confirm("Start a new project? This clears the current one (export first if you want to keep it).")) {
-            resetProject();
-          }
-        }}
+        onClick={newProject}
         className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        title="Start a fresh project — the current one stays in the sidebar library"
       >
         New project
       </button>
@@ -114,14 +112,26 @@ function TotalBadge() {
 
 function AppShell() {
   const [tab, setTab] = useState<TabKey>("quick");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="min-h-screen bg-zinc-100 dark:bg-zinc-950">
+    <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">
+      <ProjectSidebar open={sidebarOpen} />
+      <div className="min-w-0 flex-1">
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen((o) => !o)}
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              title={sidebarOpen ? "Hide project list" : "Show project list"}
+            >
+              ☰
+            </button>
+            <div>
             <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">RFC Estimator</h1>
             <p className="text-xs text-zinc-500">EV charging infrastructure cost estimating, automated</p>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             <TotalBadge />
@@ -156,6 +166,7 @@ function AppShell() {
         {tab === "costsInternal" && <CostsInternalTab />}
         {tab === "results" && <ResultsTab />}
       </main>
+      </div>
     </div>
   );
 }

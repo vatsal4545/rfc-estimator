@@ -19,11 +19,12 @@ describe("Excel export", () => {
   );
   const result = computeEstimate(project);
 
-  it("round-trips through the xlsx format with all eight sheets", async () => {
+  it("round-trips through the xlsx format with every sheet, Intake first", async () => {
     const buffer = await estimateWorkbookBuffer(project, result);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer);
     expect(wb.worksheets.map((w) => w.name)).toEqual([
+      "Intake",
       "Summary",
       "Cost Detail",
       "Costs Internal",
