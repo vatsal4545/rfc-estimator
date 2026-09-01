@@ -73,6 +73,33 @@ describe("project store", () => {
     expect(store.getActiveId()).toBeNull(); // active was deleted
   });
 
+  it("compacts stored bodies (no shipped catalog copies) and re-expands on load", () => {
+    const storage = memoryStorage();
+    const store = createProjectStore(storage);
+    const project = defaultProject();
+    // One edited default + one custom model must survive the round trip.
+    project.loadTypes = project.loadTypes.map((lt) =>
+      lt.id === "DCFC 200kW" ? { ...lt, feederOcpdA: 400 } : lt,
+    );
+    project.loadTypes.push({ ...project.loadTypes[0], id: "My Custom 75kW" });
+    const meta = store.createProject(project);
+    store.setActiveId(meta.id);
+    store.saveProject(meta.id, project);
+
+    // Stored body carries only the 2 non-catalog load types, an order of
+    // magnitude smaller than the full project (the 5 MB quota then fits
+    // ~1000 projects instead of ~100).
+    const raw = storage.dump()[`rfc-estimator:project:v1:${meta.id}`];
+    expect(JSON.parse(raw).loadTypes.length).toBe(2);
+    expect(raw.length).toBeLessThan(JSON.stringify(project).length / 3);
+
+    const loaded = store.loadProject(meta.id)!;
+    expect(loaded.loadTypes.length).toBe(project.loadTypes.length);
+    expect(loaded.loadTypes.map((l) => l.id)).toEqual(project.loadTypes.map((l) => l.id)); // canonical order kept
+    expect(loaded.loadTypes.find((l) => l.id === "DCFC 200kW")!.feederOcpdA).toBe(400);
+    expect(loaded.loadTypes.find((l) => l.id === "My Custom 75kW")).toBeDefined();
+  });
+
   it("initStore returns null on an empty library and survives corrupt blobs", () => {
     const storage = memoryStorage();
     expect(createProjectStore(storage).initStore()).toBeNull();

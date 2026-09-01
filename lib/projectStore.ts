@@ -16,7 +16,41 @@
 // If the library ever outgrows the ~5 MB quota, saveProject surfaces the
 // QuotaExceededError to the caller instead of silently dropping the save.
 
-import type { Project } from "./calc/types";
+import { DEFAULT_LOAD_TYPES } from "./calc/tables";
+import type { LoadType, Project } from "./calc/types";
+
+// ---------------------------------------------------------------------------
+// Body compaction — the built-in charger catalog (~40 KB) used to be copied
+// into every stored project, capping a 5 MB localStorage at ~100 projects.
+// Stored bodies keep only load types that differ from the shipped catalog
+// (user-edited or custom); loadProject() re-expands to the full list in
+// canonical order, so callers always see complete projects.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_LT_JSON = new Map(DEFAULT_LOAD_TYPES.map((lt) => [lt.id, JSON.stringify(lt)]));
+
+function compactLoadTypes(loadTypes: LoadType[]): LoadType[] {
+  return loadTypes.filter((lt) => DEFAULT_LT_JSON.get(lt.id) !== JSON.stringify(lt));
+}
+
+function expandLoadTypes(stored: LoadType[]): LoadType[] {
+  const byId = new Map(stored.map((lt) => [lt.id, lt]));
+  // Catalog order first (stored override wins over the shipped default),
+  // then any custom models the catalog doesn't know.
+  const expanded: LoadType[] = DEFAULT_LOAD_TYPES.map((lt) => byId.get(lt.id) ?? lt);
+  const defaults = new Set(DEFAULT_LOAD_TYPES.map((lt) => lt.id));
+  for (const lt of stored) if (!defaults.has(lt.id)) expanded.push(lt);
+  return expanded;
+}
+
+function serializeBody(project: Project): string {
+  return JSON.stringify({ ...project, loadTypes: compactLoadTypes(project.loadTypes) });
+}
+
+function reviveBody(raw: string): Project {
+  const parsed = JSON.parse(raw) as Project;
+  return { ...parsed, loadTypes: expandLoadTypes(parsed.loadTypes ?? []) };
+}
 
 export interface ProjectMeta {
   id: string;
@@ -73,14 +107,14 @@ export function createProjectStore(storage: StorageLike) {
   const loadProject = (id: string): Project | null => {
     try {
       const raw = storage.getItem(bodyKey(id));
-      return raw ? (JSON.parse(raw) as Project) : null;
+      return raw ? reviveBody(raw) : null;
     } catch {
       return null;
     }
   };
 
   const saveProject = (id: string, project: Project): void => {
-    const body = JSON.stringify(project);
+    const body = serializeBody(project);
     storage.setItem(bodyKey(id), body);
     const metas = readIndex();
     const meta = metas.find((m) => m.id === id);
@@ -102,7 +136,7 @@ export function createProjectStore(storage: StorageLike) {
       createdAt: now,
       updatedAt: now,
     };
-    storage.setItem(bodyKey(meta.id), JSON.stringify(project));
+    storage.setItem(bodyKey(meta.id), serializeBody(project));
     writeIndex([...readIndex(), meta]);
     return meta;
   };

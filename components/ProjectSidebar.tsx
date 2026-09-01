@@ -107,27 +107,51 @@ function Row({ meta, active }: { meta: ProjectMeta; active: boolean }) {
   );
 }
 
+// Keep the DOM light with big libraries — the search box narrows the rest.
+const MAX_VISIBLE_ROWS = 100;
+
 export function ProjectSidebar({ open }: { open: boolean }) {
   const { projects, activeId, newProject } = useProject();
+  const [query, setQuery] = useState("");
   if (!open) return null;
+
+  const q = query.trim().toLowerCase();
+  const filtered = q ? projects.filter((m) => displayName(m).toLowerCase().includes(q)) : projects;
+  const visible = filtered.slice(0, MAX_VISIBLE_ROWS);
+  const hidden = filtered.length - visible.length;
 
   return (
     <aside className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="p-3">
+      <div className="space-y-2 p-3">
         <button
           onClick={newProject}
           className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
           + New project
         </button>
+        <input
+          type="search"
+          placeholder="Search projects…"
+          className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm outline-none placeholder:text-zinc-400 focus:border-blue-400 dark:border-zinc-700 dark:bg-zinc-800"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
-        Projects ({projects.length})
+        {q ? `${filtered.length} of ${projects.length} projects` : `Projects (${projects.length})`}
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-        {projects.map((m) => (
+        {visible.map((m) => (
           <Row key={m.id} meta={m} active={m.id === activeId} />
         ))}
+        {hidden > 0 && (
+          <div className="px-2 py-2 text-[11px] text-zinc-400">
+            …and {hidden} more — type in the search box to narrow down.
+          </div>
+        )}
+        {filtered.length === 0 && (
+          <div className="px-2 py-2 text-[11px] text-zinc-400">No project matches “{query}”.</div>
+        )}
       </div>
       <div className="border-t border-zinc-200 p-3 text-[11px] text-zinc-400 dark:border-zinc-800">
         Saved locally in this browser. Use Export for a shareable file.
