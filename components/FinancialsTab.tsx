@@ -1,6 +1,7 @@
 "use client";
 
 import { laborBreakdown } from "@/lib/calc/costs";
+import { reconcileHardwareCost } from "@/lib/catalog";
 import type { LaborItem } from "@/lib/calc/types";
 import { money } from "@/lib/format";
 import { newId } from "@/lib/id";
@@ -8,7 +9,7 @@ import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls } from "./ui";
 
 export function FinancialsTab() {
-  const { project, setProject } = useProject();
+  const { project, setProject, hardwareAllowance } = useProject();
   const f = project.financial;
 
   function update<K extends keyof typeof f>(key: K, value: (typeof f)[K]) {
@@ -132,8 +133,47 @@ export function FinancialsTab() {
         subtitle="Charger hardware and financing line items. The original workbook read two empty cells here and silently dropped this whole section from Total Cost — it's wired in below."
       >
         <Grid cols={3}>
-          <Field label="Charger hardware cost ($)">
-            <input type="number" className={inputCls} value={f.chargerHardwareCost} onChange={(e) => update("chargerHardwareCost", Number(e.target.value))} />
+          <Field
+            label="Charger hardware cost ($)"
+            hint={
+              f.chargerHardwareCostIsAuto === false
+                ? "Manual — catalog price changes won't move this project"
+                : "Auto: counts × the 💲 Charger pricing catalog. Typing here switches to manual."
+            }
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                className={inputCls}
+                value={f.chargerHardwareCost}
+                onChange={(e) =>
+                  setProject((p) => ({
+                    ...p,
+                    financial: {
+                      ...p.financial,
+                      chargerHardwareCost: Number(e.target.value),
+                      chargerHardwareCostIsAuto: false,
+                    },
+                  }))
+                }
+              />
+              {f.chargerHardwareCostIsAuto === false && (
+                <button
+                  className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline"
+                  title="Re-derive from the global Charger pricing catalog"
+                  onClick={() =>
+                    setProject((p) =>
+                      reconcileHardwareCost(
+                        { ...p, financial: { ...p.financial, chargerHardwareCostIsAuto: true } },
+                        hardwareAllowance,
+                      ),
+                    )
+                  }
+                >
+                  → auto
+                </button>
+              )}
+            </div>
           </Field>
           <Field label="Warranty ($)">
             <input type="number" className={inputCls} value={f.chargerWarrantyCost} onChange={(e) => update("chargerWarrantyCost", Number(e.target.value))} />

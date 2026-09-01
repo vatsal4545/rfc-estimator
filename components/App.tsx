@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
+import { ChargerPricingTab } from "./ChargerPricingTab";
 import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
@@ -20,6 +21,7 @@ const TABS = [
   { key: "takeoff", label: "Takeoff" },
   { key: "panel", label: "Panel schedule" },
   { key: "chargers", label: "Charger library" },
+  { key: "pricing", label: "💲 Charger pricing" },
   { key: "peripherals", label: "Peripherals & Equipment" },
   { key: "financials", label: "Financials" },
   { key: "costsInternal", label: "Costs Internal" },
@@ -201,6 +203,7 @@ function AppShell() {
         {tab === "takeoff" && <TakeoffTab />}
         {tab === "panel" && <PanelScheduleTab />}
         {tab === "chargers" && <ChargerLibraryTab />}
+        {tab === "pricing" && <ChargerPricingTab />}
         {tab === "peripherals" && <PeripheralsTab />}
         {tab === "financials" && <FinancialsTab />}
         {tab === "costsInternal" && <CostsInternalTab />}

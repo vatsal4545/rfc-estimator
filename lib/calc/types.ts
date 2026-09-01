@@ -431,6 +431,10 @@ export interface FinancialInput {
   applyContingencyToLabor?: boolean;
   salesTaxPct: number; // 0.0725
   chargerHardwareCost: number;
+  /** True when chargerHardwareCost tracks the global charger-price catalog
+   * (counts x $/unit, re-derived when catalog prices change); false once the
+   * user hand-types a cost on the Financials tab. */
+  chargerHardwareCostIsAuto?: boolean;
   chargerWarrantyCost: number;
   evolvCommissioningCost: number;
   fiveYearServiceCost: number;

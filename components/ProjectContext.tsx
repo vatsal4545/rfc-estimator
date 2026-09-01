@@ -4,14 +4,23 @@ import { computeEstimate } from "@/lib/calc/engine";
 import { defaultProject } from "@/lib/calc/defaults";
 import { DEFAULT_LOAD_TYPES } from "@/lib/calc/tables";
 import type { EstimateResult, LoadType, Project } from "@/lib/calc/types";
+import {
+  browserCatalogStore,
+  effectiveHardwareAllowance,
+  reconcileHardwareCost,
+  type CatalogOverrides,
+  type CatalogStore,
+} from "@/lib/catalog";
 import { browserProjectStore, projectClientName, type ProjectMeta, type ProjectStore } from "@/lib/projectStore";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-// Lazy module singleton: this file is only evaluated client-side (page.tsx
-// dynamic-imports the app with ssr: false), and the store touches
-// localStorage only when its methods run.
+// Lazy module singletons: this file is only evaluated client-side (page.tsx
+// dynamic-imports the app with ssr: false), and the stores touch
+// localStorage only when their methods run.
 let _store: ProjectStore | undefined;
 const getStore = () => (_store ??= browserProjectStore());
+let _catalog: CatalogStore | undefined;
+const getCatalog = () => (_catalog ??= browserCatalogStore());
 
 // Saved projects keep their own charger library (including edits), but
 // built-in models added in newer app versions are merged in so they don't
@@ -39,6 +48,10 @@ interface Ctx {
   duplicateProject: (id: string) => void;
   /** Add a project body (JSON import / share link) as a new library entry and open it. */
   importProject: (body: Project, name?: string) => void;
+  /** Global charger-price catalog (Charger pricing tab): defaults + overrides. */
+  hardwareAllowance: Record<string, number>;
+  catalogOverrides: CatalogOverrides;
+  setCatalogPrice: (modelId: string, price: number | undefined) => void;
 }
 
 const ProjectCtx = createContext<Ctx | null>(null);
@@ -49,9 +62,18 @@ const ProjectCtx = createContext<Ctx | null>(null);
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const store = getStore();
 
+  const [catalogOverrides, setCatalogOverrides] = useState<CatalogOverrides>(() => getCatalog().getOverrides());
+  const hardwareAllowance = useMemo(() => effectiveHardwareAllowance(catalogOverrides), [catalogOverrides]);
+
+  // Merge current load types + re-derive the hardware line from the price
+  // catalog — applied to every project body coming out of the store.
+  const prepare = (body: Project, allowance: Record<string, number> = hardwareAllowance): Project =>
+    reconcileHardwareCost(withCurrentLoadTypes(body), allowance);
+
   const [state, setState] = useState<{ id: string; project: Project }>(() => {
+    const allowance = effectiveHardwareAllowance(getCatalog().getOverrides());
     const boot = store.initStore();
-    if (boot) return { id: boot.id, project: withCurrentLoadTypes(boot.project) };
+    if (boot) return { id: boot.id, project: reconcileHardwareCost(withCurrentLoadTypes(boot.project), allowance) };
     const project = defaultProject();
     const meta = store.createProject(project);
     store.setActiveId(meta.id);
@@ -99,7 +121,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const body = store.loadProject(id);
     if (!body) return;
     store.setActiveId(id);
-    setState({ id, project: withCurrentLoadTypes(body) });
+    setState({ id, project: prepare(body) });
   };
 
   const newProject = () => {
@@ -118,7 +140,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (next) {
         const body = store.loadProject(next.id);
         store.setActiveId(next.id);
-        setState({ id: next.id, project: body ? withCurrentLoadTypes(body) : defaultProject() });
+        setState({ id: next.id, project: body ? prepare(body) : defaultProject() });
       } else {
         const body = defaultProject();
         const meta = store.createProject(body);
@@ -140,18 +162,27 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       const body = store.loadProject(meta.id);
       if (body) {
         store.setActiveId(meta.id);
-        setState({ id: meta.id, project: withCurrentLoadTypes(body) });
+        setState({ id: meta.id, project: prepare(body) });
       }
     }
     refreshLibrary();
   };
 
   const importProject = (body: Project, name = "") => {
-    const project = withCurrentLoadTypes(body);
+    const project = prepare(body);
     const meta = store.createProject(project, name);
     store.setActiveId(meta.id);
     setState({ id: meta.id, project });
     refreshLibrary();
+  };
+
+  const setCatalogPrice = (modelId: string, price: number | undefined) => {
+    const next = getCatalog().setPrice(modelId, price);
+    setCatalogOverrides(next);
+    // Reflect the new price into the open project right away; every other
+    // auto-priced project reconciles the moment it is opened.
+    const allowance = effectiveHardwareAllowance(next);
+    setState((s) => ({ ...s, project: reconcileHardwareCost(s.project, allowance) }));
   };
 
   // Kept for the toolbar: clears the CURRENT project back to defaults.
@@ -175,6 +206,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         renameProject,
         duplicateProject,
         importProject,
+        hardwareAllowance,
+        catalogOverrides,
+        setCatalogPrice,
       }}
     >
       {children}

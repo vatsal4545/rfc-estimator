@@ -382,6 +382,9 @@ export function buildQuickProject(
   input: QuickEstimateInput,
   base: Project,
   idSeed = "qs",
+  // The app passes the global price catalog (shipped defaults + user
+  // overrides from the Charger pricing tab); scripts/tests get the defaults.
+  hardwareAllowance: Record<string, number> = HARDWARE_ALLOWANCE,
 ): Project {
   const p: Project = JSON.parse(JSON.stringify(base));
   input = normalizeQuickInput(input, base.setup);
@@ -523,7 +526,7 @@ export function buildQuickProject(
 
   // --- Design invoice, hardware, labor ------------------------------------
   const hardwareCost = input.includeChargerHardware
-    ? input.lines.reduce((s, l) => s + (l.count > 0 ? l.count * (HARDWARE_ALLOWANCE[l.loadTypeId] ?? 0) : 0), 0)
+    ? input.lines.reduce((s, l) => s + (l.count > 0 ? l.count * (hardwareAllowance[l.loadTypeId] ?? 0) : 0), 0)
     : 0;
   const commissioning = input.includeChargerHardware
     ? counts.nDCFC * RATE_CARD.commissioningPerDcfc + counts.nL2 * RATE_CARD.commissioningPerL2
@@ -536,6 +539,7 @@ export function buildQuickProject(
     electricalEngDesignCost: input.includeSldDesign ? sldFee(counts) : 0,
     pmHours: 0, // set from valuation below
     chargerHardwareCost: hardwareCost,
+    chargerHardwareCostIsAuto: true,
     evolvCommissioningCost: commissioning,
     planCheckPermitFee: 0, // set from valuation below
   };

@@ -3,7 +3,6 @@
 import {
   ADA_UNIT_COST,
   GPR_ITEM_NAME,
-  HARDWARE_ALLOWANCE,
   INSTALL_METHOD_INFO,
   TERRAIN_INFO,
   adaStallBreakdownByLevel,
@@ -43,7 +42,7 @@ const SERVICE_TOGGLES: {
 ];
 
 export function QuickEstimateTab() {
-  const { project, setProject } = useProject();
+  const { project, setProject, hardwareAllowance } = useProject();
   // The quick intake is edited straight on the project (auto-saved on every
   // keystroke like the other tabs), NOT in local component state — a local
   // draft evaporated on tab switches / accidental closes, and a stale draft
@@ -82,7 +81,12 @@ export function QuickEstimateTab() {
 
   function build() {
     setProject((p) =>
-      buildQuickProject(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(), p, newId("qs")),
+      buildQuickProject(
+        p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(),
+        p,
+        newId("qs"),
+        hardwareAllowance,
+      ),
     );
   }
 
@@ -121,7 +125,7 @@ export function QuickEstimateTab() {
             />
             {input.includeChargerHardware && (
               <span className="text-xs text-zinc-400">
-                hardware allowance {money(HARDWARE_ALLOWANCE[line.loadTypeId] ?? 0)}/unit
+                hardware allowance {money(hardwareAllowance[line.loadTypeId] ?? 0)}/unit
               </span>
             )}
             <button
