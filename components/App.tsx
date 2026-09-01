@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
 import { PeripheralsTab } from "./PeripheralsTab";
 import { ProjectProvider, useProject } from "./ProjectContext";
+import { ProjectSidebar } from "./ProjectSidebar";
 import { QuickEstimateTab } from "./QuickEstimateTab";
 import { ResultsTab } from "./ResultsTab";
 import { SetupTab } from "./SetupTab";
@@ -28,9 +29,22 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 function Toolbar() {
-  const { project, setProject, resetProject, result } = useProject();
+  const { project, newProject, importProject, result } = useProject();
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  const [shared, setShared] = useState(false);
+
+  async function shareLink() {
+    const { buildShareUrl } = await import("@/lib/shareLink");
+    const url = await buildShareUrl(project);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShared(true);
+      setTimeout(() => setShared(false), 2500);
+    } catch {
+      prompt("Copy the share link (opens this project as an editable copy):", url);
+    }
+  }
 
   async function exportExcel() {
     setExcelBusy(true);
@@ -58,7 +72,8 @@ function Toolbar() {
     file.text().then((text) => {
       try {
         const parsed = JSON.parse(text);
-        setProject(parsed);
+        // Lands as a NEW library entry — importing must not clobber the open project.
+        importProject(parsed);
       } catch {
         alert("That file isn't a valid RFC estimator project export.");
       }
@@ -75,6 +90,13 @@ function Toolbar() {
       >
         {excelBusy ? "Building…" : "⬇ Excel"}
       </button>
+      <button
+        onClick={shareLink}
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        title="Copy a link that opens this project (as an editable copy) for anyone you send it to"
+      >
+        {shared ? "✓ Link copied" : "Share"}
+      </button>
       <button onClick={exportJSON} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
         Export
       </button>
@@ -89,12 +111,9 @@ function Toolbar() {
         onChange={(e) => e.target.files?.[0] && importJSON(e.target.files[0])}
       />
       <button
-        onClick={() => {
-          if (confirm("Start a new project? This clears the current one (export first if you want to keep it).")) {
-            resetProject();
-          }
-        }}
+        onClick={newProject}
         className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        title="Start a fresh project — the current one stays in the sidebar library"
       >
         New project
       </button>
@@ -114,14 +133,45 @@ function TotalBadge() {
 
 function AppShell() {
   const [tab, setTab] = useState<TabKey>("quick");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { importProject } = useProject();
+
+  // Opening a share link (#p=...) imports that project into this browser's
+  // library as an editable copy. The hash is cleared synchronously before the
+  // async decode so StrictMode's doubled effect can't import twice.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#p=")) return;
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    import("@/lib/shareLink").then(async ({ decodeSharedProject }) => {
+      try {
+        const body = await decodeSharedProject(hash);
+        if (body) importProject(body);
+      } catch {
+        alert("This share link is damaged or from an incompatible app version.");
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <div className="min-h-screen bg-zinc-100 dark:bg-zinc-950">
+    <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">
+      <ProjectSidebar open={sidebarOpen} />
+      <div className="min-w-0 flex-1">
       <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen((o) => !o)}
+              className="rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              title={sidebarOpen ? "Hide project list" : "Show project list"}
+            >
+              ☰
+            </button>
+            <div>
             <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">RFC Estimator</h1>
             <p className="text-xs text-zinc-500">EV charging infrastructure cost estimating, automated</p>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             <TotalBadge />
@@ -156,6 +206,7 @@ function AppShell() {
         {tab === "costsInternal" && <CostsInternalTab />}
         {tab === "results" && <ResultsTab />}
       </main>
+      </div>
     </div>
   );
 }

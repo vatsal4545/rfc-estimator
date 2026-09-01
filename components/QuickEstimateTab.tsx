@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   ADA_UNIT_COST,
   GPR_ITEM_NAME,
@@ -45,20 +44,46 @@ const SERVICE_TOGGLES: {
 
 export function QuickEstimateTab() {
   const { project, setProject } = useProject();
-  const [input, setInput] = useState<QuickEstimateInput>(
-    () => (project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput()),
-  );
+  // The quick intake is edited straight on the project (auto-saved on every
+  // keystroke like the other tabs), NOT in local component state — a local
+  // draft evaporated on tab switches / accidental closes, and a stale draft
+  // could overwrite the client name on the next Build.
+  const input: QuickEstimateInput = project.quick
+    ? normalizeQuickInput(project.quick, project.setup)
+    : defaultQuickInput();
 
   const chargerModels = project.loadTypes.filter((lt) => lt.category !== "Feeder");
   const totalChargers = input.lines.reduce((s, l) => s + Math.max(0, l.count), 0);
   const built = (project.quick?.lines.length ?? 0) > 0 && project.takeoff.length > 0;
 
   function set<K extends keyof QuickEstimateInput>(key: K, value: QuickEstimateInput[K]) {
-    setInput((q) => ({ ...q, [key]: value }));
+    setProject((p) => ({
+      ...p,
+      quick: {
+        ...(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput()),
+        [key]: value,
+      },
+    }));
+  }
+
+  function setSetup<K extends keyof typeof project.setup>(key: K, value: (typeof project.setup)[K]) {
+    setProject((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
+  }
+
+  /** Client / site address live in both the quick intake and setup — keep
+   * them in lockstep so nothing depends on when Build last ran. */
+  function setIdentity(patch: { clientName?: string; siteAddress?: string }) {
+    setProject((p) => ({
+      ...p,
+      setup: { ...p.setup, ...patch },
+      quick: { ...(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput()), ...patch },
+    }));
   }
 
   function build() {
-    setProject((p) => buildQuickProject(input, p, newId("qs")));
+    setProject((p) =>
+      buildQuickProject(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(), p, newId("qs")),
+    );
   }
 
   return (
@@ -118,14 +143,28 @@ export function QuickEstimateTab() {
         <AdaCodeCard input={input} />
 
 
-        {/* 2 — site */}
+        {/* 2 — site. The identity fields live HERE only (they used to be
+            duplicated on the Setup tab): client + address write both the
+            quick intake and setup, so exports and the sidebar label follow
+            immediately without waiting for a Build. */}
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">2 · Site</div>
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Client">
-            <input className={inputCls} value={input.clientName} onChange={(e) => set("clientName", e.target.value)} />
+            <input className={inputCls} value={input.clientName} onChange={(e) => setIdentity({ clientName: e.target.value })} />
           </Field>
           <Field label="Site address">
-            <input className={inputCls} value={input.siteAddress} onChange={(e) => set("siteAddress", e.target.value)} />
+            <input className={inputCls} value={input.siteAddress} onChange={(e) => setIdentity({ siteAddress: e.target.value })} />
+          </Field>
+        </div>
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Utility" hint="SDG&E, PG&E, SCE…">
+            <input className={inputCls} value={project.setup.utility} onChange={(e) => setSetup("utility", e.target.value)} />
+          </Field>
+          <Field label="CPM (prepared by)">
+            <input className={inputCls} value={project.setup.cpm} onChange={(e) => setSetup("cpm", e.target.value)} />
+          </Field>
+          <Field label="CRA">
+            <input className={inputCls} value={project.setup.cra} onChange={(e) => setSetup("cra", e.target.value)} />
           </Field>
         </div>
         <div className="mb-3 grid grid-cols-1 gap-4 sm:grid-cols-3">

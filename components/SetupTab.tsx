@@ -15,23 +15,11 @@ export function SetupTab() {
 
   return (
     <div>
-      <Section title="Project information">
+      <Section
+        title="Project information"
+        subtitle="Client, site address, utility, CPM and CRA live on the Quick Estimate tab (2 · Site) — one place, no duplicates."
+      >
         <Grid cols={3}>
-          <Field label="Client">
-            <input className={inputCls} value={s.clientName} onChange={(e) => update("clientName", e.target.value)} />
-          </Field>
-          <Field label="Site address">
-            <input className={inputCls} value={s.siteAddress} onChange={(e) => update("siteAddress", e.target.value)} />
-          </Field>
-          <Field label="Utility">
-            <input className={inputCls} value={s.utility} onChange={(e) => update("utility", e.target.value)} />
-          </Field>
-          <Field label="CPM">
-            <input className={inputCls} value={s.cpm} onChange={(e) => update("cpm", e.target.value)} />
-          </Field>
-          <Field label="CRA">
-            <input className={inputCls} value={s.cra} onChange={(e) => update("cra", e.target.value)} />
-          </Field>
           <Field label="Price list source">
             <input className={inputCls} value={s.priceListSource} onChange={(e) => update("priceListSource", e.target.value)} />
           </Field>
