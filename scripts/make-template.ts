@@ -131,11 +131,14 @@ function calibrateModel(lt: LoadType): ModelCal {
     );
     const r = computeEstimate(p);
     const wireTotal = r.rows.reduce((s, row) => s + row.wireCost, 0);
-    const supports = r.peripherals.lines.hardware
-      .filter((h) => EMT_SUPPORT_LINES.includes(h.name))
+    // Site-level items must not smear into the per-unit allowance: the data
+    // box is ONE per site ($1,500, its own Estimate term), not $1,500/N per
+    // charger — an 11-charger site was carrying $2,750 of data box.
+    const siteLevel = r.peripherals.lines.hardware
+      .filter((h) => EMT_SUPPORT_LINES.includes(h.name) || h.name === "Data box")
       .reduce((s, h) => s + h.qty * h.unitCost, 0);
     return {
-      install: Math.round((r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal - supports) / N),
+      install: Math.round((r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal - siteLevel) / N),
       rows: r.rows,
     };
   };
@@ -340,6 +343,7 @@ async function main() {
     ["CpmPct", "CPM % of construction", 0.05, PCT],
     ["GprDayRate", "GPR scan $/day", 1500, MONEY],
     ["GprFtPerDay", "GPR trench-ft per day", 2000],
+    ["DataBoxCost", "Data/comms box $ (one per site)", 1500, MONEY],
     ["AdaVanCost", "ADA van stall $ (flat lot)", ADA_UNIT_COST.van, MONEY],
     ["AdaStdCost", "ADA standard stall $ (flat lot)", ADA_UNIT_COST.standard, MONEY],
     ["AdaAmbCost", "ADA ambulatory stall $ (flat lot)", ADA_UNIT_COST.ambulatory, MONEY],
@@ -1211,7 +1215,11 @@ async function main() {
   };
 
   eHeader(6, "Electrical supply & construction");
-  eLine(7, "Wire runs (Takeoff + feeders) + conduit & install allowance", `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})`);
+  eLine(
+    7,
+    "Wire runs (Takeoff + feeders) + conduit & install allowance + data box",
+    `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})+IF(NTotal>0,DataBoxCost,0)`,
+  );
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
   eLine(
     9,
@@ -1392,7 +1400,10 @@ async function main() {
   // G20 to the permit Valuation.
   fillCostsInternal(costsInternal, {
     lines: [
-      { formula: "Estimate!B7+Estimate!B10" }, // Wires, Conduits and Peripherals ← make-ready + EMT strut supports
+      // Make-ready + EMT strut supports + GPR scan: the app books GPR as a
+      // peripherals custom item, so it lands in THIS row there — mirror that,
+      // not the Utility row, or the two sheets disagree by the scan cost.
+      { formula: "Estimate!B7+Estimate!B10+Estimate!B15" },
       { formula: `Panel!F${PNL_SG_ROW + 1}` }, // Main Distribution Switchgear
       { formula: `Panel!F${PNL_PNL_ROW + 2}+Panel!F${PNL_TX_ROW + 1}+Panel!F${PNL_BB_TOTAL}` }, // Sub-panels, transformers, breakers
       { formula: "Estimate!B12" }, // Bollards, Signage ← signage/striping/bollards
@@ -1401,7 +1412,7 @@ async function main() {
       { formula: "Estimate!B13" }, // ADA
       { formula: "Estimate!B14" }, // Dump/ Waste ← spoils haul-off
       { formula: "Estimate!B17" }, // Permits ← AHJ issuance
-      { formula: "Estimate!B18+Estimate!B15" }, // Utility ← application + pad + GPR scan
+      { formula: "Estimate!B18" }, // Utility ← application + transformer pad (GPR is in the Wires row, like the app)
       { formula: "Estimate!B16" }, // Construction Equipment ← rentals
     ],
     contingency: { formula: "ContingencyPct" },
@@ -1710,7 +1721,7 @@ async function main() {
   const constr =
     install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor + asphaltStallsM +
     civilMirror + signageMirror +
-    adaCost + trench * t.spoilsPerFt + 1500 +
+    adaCost + trench * t.spoilsPerFt + 1500 /* GPR */ + 1500 /* site data box */ +
     equipCal.base + equipCal.perDay * laborDays +
     (200 + 60 * n) + (2500 + 5000);
   const loaded = constr * 1.1;

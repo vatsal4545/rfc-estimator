@@ -14,8 +14,8 @@ Cell map (keep in sync with scripts/make-template.ts anchors, N_CH = 12):
   ADA:     per-level rows 4-5, site total 6, override row 7, used row 8, cost B10
   Peripherals: bollards B6, signage subtotal D10, concrete yd B14,
            civil subtotal D25, asphalt stall paving D29
-  RateCard scalars: col R rows 10+, in scalars[] order (ConcreteRate R22,
-           AsphaltRate R24, BollardAtGear R28)
+  RateCard scalars: col R rows 10+, in scalars[] order (ConcreteRate R23,
+           AsphaltRate R25, BollardAtGear R29 — rows SHIFT when scalars[] changes)
 """
 import os
 import sys
@@ -103,12 +103,29 @@ if not (isinstance(tc, (int, float)) and tc > 100000):
     failures.append("TotalCost sane")
 j5_base = g("TAKEOFF!J5")
 
+# ---- Costs Internal rows tie to the app engine (default site) -----------------
+# App-engine golden values for 6x DCFC200 + 5x L2-40, trenched, flat (from
+# computeEstimate → costs.lines). Wires (D3) and Equipment (D13) are budgetary
+# allowances (calibrated), so they get a tolerance; every other row must tie
+# to the cent — the user compares these sheets side by side.
+check("CI Bollards+Signage = app", g("COSTS INTERNAL!D6"), 6478.80)
+check("CI Asphalt+Paving = app", g("COSTS INTERNAL!D7"), 26631.35)
+check("CI Concrete Improvements = app", g("COSTS INTERNAL!D8"), 10458.48)
+check("CI ADA = app", g("COSTS INTERNAL!D9"), 28000)
+check("CI Dump/Waste = app", g("COSTS INTERNAL!D10"), 1675)
+check("CI Permits = app", g("COSTS INTERNAL!D11"), 860)
+check("CI Utility = app 7500 (GPR lives in the Wires row)", g("COSTS INTERNAL!D12"), 7500)
+check("CI Wires row = B7+B10+B15 (incl. GPR + site data box)",
+      g("COSTS INTERNAL!D3"), g("ESTIMATE!B7") + g("ESTIMATE!B10") + g("ESTIMATE!B15"))
+check("CI Wires ~ app 39901 (calibrated allowance, ±2%)", g("COSTS INTERNAL!D3"), 39901, tol=39901 * 0.02)
+check("CI Equipment ~ app 13209 (calibrated, ±2%)", g("COSTS INTERNAL!D13"), 13209, tol=13209 * 0.02)
+
 # ---- Editable civil rates flow through (RateCard yellow scalars) --------------
-g = run({"'[RFC-Template.xlsx]RATECARD'!R22": 193.54}, "concrete-rate-edit")
+g = run({"'[RFC-Template.xlsx]RATECARD'!R23": 193.54}, "concrete-rate-edit")
 check("Concrete $/yd edit reprices the pour (11 yd x 193.54)", g("PERIPHERALS!D14"), 11 * 193.54)
-g = run({"'[RFC-Template.xlsx]RATECARD'!R24": 8}, "asphalt-rate-edit")
+g = run({"'[RFC-Template.xlsx]RATECARD'!R25": 8}, "asphalt-rate-edit")
 check("Asphalt $/SF edit reprices stall paving", g("PERIPHERALS!D29"), 2592 * 8)
-g = run({"'[RFC-Template.xlsx]RATECARD'!R28": 5}, "gear-bollards-edit")
+g = run({"'[RFC-Template.xlsx]RATECARD'!R29": 5}, "gear-bollards-edit")
 check("Switchgear bollards 4 -> 5 bumps the count", g("PERIPHERALS!B6"), 30)
 
 # ---- Surface EMT ------------------------------------------------------------
