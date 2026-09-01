@@ -192,6 +192,36 @@ describe("project store", () => {
     vi.useRealTimers();
   });
 
+  it("untouched blank drafts stay local: skipped by sync export until edited or renamed", () => {
+    const store = createProjectStore(memoryStorage());
+    const draft = store.createProject(defaultProject(), "", { touched: false });
+    const real = store.createProject(defaultProject(), "Real Site"); // touched defaults true
+
+    // Draft is visible locally but not exported.
+    expect(store.listProjects().length).toBe(2);
+    expect(store.exportLibrary().projects.map((p) => p.meta.id)).toEqual([real.id]);
+
+    // Saving IDENTICAL content (the mount-time autosave) does not graduate it.
+    store.saveProject(draft.id, store.loadProject(draft.id)!);
+    expect(store.exportLibrary().projects.map((p) => p.meta.id)).toEqual([real.id]);
+
+    // A real edit graduates the draft into the sync set.
+    const body = store.loadProject(draft.id)!;
+    body.setup.clientName = "Now real";
+    store.saveProject(draft.id, body);
+    expect(store.exportLibrary().projects.length).toBe(2);
+
+    // Renaming alone also counts as deliberate.
+    const draft2 = store.createProject(defaultProject(), "", { touched: false });
+    store.renameProject(draft2.id, "Named draft");
+    expect(store.exportLibrary().projects.length).toBe(3);
+
+    // Deleting an untouched draft doesn't leak it into the synced trash.
+    const draft3 = store.createProject(defaultProject(), "", { touched: false });
+    store.deleteProject(draft3.id);
+    expect(store.exportLibrary().trash!.map((t) => t.meta.id)).not.toContain(draft3.id);
+  });
+
   it("initStore returns null on an empty library and survives corrupt blobs", () => {
     const storage = memoryStorage();
     expect(createProjectStore(storage).initStore()).toBeNull();

@@ -110,7 +110,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const boot = store.initStore();
     if (boot) return { id: boot.id, project: reconcileHardwareCost(withCurrentLoadTypes(boot.project), allowance) };
     const project = defaultProject();
-    const meta = store.createProject(project);
+    const meta = store.createProject(project, "", { touched: false });
     store.setActiveId(meta.id);
     return { id: meta.id, project };
   });
@@ -164,7 +164,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   const newProject = () => {
     const body = defaultProject();
-    const meta = store.createProject(body);
+    const meta = store.createProject(body, "", { touched: false });
     store.setActiveId(meta.id);
     setState({ id: meta.id, project: body });
     refreshLibrary();
@@ -184,7 +184,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         setState({ id: next.id, project: body ? prepare(body) : defaultProject() });
       } else {
         const body = defaultProject();
-        const meta = store.createProject(body);
+        const meta = store.createProject(body, "", { touched: false });
         store.setActiveId(meta.id);
         setState({ id: meta.id, project: body });
       }
@@ -271,7 +271,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             return { id: next.id, project: prepare(nextBody) };
           }
           const fresh = defaultProject();
-          const meta = store.createProject(fresh);
+          const meta = store.createProject(fresh, "", { touched: false });
           store.setActiveId(meta.id);
           return { id: meta.id, project: fresh };
         });

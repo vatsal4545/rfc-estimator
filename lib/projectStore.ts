@@ -60,6 +60,11 @@ export interface ProjectMeta {
   clientName: string;
   createdAt: number;
   updatedAt: number;
+  /** False for a blank project nobody has edited yet — those stay local and
+   * are skipped by cloud sync (Claude-chat semantics: an untouched draft
+   * isn't real content). The first edit or rename flips it to true.
+   * Absent on pre-flag metas = treated as touched (real data, keep syncing). */
+  touched?: boolean;
 }
 
 export interface StorageLike {
@@ -143,19 +148,21 @@ export function createProjectStore(storage: StorageLike) {
 
   const saveProject = (id: string, project: Project): void => {
     const body = serializeBody(project);
+    const edited = storage.getItem(bodyKey(id)) !== body;
     storage.setItem(bodyKey(id), body);
     const metas = readIndex();
     const meta = metas.find((m) => m.id === id);
     if (meta) {
       meta.updatedAt = Date.now();
       meta.clientName = projectClientName(project);
+      if (edited) meta.touched = true; // first real change graduates the draft
       writeIndex(metas);
     }
     // Mirror the active body to the legacy single-project key (rollback safety).
     if (storage.getItem(ACTIVE_KEY) === id) storage.setItem(LEGACY_KEY, body);
   };
 
-  const createProject = (project: Project, name = ""): ProjectMeta => {
+  const createProject = (project: Project, name = "", opts?: { touched?: boolean }): ProjectMeta => {
     const now = Date.now();
     const meta: ProjectMeta = {
       id: newProjectId(),
@@ -163,6 +170,7 @@ export function createProjectStore(storage: StorageLike) {
       clientName: projectClientName(project),
       createdAt: now,
       updatedAt: now,
+      touched: opts?.touched ?? true,
     };
     storage.setItem(bodyKey(meta.id), serializeBody(project));
     writeIndex([...readIndex(), meta]);
@@ -175,6 +183,7 @@ export function createProjectStore(storage: StorageLike) {
     if (!meta) return;
     meta.name = name.trim();
     meta.updatedAt = Date.now();
+    meta.touched = true; // naming a draft is a deliberate act — sync it
     writeIndex(metas);
   };
 
@@ -252,13 +261,15 @@ export function createProjectStore(storage: StorageLike) {
   const clearTombstones = (): void => storage.removeItem(TOMBSTONE_KEY);
 
   /** Snapshot for cloud sync (bodies already compacted). */
+  // Untouched blank drafts stay local (never pushed) — same for their trash.
   const exportLibrary = (): CloudLibraryData => ({
     projects: readIndex().flatMap((meta) => {
+      if (meta.touched === false) return [];
       const body = storage.getItem(bodyKey(meta.id));
       return body ? [{ meta, body }] : [];
     }),
     tombstones: readTombstones(),
-    trash: readTrash(),
+    trash: readTrash().filter((t) => t.meta.touched !== false),
   });
 
   /**
