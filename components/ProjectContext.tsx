@@ -11,7 +11,16 @@ import {
   type CatalogOverrides,
   type CatalogStore,
 } from "@/lib/catalog";
-import { SYNC_KEY_STORAGE, syncOnce } from "@/lib/cloudSync";
+import {
+  SESSION_STORAGE,
+  apiChangePassword,
+  apiLogin,
+  apiRegister,
+  apiReset,
+  apiResetRequest,
+  syncOnce,
+  type Session,
+} from "@/lib/cloudSync";
 import {
   browserProjectStore,
   projectClientName,
@@ -62,9 +71,14 @@ interface Ctx {
   /** Recently deleted projects (restorable for 30 days, synced). */
   trash: TrashEntry[];
   restoreProject: (id: string) => void;
-  /** Cross-device cloud sync (Vercel Blob behind /api/workspace). */
-  syncKey: string;
-  setSyncKey: (key: string) => void;
+  /** Account + cross-device cloud sync (Vercel Blob behind /api/workspace). */
+  session: Session | null;
+  signIn: (username: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  signOut: () => void;
+  changePassword: (current: string, next: string) => Promise<void>;
+  resetRequest: (username: string) => Promise<string>;
+  resetPassword: (username: string, code: string, newPassword: string) => Promise<void>;
   syncState: SyncState;
   syncNow: () => void;
 }
@@ -160,7 +174,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     // Connected: tombstone so the deletion reaches other devices (the body
     // stays restorable from Recently deleted). Disconnected: local-only —
     // reconnecting restores the project from the cloud workspace.
-    store.deleteProject(id, { tombstone: !!syncKey });
+    store.deleteProject(id, { tombstone: !!session });
     const remaining = store.listProjects();
     if (id === activeId) {
       const next = remaining[0];
@@ -176,14 +190,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     }
     refreshLibrary();
-    if (syncKey) scheduleSync();
+    if (session) scheduleSync();
   };
 
   const restoreProject = (id: string) => {
     const meta = store.restoreProject(id);
     if (!meta) return;
     refreshLibrary();
-    if (syncKey) scheduleSync();
+    if (session) scheduleSync();
   };
 
   const renameProject = (id: string, name: string) => {
@@ -221,11 +235,12 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ---- Cross-device sync ----------------------------------------------------
-  const [syncKey, setSyncKeyState] = useState<string>(() => {
+  const [session, setSession] = useState<Session | null>(() => {
     try {
-      return localStorage.getItem(SYNC_KEY_STORAGE) ?? "";
+      const raw = localStorage.getItem(SESSION_STORAGE);
+      return raw ? (JSON.parse(raw) as Session) : null;
     } catch {
-      return "";
+      return null;
     }
   });
   const [syncState, setSyncState] = useState<SyncState>({ status: "off" });
@@ -233,7 +248,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const scheduleSync = () => {
     clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => void runSync(syncKey), 4_000);
+    syncTimer.current = setTimeout(() => void runSync(session?.token ?? ""), 4_000);
   };
 
   const runSync = async (key: string) => {
@@ -270,49 +285,66 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const syncNow = () => void runSync(syncKey);
+  const syncNow = () => void runSync(session?.token ?? "");
 
-  const setSyncKey = (key: string) => {
-    const trimmed = key.trim();
+  const adoptSession = (next: Session) => {
     try {
-      if (trimmed) localStorage.setItem(SYNC_KEY_STORAGE, trimmed);
-      else localStorage.removeItem(SYNC_KEY_STORAGE);
+      localStorage.setItem(SESSION_STORAGE, JSON.stringify(next));
     } catch {
-      // storage unavailable — key stays session-only
+      // storage unavailable — session stays in memory only
     }
-    setSyncKeyState(trimmed);
-    if (trimmed) {
-      void runSync(trimmed);
-    } else {
-      // Signed out: pending deletion markers must not carry into a future
-      // reconnect (an offline delete would wipe the cloud copy).
-      store.clearTombstones();
-      setSyncState({ status: "off" });
+    setSession(next);
+    void runSync(next.token);
+  };
+
+  const signIn = async (username: string, password: string) => adoptSession(await apiLogin(username, password));
+  const register = async (username: string, email: string, password: string) =>
+    adoptSession(await apiRegister(username, email, password));
+  const changePassword = async (current: string, next: string) => {
+    if (!session) throw new Error("sign in first");
+    await apiChangePassword(session.token, current, next);
+  };
+  const resetRequest = (username: string) => apiResetRequest(username);
+  const resetPassword = async (username: string, code: string, newPassword: string) =>
+    adoptSession(await apiReset(username, code, newPassword));
+
+  const signOut = () => {
+    try {
+      localStorage.removeItem(SESSION_STORAGE);
+    } catch {
+      // ignore
     }
+    setSession(null);
+    // Signed out: pending deletion markers must not carry into a future
+    // sign-in (an offline delete would wipe the cloud copy).
+    store.clearTombstones();
+    setSyncState({ status: "off" });
   };
 
   // Boot sync + a 30 s poll so edits from other devices show up on their own.
   // (The first run goes through setTimeout(0): runSync sets state, which an
   // effect must not do synchronously.)
   useEffect(() => {
-    if (!syncKey) return;
-    const boot = setTimeout(() => void runSync(syncKey), 0);
-    const iv = setInterval(() => void runSync(syncKey), 30_000);
+    const token = session?.token;
+    if (!token) return;
+    const boot = setTimeout(() => void runSync(token), 0);
+    const iv = setInterval(() => void runSync(token), 30_000);
     return () => {
       clearTimeout(boot);
       clearInterval(iv);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [syncKey]);
+  }, [session?.token]);
 
   // Push local edits shortly after they settle (piggybacks on the save effect).
   useEffect(() => {
-    if (!syncKey) return;
+    const token = session?.token;
+    if (!token) return;
     clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => void runSync(syncKey), 4_000);
+    syncTimer.current = setTimeout(() => void runSync(token), 4_000);
     return () => clearTimeout(syncTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, project, libraryVersion, catalogOverrides, syncKey]);
+  }, [activeId, project, libraryVersion, catalogOverrides, session?.token]);
 
   // Kept for the toolbar: clears the CURRENT project back to defaults.
   const resetProject = () => {
@@ -340,8 +372,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         setCatalogPrice,
         trash,
         restoreProject,
-        syncKey,
-        setSyncKey,
+        session,
+        signIn,
+        register,
+        signOut,
+        changePassword,
+        resetRequest,
+        resetPassword,
         syncState,
         syncNow,
       }}

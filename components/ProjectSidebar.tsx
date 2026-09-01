@@ -197,9 +197,37 @@ function TrashSection() {
 }
 
 function SyncPanel() {
-  const { syncKey, setSyncKey, syncState, syncNow } = useProject();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
+  const { session, signIn, register, signOut, changePassword, resetRequest, resetPassword, syncState, syncNow } =
+    useProject();
+  // Panel modes: signed-out shows a compact sign-in; "register", "forgot" and
+  // "password" expand inline — deliberately no separate login page.
+  const [mode, setMode] = useState<"idle" | "signin" | "register" | "forgot" | "password">("idle");
+  const [f, setF] = useState({ username: "", email: "", password: "", password2: "", code: "", current: "" });
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const field = (k: keyof typeof f) => ({
+    value: f[k],
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setF((v) => ({ ...v, [k]: e.target.value })),
+    className:
+      "w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800",
+  });
+
+  const run = async (fn: () => Promise<unknown>, done?: string) => {
+    setBusy(true);
+    setNote("");
+    try {
+      await fn();
+      if (done) setNote(done); // "" keeps whatever message fn itself set
+      if (done === undefined) {
+        setMode("idle");
+        setF({ username: "", email: "", password: "", password2: "", code: "", current: "" });
+      }
+    } catch (err) {
+      setNote((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const statusLine = () => {
     switch (syncState.status) {
@@ -218,88 +246,145 @@ function SyncPanel() {
     }
   };
 
-  if (editing || !syncKey) {
+  // ---- signed in ------------------------------------------------------------
+  if (session) {
     return (
-      <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800">
-        {!editing ? (
-          <>
-            <div className="text-[11px] text-zinc-400">
-              Local only — projects live in this browser. Turn on sync to see them on your phone too.
-            </div>
-            <button
-              className="w-full rounded-md border border-blue-600 px-2 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
-              onClick={() => {
-                setDraft("");
-                setEditing(true);
-              }}
-            >
-              ☁ Turn on cloud sync
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="text-[11px] text-zinc-400">
-              Pick a sync passphrase (6+ characters) and enter the SAME one on every device — it is the key to
-              your library, so make it unguessable and treat it like a password.
-            </div>
-            <input
-              autoFocus
-              type="password"
-              placeholder="Sync passphrase"
-              className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && draft.trim().length >= 6) {
-                  setSyncKey(draft);
-                  setEditing(false);
-                }
-                if (e.key === "Escape") setEditing(false);
-              }}
-            />
+      <div className="space-y-1.5 border-t border-zinc-200 p-3 text-[11px] dark:border-zinc-800">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">👤 {session.username}</span>
+          {statusLine()}
+        </div>
+        {mode === "password" ? (
+          <div className="space-y-1.5">
+            <input type="password" placeholder="Current password" {...field("current")} />
+            <input type="password" placeholder="New password (8+ chars)" {...field("password")} />
             <div className="flex gap-2">
               <button
-                disabled={draft.trim().length < 6}
-                className="flex-1 rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40"
-                onClick={() => {
-                  setSyncKey(draft);
-                  setEditing(false);
-                }}
+                disabled={busy || f.password.length < 8}
+                className="flex-1 rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+                onClick={() => run(() => changePassword(f.current, f.password), "Password changed ✓")}
               >
-                Connect
+                Change password
               </button>
-              <button
-                className="rounded-md border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700"
-                onClick={() => setEditing(false)}
-              >
+              <button className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] dark:border-zinc-700" onClick={() => setMode("idle")}>
                 Cancel
               </button>
             </div>
-          </>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button className="flex-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={syncNow}>
+              Sync now
+            </button>
+            <button
+              className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              onClick={() => {
+                setMode("password");
+                setNote("");
+              }}
+            >
+              Password
+            </button>
+            <button
+              className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              title="Sign out on this device (projects stay local; the cloud copy is kept)"
+              onClick={signOut}
+            >
+              Sign out
+            </button>
+          </div>
         )}
+        {note && <div className="text-zinc-500">{note}</div>}
+        <div className="text-zinc-400">Sign in on your phone with the same account = same projects.</div>
+      </div>
+    );
+  }
+
+  // ---- signed out -------------------------------------------------------------
+  if (mode === "idle") {
+    return (
+      <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800">
+        <div className="text-[11px] text-zinc-400">
+          Local only — projects live in this browser. Sign in to see them on every device.
+        </div>
+        <button
+          className="w-full rounded-md border border-blue-600 px-2 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
+          onClick={() => {
+            setMode("signin");
+            setNote("");
+          }}
+        >
+          Sign in / create account
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-1.5 border-t border-zinc-200 p-3 text-[11px] dark:border-zinc-800">
-      <div className="flex items-center justify-between">
-        <span>☁ Cloud sync</span>
-        {statusLine()}
-      </div>
-      <div className="flex gap-2">
-        <button className="flex-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={syncNow}>
-          Sync now
-        </button>
-        <button
-          className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          title="Disconnect this device (projects stay local; cloud copy is kept)"
-          onClick={() => setSyncKey("")}
-        >
-          Disconnect
-        </button>
-      </div>
-      <div className="text-zinc-400">Same passphrase on your phone = same projects, refreshed every 30 s.</div>
+      {mode === "signin" && (
+        <>
+          <input placeholder="Username" autoComplete="username" {...field("username")} />
+          <input type="password" placeholder="Password" autoComplete="current-password" {...field("password")} />
+          <button
+            disabled={busy || !f.username || !f.password}
+            className="w-full rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            onClick={() => run(() => signIn(f.username, f.password))}
+          >
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
+          <div className="flex justify-between text-zinc-500">
+            <button className="hover:underline" onClick={() => setMode("register")}>
+              Create account
+            </button>
+            <button className="hover:underline" onClick={() => setMode("forgot")}>
+              Forgot password?
+            </button>
+          </div>
+        </>
+      )}
+      {mode === "register" && (
+        <>
+          <input placeholder="Username" autoComplete="username" {...field("username")} />
+          <input type="email" placeholder="Email (for password reset)" autoComplete="email" {...field("email")} />
+          <input type="password" placeholder="Password (8+ chars)" autoComplete="new-password" {...field("password")} />
+          <button
+            disabled={busy || !f.username || !f.email || f.password.length < 8}
+            className="w-full rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            onClick={() => run(() => register(f.username, f.email, f.password))}
+          >
+            {busy ? "Creating…" : "Create account"}
+          </button>
+          <button className="text-zinc-500 hover:underline" onClick={() => setMode("signin")}>
+            ← back to sign in
+          </button>
+        </>
+      )}
+      {mode === "forgot" && (
+        <>
+          <input placeholder="Username" {...field("username")} />
+          <button
+            disabled={busy || !f.username}
+            className="w-full rounded-md border border-blue-600 px-2 py-1.5 text-xs font-medium text-blue-600 disabled:opacity-40"
+            onClick={() => run(async () => setNote(await resetRequest(f.username)), "")}
+          >
+            Email me a reset code
+          </button>
+          <input placeholder="Reset code from the email" {...field("code")} />
+          <input type="password" placeholder="New password (8+ chars)" autoComplete="new-password" {...field("password")} />
+          <button
+            disabled={busy || !f.username || !f.code || f.password.length < 8}
+            className="w-full rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+            onClick={() => run(() => resetPassword(f.username, f.code, f.password))}
+          >
+            Set new password
+          </button>
+          <button className="text-zinc-500 hover:underline" onClick={() => setMode("signin")}>
+            ← back to sign in
+          </button>
+        </>
+      )}
+      {note && <div className="text-zinc-500">{note}</div>}
     </div>
   );
 }
