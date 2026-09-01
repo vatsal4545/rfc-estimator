@@ -72,8 +72,11 @@ const INDEX_KEY = "rfc-estimator:projects:v1";
 const ACTIVE_KEY = "rfc-estimator:activeProject:v1";
 const LEGACY_KEY = "rfc-estimator:project:v1";
 const TOMBSTONE_KEY = "rfc-estimator:tombstones:v1";
+const TRASH_KEY = "rfc-estimator:trash:v1";
 const bodyKey = (id: string) => `${LEGACY_KEY}:${id}`;
 const MAX_TOMBSTONES = 300;
+const MAX_TRASH = 50;
+const TRASH_RETENTION_MS = 30 * 24 * 3600 * 1000;
 
 export interface Tombstone {
   id: string;
@@ -88,6 +91,14 @@ export interface CloudProject {
 export interface CloudLibraryData {
   projects: CloudProject[];
   tombstones: Tombstone[];
+  /** Recently deleted projects, kept restorable for 30 days (synced too). */
+  trash?: TrashEntry[];
+}
+
+export interface TrashEntry {
+  meta: ProjectMeta;
+  body: string;
+  deletedAt: number;
 }
 
 export function displayName(meta: ProjectMeta): string {
@@ -178,13 +189,67 @@ export function createProjectStore(storage: StorageLike) {
   const writeTombstones = (t: Tombstone[]) =>
     storage.setItem(TOMBSTONE_KEY, JSON.stringify(t.sort((a, b) => b.deletedAt - a.deletedAt).slice(0, MAX_TOMBSTONES)));
 
-  const deleteProject = (id: string): void => {
+  const readTrash = (): TrashEntry[] => {
+    try {
+      const parsed = JSON.parse(storage.getItem(TRASH_KEY) ?? "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const writeTrash = (t: TrashEntry[]) => {
+    const cutoff = Date.now() - TRASH_RETENTION_MS;
+    storage.setItem(
+      TRASH_KEY,
+      JSON.stringify(
+        t.filter((e) => e.deletedAt > cutoff).sort((a, b) => b.deletedAt - a.deletedAt).slice(0, MAX_TRASH),
+      ),
+    );
+  };
+
+  /**
+   * Delete a project. The body moves to the trash (restorable for 30 days).
+   * `tombstone: false` (used while cloud sync is DISCONNECTED) keeps the
+   * deletion local-only: reconnecting restores the project from the cloud
+   * instead of propagating an offline deletion into the shared workspace.
+   */
+  const deleteProject = (id: string, opts?: { tombstone?: boolean }): void => {
+    const body = storage.getItem(bodyKey(id));
+    const meta = readIndex().find((m) => m.id === id);
+    if (body && meta) writeTrash([{ meta, body, deletedAt: Date.now() }, ...readTrash().filter((t) => t.meta.id !== id)]);
     storage.removeItem(bodyKey(id));
     writeIndex(readIndex().filter((m) => m.id !== id));
     if (storage.getItem(ACTIVE_KEY) === id) storage.removeItem(ACTIVE_KEY);
-    // Tombstone so cloud sync propagates the deletion instead of resurrecting.
-    writeTombstones([...readTombstones().filter((t) => t.id !== id), { id, deletedAt: Date.now() }]);
+    if (opts?.tombstone !== false) {
+      // Tombstone so cloud sync propagates the deletion instead of resurrecting.
+      writeTombstones([...readTombstones().filter((t) => t.id !== id), { id, deletedAt: Date.now() }]);
+    }
   };
+
+  /** Trash entries for projects that are not alive (newest first). */
+  const listTrash = (): TrashEntry[] => {
+    const alive = new Set(readIndex().map((m) => m.id));
+    return readTrash().filter((t) => !alive.has(t.meta.id));
+  };
+
+  /**
+   * Bring a deleted project back. Its updatedAt is stamped NOW, which beats
+   * every existing tombstone in the merge rule — so the restore propagates to
+   * all synced devices instead of being re-deleted.
+   */
+  const restoreProject = (id: string): ProjectMeta | null => {
+    const entry = readTrash().find((t) => t.meta.id === id);
+    if (!entry) return null;
+    const meta: ProjectMeta = { ...entry.meta, updatedAt: Date.now() };
+    storage.setItem(bodyKey(id), entry.body);
+    writeIndex([...readIndex().filter((m) => m.id !== id), meta]);
+    writeTrash(readTrash().filter((t) => t.meta.id !== id));
+    writeTombstones(readTombstones().filter((t) => t.id !== id));
+    return meta;
+  };
+
+  /** Disconnecting from cloud sync: pending deletions become local-only. */
+  const clearTombstones = (): void => storage.removeItem(TOMBSTONE_KEY);
 
   /** Snapshot for cloud sync (bodies already compacted). */
   const exportLibrary = (): CloudLibraryData => ({
@@ -193,6 +258,7 @@ export function createProjectStore(storage: StorageLike) {
       return body ? [{ meta, body }] : [];
     }),
     tombstones: readTombstones(),
+    trash: readTrash(),
   });
 
   /**
@@ -232,6 +298,18 @@ export function createProjectStore(storage: StorageLike) {
     }
     writeIndex([...byId.values()]);
     writeTombstones([...tombs.values()]);
+
+    // Trash union (newest deletedAt wins), minus anything alive again.
+    const trash = new Map(readTrash().map((t) => [t.meta.id, t]));
+    for (const t of remote.trash ?? []) {
+      const mine = trash.get(t.meta.id);
+      if (!mine || t.deletedAt > mine.deletedAt) {
+        trash.set(t.meta.id, t);
+        changed = true;
+      }
+    }
+    for (const id of [...trash.keys()]) if (byId.has(id)) trash.delete(id);
+    writeTrash([...trash.values()]);
     return changed;
   };
 
@@ -288,6 +366,9 @@ export function createProjectStore(storage: StorageLike) {
     initStore,
     exportLibrary,
     mergeLibrary,
+    listTrash,
+    restoreProject,
+    clearTombstones,
   };
 }
 

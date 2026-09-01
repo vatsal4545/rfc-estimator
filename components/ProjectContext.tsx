@@ -12,7 +12,13 @@ import {
   type CatalogStore,
 } from "@/lib/catalog";
 import { SYNC_KEY_STORAGE, syncOnce } from "@/lib/cloudSync";
-import { browserProjectStore, projectClientName, type ProjectMeta, type ProjectStore } from "@/lib/projectStore";
+import {
+  browserProjectStore,
+  projectClientName,
+  type ProjectMeta,
+  type ProjectStore,
+  type TrashEntry,
+} from "@/lib/projectStore";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 // Lazy module singletons: this file is only evaluated client-side (page.tsx
@@ -53,6 +59,9 @@ interface Ctx {
   hardwareAllowance: Record<string, number>;
   catalogOverrides: CatalogOverrides;
   setCatalogPrice: (modelId: string, price: number | undefined) => void;
+  /** Recently deleted projects (restorable for 30 days, synced). */
+  trash: TrashEntry[];
+  restoreProject: (id: string) => void;
   /** Cross-device cloud sync (Vercel Blob behind /api/workspace). */
   syncKey: string;
   setSyncKey: (key: string) => void;
@@ -119,6 +128,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     [activeId, project, libraryVersion],
   );
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const trash: TrashEntry[] = useMemo(() => store.listTrash(), [libraryVersion]);
+
   const setProject: React.Dispatch<React.SetStateAction<Project>> = (action) => {
     setState((s) => ({
       ...s,
@@ -145,7 +157,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteProject = (id: string) => {
-    store.deleteProject(id);
+    // Connected: tombstone so the deletion reaches other devices (the body
+    // stays restorable from Recently deleted). Disconnected: local-only —
+    // reconnecting restores the project from the cloud workspace.
+    store.deleteProject(id, { tombstone: !!syncKey });
     const remaining = store.listProjects();
     if (id === activeId) {
       const next = remaining[0];
@@ -161,6 +176,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     }
     refreshLibrary();
+    if (syncKey) scheduleSync();
+  };
+
+  const restoreProject = (id: string) => {
+    const meta = store.restoreProject(id);
+    if (!meta) return;
+    refreshLibrary();
+    if (syncKey) scheduleSync();
   };
 
   const renameProject = (id: string, name: string) => {
@@ -208,6 +231,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [syncState, setSyncState] = useState<SyncState>({ status: "off" });
   const syncBusy = useRef(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scheduleSync = () => {
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => void runSync(syncKey), 4_000);
+  };
 
   const runSync = async (key: string) => {
     if (!key || syncBusy.current) return;
@@ -254,8 +281,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       // storage unavailable — key stays session-only
     }
     setSyncKeyState(trimmed);
-    if (trimmed) void runSync(trimmed);
-    else setSyncState({ status: "off" });
+    if (trimmed) {
+      void runSync(trimmed);
+    } else {
+      // Signed out: pending deletion markers must not carry into a future
+      // reconnect (an offline delete would wipe the cloud copy).
+      store.clearTombstones();
+      setSyncState({ status: "off" });
+    }
   };
 
   // Boot sync + a 30 s poll so edits from other devices show up on their own.
@@ -305,6 +338,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         hardwareAllowance,
         catalogOverrides,
         setCatalogPrice,
+        trash,
+        restoreProject,
         syncKey,
         setSyncKey,
         syncState,

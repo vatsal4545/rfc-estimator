@@ -145,6 +145,53 @@ describe("project store", () => {
     vi.useRealTimers();
   });
 
+  it("the user's bug: delete while DISCONNECTED, reconnect -> cloud copy is restored", () => {
+    vi.useFakeTimers();
+    const cloud = createProjectStore(memoryStorage()); // stands in for the blob
+    const device = createProjectStore(memoryStorage());
+    const meta = device.createProject(defaultProject(), "Important RFC");
+    cloud.mergeLibrary(device.exportLibrary()); // synced while connected
+
+    vi.advanceTimersByTime(1000);
+    // Disconnected: delete is local-only (no tombstone).
+    device.deleteProject(meta.id, { tombstone: false });
+    expect(device.listProjects().length).toBe(0);
+
+    vi.advanceTimersByTime(1000);
+    // Reconnect: pull the cloud snapshot -> the project comes back,
+    // and the merged snapshot we would push still contains it.
+    expect(device.mergeLibrary(cloud.exportLibrary())).toBe(true);
+    expect(device.listProjects().map((m) => m.name)).toEqual(["Important RFC"]);
+    expect(device.exportLibrary().projects.length).toBe(1);
+    // ...and it's no longer shown in Recently deleted (it's alive again).
+    expect(device.listTrash().length).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("connected deletes land in Recently deleted; restore beats old tombstones on other devices", () => {
+    vi.useFakeTimers();
+    const a = createProjectStore(memoryStorage());
+    const b = createProjectStore(memoryStorage());
+    const meta = a.createProject(defaultProject(), "Keep Me");
+    b.mergeLibrary(a.exportLibrary());
+
+    vi.advanceTimersByTime(1000);
+    a.deleteProject(meta.id); // connected delete: tombstone + trash
+    expect(a.listTrash().map((t) => t.meta.id)).toEqual([meta.id]);
+    b.mergeLibrary(a.exportLibrary());
+    expect(b.listProjects().length).toBe(0); // deletion propagated
+    expect(b.listTrash().map((t) => t.meta.id)).toEqual([meta.id]); // trash synced too
+
+    vi.advanceTimersByTime(1000);
+    // Restore on B: updatedAt now beats the tombstone everywhere.
+    expect(b.restoreProject(meta.id)).not.toBeNull();
+    expect(b.listProjects().map((m) => m.name)).toEqual(["Keep Me"]);
+    a.mergeLibrary(b.exportLibrary());
+    expect(a.listProjects().map((m) => m.name)).toEqual(["Keep Me"]);
+    expect(a.listTrash().length).toBe(0);
+    vi.useRealTimers();
+  });
+
   it("initStore returns null on an empty library and survives corrupt blobs", () => {
     const storage = memoryStorage();
     expect(createProjectStore(storage).initStore()).toBeNull();

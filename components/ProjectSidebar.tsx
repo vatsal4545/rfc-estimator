@@ -153,8 +153,46 @@ export function ProjectSidebar({ open }: { open: boolean }) {
           <div className="px-2 py-2 text-[11px] text-zinc-400">No project matches “{query}”.</div>
         )}
       </div>
+      <TrashSection />
       <SyncPanel />
     </aside>
+  );
+}
+
+function TrashSection() {
+  const { trash, restoreProject } = useProject();
+  const [open, setOpen] = useState(false);
+  if (trash.length === 0) return null;
+
+  return (
+    <div className="border-t border-zinc-200 px-2 py-2 dark:border-zinc-800">
+      <button
+        className="w-full px-1 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-400 hover:text-zinc-600"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? "▾" : "▸"} Recently deleted ({trash.length})
+      </button>
+      {open && (
+        <div className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
+          {trash.map((t) => (
+            <div key={t.meta.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-zinc-500">
+              <span className="min-w-0 flex-1 truncate" title={displayName(t.meta)}>
+                {displayName(t.meta)}
+              </span>
+              <span className="shrink-0 text-[10px] text-zinc-400">{relativeTime(t.deletedAt)}</span>
+              <button
+                className="shrink-0 font-medium text-blue-600 hover:underline"
+                onClick={() => restoreProject(t.meta.id)}
+                title="Restore this project (also restores it on synced devices)"
+              >
+                restore
+              </button>
+            </div>
+          ))}
+          <div className="px-1.5 pt-1 text-[10px] text-zinc-400">Kept for 30 days, then purged.</div>
+        </div>
+      )}
+    </div>
   );
 }
 
