@@ -153,9 +153,115 @@ export function ProjectSidebar({ open }: { open: boolean }) {
           <div className="px-2 py-2 text-[11px] text-zinc-400">No project matches “{query}”.</div>
         )}
       </div>
-      <div className="border-t border-zinc-200 p-3 text-[11px] text-zinc-400 dark:border-zinc-800">
-        Saved locally in this browser. Use Export for a shareable file.
-      </div>
+      <SyncPanel />
     </aside>
+  );
+}
+
+function SyncPanel() {
+  const { syncKey, setSyncKey, syncState, syncNow } = useProject();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const statusLine = () => {
+    switch (syncState.status) {
+      case "syncing":
+        return <span className="text-blue-500">Syncing…</span>;
+      case "synced":
+        return <span className="text-green-600">✓ Synced {syncState.at ? relativeTime(syncState.at) : ""}</span>;
+      case "error":
+        return (
+          <span className="text-red-500" title={syncState.message}>
+            Sync error — retrying
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
+
+  if (editing || !syncKey) {
+    return (
+      <div className="space-y-2 border-t border-zinc-200 p-3 dark:border-zinc-800">
+        {!editing ? (
+          <>
+            <div className="text-[11px] text-zinc-400">
+              Local only — projects live in this browser. Turn on sync to see them on your phone too.
+            </div>
+            <button
+              className="w-full rounded-md border border-blue-600 px-2 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
+              onClick={() => {
+                setDraft("");
+                setEditing(true);
+              }}
+            >
+              ☁ Turn on cloud sync
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-[11px] text-zinc-400">
+              Pick a sync passphrase (6+ characters) and enter the SAME one on every device — it is the key to
+              your library, so make it unguessable and treat it like a password.
+            </div>
+            <input
+              autoFocus
+              type="password"
+              placeholder="Sync passphrase"
+              className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && draft.trim().length >= 6) {
+                  setSyncKey(draft);
+                  setEditing(false);
+                }
+                if (e.key === "Escape") setEditing(false);
+              }}
+            />
+            <div className="flex gap-2">
+              <button
+                disabled={draft.trim().length < 6}
+                className="flex-1 rounded-md bg-blue-600 px-2 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+                onClick={() => {
+                  setSyncKey(draft);
+                  setEditing(false);
+                }}
+              >
+                Connect
+              </button>
+              <button
+                className="rounded-md border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-700"
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5 border-t border-zinc-200 p-3 text-[11px] dark:border-zinc-800">
+      <div className="flex items-center justify-between">
+        <span>☁ Cloud sync</span>
+        {statusLine()}
+      </div>
+      <div className="flex gap-2">
+        <button className="flex-1 rounded-md border border-zinc-300 px-2 py-1 text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={syncNow}>
+          Sync now
+        </button>
+        <button
+          className="rounded-md border border-zinc-300 px-2 py-1 text-[11px] text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+          title="Disconnect this device (projects stay local; cloud copy is kept)"
+          onClick={() => setSyncKey("")}
+        >
+          Disconnect
+        </button>
+      </div>
+      <div className="text-zinc-400">Same passphrase on your phone = same projects, refreshed every 30 s.</div>
+    </div>
   );
 }

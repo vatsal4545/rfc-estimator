@@ -71,7 +71,24 @@ export interface StorageLike {
 const INDEX_KEY = "rfc-estimator:projects:v1";
 const ACTIVE_KEY = "rfc-estimator:activeProject:v1";
 const LEGACY_KEY = "rfc-estimator:project:v1";
+const TOMBSTONE_KEY = "rfc-estimator:tombstones:v1";
 const bodyKey = (id: string) => `${LEGACY_KEY}:${id}`;
+const MAX_TOMBSTONES = 300;
+
+export interface Tombstone {
+  id: string;
+  deletedAt: number;
+}
+
+/** Wire format for cloud sync — bodies stay as their compacted JSON strings. */
+export interface CloudProject {
+  meta: ProjectMeta;
+  body: string;
+}
+export interface CloudLibraryData {
+  projects: CloudProject[];
+  tombstones: Tombstone[];
+}
 
 export function displayName(meta: ProjectMeta): string {
   return meta.name || meta.clientName || "Untitled project";
@@ -150,10 +167,72 @@ export function createProjectStore(storage: StorageLike) {
     writeIndex(metas);
   };
 
+  const readTombstones = (): Tombstone[] => {
+    try {
+      const parsed = JSON.parse(storage.getItem(TOMBSTONE_KEY) ?? "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const writeTombstones = (t: Tombstone[]) =>
+    storage.setItem(TOMBSTONE_KEY, JSON.stringify(t.sort((a, b) => b.deletedAt - a.deletedAt).slice(0, MAX_TOMBSTONES)));
+
   const deleteProject = (id: string): void => {
     storage.removeItem(bodyKey(id));
     writeIndex(readIndex().filter((m) => m.id !== id));
     if (storage.getItem(ACTIVE_KEY) === id) storage.removeItem(ACTIVE_KEY);
+    // Tombstone so cloud sync propagates the deletion instead of resurrecting.
+    writeTombstones([...readTombstones().filter((t) => t.id !== id), { id, deletedAt: Date.now() }]);
+  };
+
+  /** Snapshot for cloud sync (bodies already compacted). */
+  const exportLibrary = (): CloudLibraryData => ({
+    projects: readIndex().flatMap((meta) => {
+      const body = storage.getItem(bodyKey(meta.id));
+      return body ? [{ meta, body }] : [];
+    }),
+    tombstones: readTombstones(),
+  });
+
+  /**
+   * Fold a remote snapshot in: per project the newer updatedAt wins; a
+   * tombstone at least as new as a project's last update deletes it on every
+   * device. Local-only projects survive (the following push uploads them).
+   * Returns true when anything local changed.
+   */
+  const mergeLibrary = (remote: CloudLibraryData): boolean => {
+    let changed = false;
+    const tombs = new Map(readTombstones().map((t) => [t.id, t]));
+    for (const t of remote.tombstones ?? []) {
+      const mine = tombs.get(t.id);
+      if (!mine || t.deletedAt > mine.deletedAt) tombs.set(t.id, t);
+    }
+
+    const metas = readIndex();
+    const byId = new Map(metas.map((m) => [m.id, m]));
+    for (const p of remote.projects ?? []) {
+      const tomb = tombs.get(p.meta.id);
+      if (tomb && tomb.deletedAt >= p.meta.updatedAt) continue;
+      const mine = byId.get(p.meta.id);
+      if (!mine || p.meta.updatedAt > mine.updatedAt) {
+        storage.setItem(bodyKey(p.meta.id), p.body);
+        byId.set(p.meta.id, p.meta);
+        changed = true;
+      }
+    }
+    for (const [id, meta] of [...byId]) {
+      const tomb = tombs.get(id);
+      if (tomb && tomb.deletedAt >= meta.updatedAt) {
+        storage.removeItem(bodyKey(id));
+        byId.delete(id);
+        if (storage.getItem(ACTIVE_KEY) === id) storage.removeItem(ACTIVE_KEY);
+        changed = true;
+      }
+    }
+    writeIndex([...byId.values()]);
+    writeTombstones([...tombs.values()]);
+    return changed;
   };
 
   const duplicateProject = (id: string): ProjectMeta | null => {
@@ -207,6 +286,8 @@ export function createProjectStore(storage: StorageLike) {
     getActiveId,
     setActiveId,
     initStore,
+    exportLibrary,
+    mergeLibrary,
   };
 }
 

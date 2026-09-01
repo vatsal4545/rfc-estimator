@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { defaultProject } from "../calc/defaults";
 import { createProjectStore, displayName, type StorageLike } from "../projectStore";
 
@@ -98,6 +98,51 @@ describe("project store", () => {
     expect(loaded.loadTypes.map((l) => l.id)).toEqual(project.loadTypes.map((l) => l.id)); // canonical order kept
     expect(loaded.loadTypes.find((l) => l.id === "DCFC 200kW")!.feederOcpdA).toBe(400);
     expect(loaded.loadTypes.find((l) => l.id === "My Custom 75kW")).toBeDefined();
+  });
+
+  it("cloud merge: newer wins per project, tombstones delete everywhere, local-only survives", () => {
+    // Fake timers: merge compares updatedAt, so each step needs its own tick
+    // (real cross-device edits are seconds apart; the test runs in one ms).
+    vi.useFakeTimers();
+    const tick = () => vi.advanceTimersByTime(1000);
+    // Device A and device B share a workspace.
+    const a = createProjectStore(memoryStorage());
+    const b = createProjectStore(memoryStorage());
+    const pShared = defaultProject();
+    pShared.setup.clientName = "Shared Site";
+    const sharedMeta = a.createProject(pShared);
+    const aOnly = a.createProject(defaultProject(), "A only");
+
+    tick();
+    // B receives A's snapshot.
+    expect(b.mergeLibrary(a.exportLibrary())).toBe(true);
+    expect(b.listProjects().length).toBe(2);
+
+    tick();
+    // B edits the shared project (newer updatedAt) and deletes "A only".
+    const onB = b.loadProject(sharedMeta.id)!;
+    onB.setup.clientName = "Shared Site v2";
+    b.setActiveId(sharedMeta.id);
+    b.saveProject(sharedMeta.id, onB);
+    b.deleteProject(aOnly.id);
+
+    tick();
+    // Meanwhile A creates a fresh local-only project.
+    const aNew = a.createProject(defaultProject(), "A newest");
+
+    tick();
+    // A merges B's snapshot: edit adopted, deletion propagated, local-only kept.
+    expect(a.mergeLibrary(b.exportLibrary())).toBe(true);
+    const ids = a.listProjects().map((m) => m.id);
+    expect(ids).toContain(sharedMeta.id);
+    expect(ids).toContain(aNew.id);
+    expect(ids).not.toContain(aOnly.id);
+    expect(a.loadProject(sharedMeta.id)!.setup.clientName).toBe("Shared Site v2");
+
+    // Re-merging the same snapshot is a no-op; the deleted project must NOT
+    // resurrect from an older snapshot either.
+    expect(a.mergeLibrary(b.exportLibrary())).toBe(false);
+    vi.useRealTimers();
   });
 
   it("initStore returns null on an empty library and survives corrupt blobs", () => {

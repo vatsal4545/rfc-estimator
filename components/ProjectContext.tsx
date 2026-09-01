@@ -11,8 +11,9 @@ import {
   type CatalogOverrides,
   type CatalogStore,
 } from "@/lib/catalog";
+import { SYNC_KEY_STORAGE, syncOnce } from "@/lib/cloudSync";
 import { browserProjectStore, projectClientName, type ProjectMeta, type ProjectStore } from "@/lib/projectStore";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 // Lazy module singletons: this file is only evaluated client-side (page.tsx
 // dynamic-imports the app with ssr: false), and the stores touch
@@ -52,6 +53,17 @@ interface Ctx {
   hardwareAllowance: Record<string, number>;
   catalogOverrides: CatalogOverrides;
   setCatalogPrice: (modelId: string, price: number | undefined) => void;
+  /** Cross-device cloud sync (Vercel Blob behind /api/workspace). */
+  syncKey: string;
+  setSyncKey: (key: string) => void;
+  syncState: SyncState;
+  syncNow: () => void;
+}
+
+export interface SyncState {
+  status: "off" | "syncing" | "synced" | "error";
+  at?: number;
+  message?: string;
 }
 
 const ProjectCtx = createContext<Ctx | null>(null);
@@ -185,6 +197,90 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, project: reconcileHardwareCost(s.project, allowance) }));
   };
 
+  // ---- Cross-device sync ----------------------------------------------------
+  const [syncKey, setSyncKeyState] = useState<string>(() => {
+    try {
+      return localStorage.getItem(SYNC_KEY_STORAGE) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [syncState, setSyncState] = useState<SyncState>({ status: "off" });
+  const syncBusy = useRef(false);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const runSync = async (key: string) => {
+    if (!key || syncBusy.current) return;
+    syncBusy.current = true;
+    setSyncState((s) => ({ ...s, status: "syncing" }));
+    try {
+      const { changedLocally } = await syncOnce(key, store, getCatalog());
+      if (changedLocally) {
+        // Remote edits landed: refresh the sidebar, the catalog, and the open
+        // project (falling back when another device deleted it).
+        setCatalogOverrides(getCatalog().getOverrides());
+        setState((s) => {
+          const body = store.loadProject(s.id);
+          if (body) return { ...s, project: prepare(body) };
+          const next = store.listProjects()[0];
+          const nextBody = next ? store.loadProject(next.id) : null;
+          if (next && nextBody) {
+            store.setActiveId(next.id);
+            return { id: next.id, project: prepare(nextBody) };
+          }
+          const fresh = defaultProject();
+          const meta = store.createProject(fresh);
+          store.setActiveId(meta.id);
+          return { id: meta.id, project: fresh };
+        });
+        refreshLibrary();
+      }
+      setSyncState({ status: "synced", at: Date.now() });
+    } catch (err) {
+      setSyncState({ status: "error", at: Date.now(), message: (err as Error).message });
+    } finally {
+      syncBusy.current = false;
+    }
+  };
+
+  const syncNow = () => void runSync(syncKey);
+
+  const setSyncKey = (key: string) => {
+    const trimmed = key.trim();
+    try {
+      if (trimmed) localStorage.setItem(SYNC_KEY_STORAGE, trimmed);
+      else localStorage.removeItem(SYNC_KEY_STORAGE);
+    } catch {
+      // storage unavailable — key stays session-only
+    }
+    setSyncKeyState(trimmed);
+    if (trimmed) void runSync(trimmed);
+    else setSyncState({ status: "off" });
+  };
+
+  // Boot sync + a 30 s poll so edits from other devices show up on their own.
+  // (The first run goes through setTimeout(0): runSync sets state, which an
+  // effect must not do synchronously.)
+  useEffect(() => {
+    if (!syncKey) return;
+    const boot = setTimeout(() => void runSync(syncKey), 0);
+    const iv = setInterval(() => void runSync(syncKey), 30_000);
+    return () => {
+      clearTimeout(boot);
+      clearInterval(iv);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncKey]);
+
+  // Push local edits shortly after they settle (piggybacks on the save effect).
+  useEffect(() => {
+    if (!syncKey) return;
+    clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => void runSync(syncKey), 4_000);
+    return () => clearTimeout(syncTimer.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, project, libraryVersion, catalogOverrides, syncKey]);
+
   // Kept for the toolbar: clears the CURRENT project back to defaults.
   const resetProject = () => {
     setProject(defaultProject());
@@ -209,6 +305,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         hardwareAllowance,
         catalogOverrides,
         setCatalogPrice,
+        syncKey,
+        setSyncKey,
+        syncState,
+        syncNow,
       }}
     >
       {children}

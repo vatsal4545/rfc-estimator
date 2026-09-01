@@ -19,6 +19,8 @@ const CATALOG_KEY = "rfc-estimator:catalog:v1";
 export interface CatalogOverrides {
   /** modelId -> $/unit; absent = shipped default. */
   hardwareAllowance: Record<string, number>;
+  /** Last local edit — cloud sync keeps whichever device's catalog is newer. */
+  updatedAt: number;
 }
 
 export function createCatalogStore(storage: StorageLike) {
@@ -26,9 +28,9 @@ export function createCatalogStore(storage: StorageLike) {
     try {
       const raw = storage.getItem(CATALOG_KEY);
       const parsed = raw ? JSON.parse(raw) : null;
-      return { hardwareAllowance: parsed?.hardwareAllowance ?? {} };
+      return { hardwareAllowance: parsed?.hardwareAllowance ?? {}, updatedAt: parsed?.updatedAt ?? 0 };
     } catch {
-      return { hardwareAllowance: {} };
+      return { hardwareAllowance: {}, updatedAt: 0 };
     }
   };
   const write = (c: CatalogOverrides) => storage.setItem(CATALOG_KEY, JSON.stringify(c));
@@ -40,8 +42,17 @@ export function createCatalogStore(storage: StorageLike) {
       const c = read();
       if (price === undefined || Number.isNaN(price)) delete c.hardwareAllowance[modelId];
       else c.hardwareAllowance[modelId] = price;
+      c.updatedAt = Date.now();
       write(c);
       return c;
+    },
+    /** Cloud sync: adopt the remote catalog when it is newer. Returns the
+     * (possibly unchanged) local catalog and whether it changed. */
+    mergeCatalog(remote: CatalogOverrides | undefined): { catalog: CatalogOverrides; changed: boolean } {
+      const mine = read();
+      if (!remote || (remote.updatedAt ?? 0) <= mine.updatedAt) return { catalog: mine, changed: false };
+      write(remote);
+      return { catalog: remote, changed: true };
     },
   };
 }
