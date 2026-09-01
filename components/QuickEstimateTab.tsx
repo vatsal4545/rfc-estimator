@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   ADA_UNIT_COST,
   GPR_ITEM_NAME,
@@ -45,20 +44,32 @@ const SERVICE_TOGGLES: {
 
 export function QuickEstimateTab() {
   const { project, setProject } = useProject();
-  const [input, setInput] = useState<QuickEstimateInput>(
-    () => (project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput()),
-  );
+  // The quick intake is edited straight on the project (auto-saved on every
+  // keystroke like the other tabs), NOT in local component state — a local
+  // draft evaporated on tab switches / accidental closes, and a stale draft
+  // could overwrite the client name on the next Build.
+  const input: QuickEstimateInput = project.quick
+    ? normalizeQuickInput(project.quick, project.setup)
+    : defaultQuickInput();
 
   const chargerModels = project.loadTypes.filter((lt) => lt.category !== "Feeder");
   const totalChargers = input.lines.reduce((s, l) => s + Math.max(0, l.count), 0);
   const built = (project.quick?.lines.length ?? 0) > 0 && project.takeoff.length > 0;
 
   function set<K extends keyof QuickEstimateInput>(key: K, value: QuickEstimateInput[K]) {
-    setInput((q) => ({ ...q, [key]: value }));
+    setProject((p) => ({
+      ...p,
+      quick: {
+        ...(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput()),
+        [key]: value,
+      },
+    }));
   }
 
   function build() {
-    setProject((p) => buildQuickProject(input, p, newId("qs")));
+    setProject((p) =>
+      buildQuickProject(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(), p, newId("qs")),
+    );
   }
 
   return (

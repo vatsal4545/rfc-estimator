@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
@@ -29,9 +29,22 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 function Toolbar() {
-  const { project, setProject, newProject, result } = useProject();
+  const { project, newProject, importProject, result } = useProject();
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  const [shared, setShared] = useState(false);
+
+  async function shareLink() {
+    const { buildShareUrl } = await import("@/lib/shareLink");
+    const url = await buildShareUrl(project);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShared(true);
+      setTimeout(() => setShared(false), 2500);
+    } catch {
+      prompt("Copy the share link (opens this project as an editable copy):", url);
+    }
+  }
 
   async function exportExcel() {
     setExcelBusy(true);
@@ -59,7 +72,8 @@ function Toolbar() {
     file.text().then((text) => {
       try {
         const parsed = JSON.parse(text);
-        setProject(parsed);
+        // Lands as a NEW library entry — importing must not clobber the open project.
+        importProject(parsed);
       } catch {
         alert("That file isn't a valid RFC estimator project export.");
       }
@@ -75,6 +89,13 @@ function Toolbar() {
         title="Download the full estimate as a formula-driven Excel workbook"
       >
         {excelBusy ? "Building…" : "⬇ Excel"}
+      </button>
+      <button
+        onClick={shareLink}
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        title="Copy a link that opens this project (as an editable copy) for anyone you send it to"
+      >
+        {shared ? "✓ Link copied" : "Share"}
       </button>
       <button onClick={exportJSON} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
         Export
@@ -113,6 +134,25 @@ function TotalBadge() {
 function AppShell() {
   const [tab, setTab] = useState<TabKey>("quick");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { importProject } = useProject();
+
+  // Opening a share link (#p=...) imports that project into this browser's
+  // library as an editable copy. The hash is cleared synchronously before the
+  // async decode so StrictMode's doubled effect can't import twice.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash.startsWith("#p=")) return;
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+    import("@/lib/shareLink").then(async ({ decodeSharedProject }) => {
+      try {
+        const body = await decodeSharedProject(hash);
+        if (body) importProject(body);
+      } catch {
+        alert("This share link is damaged or from an incompatible app version.");
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">

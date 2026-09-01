@@ -37,6 +37,8 @@ interface Ctx {
   deleteProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
   duplicateProject: (id: string) => void;
+  /** Add a project body (JSON import / share link) as a new library entry and open it. */
+  importProject: (body: Project, name?: string) => void;
 }
 
 const ProjectCtx = createContext<Ctx | null>(null);
@@ -144,6 +146,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     refreshLibrary();
   };
 
+  const importProject = (body: Project, name = "") => {
+    const project = withCurrentLoadTypes(body);
+    const meta = store.createProject(project, name);
+    store.setActiveId(meta.id);
+    setState({ id: meta.id, project });
+    refreshLibrary();
+  };
+
   // Kept for the toolbar: clears the CURRENT project back to defaults.
   const resetProject = () => {
     setProject(defaultProject());
@@ -164,6 +174,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         deleteProject,
         renameProject,
         duplicateProject,
+        importProject,
       }}
     >
       {children}
