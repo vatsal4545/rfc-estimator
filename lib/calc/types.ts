@@ -585,6 +585,13 @@ export interface Project {
   existing?: import("../existing").ExistingInput;
   /** The override register (the intake's Overrides tab). Optional; absent = every figure engine-derived. */
   overrides?: OverrideEntry[];
+  /**
+   * Fields typed by hand on the intake-shaped tabs that a Quick Estimate
+   * rebuild would otherwise re-derive (crew days, site-works quantities, fees,
+   * rentals…). Dot paths, see lib/intake/rebuild.ts. A rebuild re-derives
+   * everything else and restores these.
+   */
+  sticky?: string[];
 }
 
 export interface EstimateResult {

@@ -100,26 +100,15 @@ const RATE_FIELDS: { key: keyof TariffRates; label: string; hint: string }[] = [
   { key: "overagePerKw", label: "Overage $/kW", hint: "Charged on demand above the subscribed level" },
 ];
 
-export function BusinessModelTab() {
+/**
+ * Everything the model sections read and edit: the model result, its inputs
+ * and the setters that write a section back onto project.commercial. Null
+ * until the project has a commercial section (see ModelUnavailable).
+ */
+export function useModel() {
   const { project, setProject, proposal } = useProject();
   const c = project.commercial;
-
-  if (!c || !proposal) {
-    return (
-      <Section
-        title="Business model — revenue, carbon, financing, return"
-        subtitle="The model runs downstream of the customer price. This project has no commercial section yet; set one up on the Commercial tab and the model appears here."
-      >
-        <button
-          onClick={() => setProject((p) => ({ ...p, commercial: defaultCommercial() }))}
-          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          Set up pricing with the intake 2.9.0 defaults
-        </button>
-      </Section>
-    );
-  }
-
+  if (!c || !proposal) return null;
   const m = proposal.model;
   const inputs = m.inputs;
   const { context: ctx, usage, tariff, revenue, carbon, financing, cashflow, deal } = m;
@@ -144,8 +133,34 @@ export function BusinessModelTab() {
   const sumOf = <T,>(xs: T[], pick: (t: T) => number) => xs.reduce((s, t) => s + pick(t), 0);
   const statusOk = /^VERIFIED/i.test(tariff.status) || /^MANUAL/.test(tariff.status);
 
+  return { project, setProject, c, proposal, m, inputs, ctx, usage, tariff, revenue, carbon, financing, cashflow, deal, setTariff, setRevenue, setCarbon, setFinancing, setDeal, setManualRate, setShare, horizon, sumOf, statusOk };
+}
+
+/** Shown in place of any model section while the project has no commercial section. */
+export function ModelUnavailable() {
+  const { setProject } = useProject();
   return (
-    <div>
+      <Section
+        title="Business model — revenue, carbon, financing, return"
+        subtitle="The model runs downstream of the customer price. This project has no commercial section yet; set one up on the Commercial tab and the model appears here."
+      >
+        <button
+          onClick={() => setProject((p) => ({ ...p, commercial: defaultCommercial() }))}
+          className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Set up pricing with the intake 2.9.0 defaults
+        </button>
+      </Section>
+  );
+}
+
+/** Monthly payment, NPV, IRR and year-1 return, with the site line and any model notes. */
+export function ModelHeadline() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, ctx, usage, tariff, revenue, carbon, financing, cashflow, horizon } = x;
+  return (
+    <>
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label={financing.offered ? "Monthly payment" : "Customer price (cash)"}
@@ -177,8 +192,17 @@ export function BusinessModelTab() {
           ))}
         </ul>
       )}
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 6 · Revenue — site and utilisation (intake Revenue rows 12–22). */
+export function UsageSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, usage, revenue, setRevenue } = x;
+  return (
+    <>
       <Section
         title="Site and utilisation"
         subtitle="Utilisation expressed as stall-hours, then energy. The taper is applied before any money is counted. Every one of these will be challenged by the customer — set them where you can defend them. Hours and days come from the Intake tab."
@@ -232,8 +256,17 @@ export function BusinessModelTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 6 · Revenue — the utility tariff, decomposed, and the demand subscription (intake Revenue rows 36–55, 82–94). */
+export function TariffSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, tariff, setTariff, setManualRate, setShare, horizon, sumOf, statusOk } = x;
+  return (
+    <>
       <Section
         title="Utility tariff — the bill, decomposed"
         subtitle="One row per component so a demand charge cannot hide inside a blended cents-per-kWh figure. Utility and schedule come from the Setup and Intake tabs; the rate library supplies the figures where it has them."
@@ -419,8 +452,17 @@ export function BusinessModelTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 6 · Revenue — the revenue projection (intake Revenue rows 5–9). */
+export function RevenueSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, revenue, setRevenue, horizon, sumOf } = x;
+  return (
+    <>
       <Section
         title="Revenue projection"
         subtitle={`Gross revenue less the utility bill, card fees and — once the ${revenue.contractYears}-year service contract ends — warranty, service and the network fee the site then pays itself (${money(revenue.postContractServicePerYear)}/yr).`}
@@ -477,8 +519,17 @@ export function BusinessModelTab() {
           </table>
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 7 · Carbon — FCI capacity credit, aggregator, incentives (intake Carbon tab). */
+export function CarbonSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, carbon, setCarbon, sumOf } = x;
+  return (
+    <>
       <Section
         title="Carbon credits and incentives"
         subtitle="The FCI capacity credit is usually the most reliable revenue in the model — treat its inputs accordingly. It pays on DC fast-charging capacity only; Level 2 earns consumption credits. The aggregator's share is a disclosed cost, never our revenue."
@@ -568,8 +619,17 @@ export function BusinessModelTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 5 · Commercial — financing terms and the model horizon (intake Commercial rows 19–29). */
+export function FinancingSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, financing, setFinancing } = x;
+  return (
+    <>
       <Section title="Financing" subtitle="Full amortisation of the financed amount at the quoted rate and term. The model horizon and discount rate live here too.">
         <Grid cols={4}>
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -637,8 +697,17 @@ export function BusinessModelTab() {
           )}
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** Output — cashflow, NPV, IRR, break-even and the position by payment period. */
+export function CashflowSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, cashflow } = x;
+  return (
+    <>
       <Section title="Cashflow and return" subtitle="Charging profit plus the net carbon credit, against the capital outlay. Year 0 is the client's purchase; NPV discounts years 1 onward.">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className={wrapCls}>
@@ -712,8 +781,17 @@ export function BusinessModelTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
 
-      {/* ---------------------------------------------------------------- */}
+/** 8 · Deal structure — trading price for a share of the upside (intake Deal_Structure tab). */
+export function DealSection() {
+  const x = useModel();
+  if (!x) return null;
+  const { inputs, ctx, financing, deal, setDeal } = x;
+  return (
+    <>
       <Section
         title="Deal structure (optional)"
         subtitle="Leave every knob at zero for a straight sale. Fill them in only when we are trading price for a share of the upside — the model reports both sides so a structure can be judged before it is offered."
@@ -857,6 +935,24 @@ export function BusinessModelTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
+
+/** The whole model, top to bottom — the "Business model" output tab. */
+export function BusinessModelTab() {
+  const x = useModel();
+  if (!x) return <ModelUnavailable />;
+  return (
+    <div>
+      <ModelHeadline />
+      <UsageSection />
+      <TariffSection />
+      <RevenueSection />
+      <CarbonSection />
+      <FinancingSection />
+      <CashflowSection />
+      <DealSection />
     </div>
   );
 }

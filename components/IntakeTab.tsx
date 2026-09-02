@@ -3,7 +3,9 @@
 import { useRef, useState } from "react";
 import { defaultProject } from "@/lib/calc/defaults";
 import { money } from "@/lib/format";
+import type { Project } from "@/lib/calc/types";
 import type { IntakeImportReport } from "@/lib/intake/importIntake";
+import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
 import { computeInterconnection, defaultInterconnection, type InterconnectionInput } from "@/lib/interconnection";
 import { defaultCommercial, defaultIntake } from "@/lib/proposal/defaults";
 import type { IntakeInput } from "@/lib/proposal/types";
@@ -37,14 +39,11 @@ function Pick({ value, onChange, options = ["", "Yes", "No"] }: { value: string;
   );
 }
 
-export function IntakeTab() {
-  const { project, setProject, importProject, hardwareAllowance, result, proposal } = useProject();
+/** Shared state for the intake sections: the project's intake record, setup, and the pickers' option lists. */
+export function useIntakeEditing() {
+  const { project, setProject, result, proposal, hardwareAllowance } = useProject();
   const it = project.intake ?? defaultIntake();
   const setup = project.setup;
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [report, setReport] = useState<IntakeImportReport | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
 
   function update<K extends keyof IntakeInput>(key: K, value: IntakeInput[K]) {
     setProject((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), [key]: value } }));
@@ -61,6 +60,44 @@ export function IntakeTab() {
     }));
   }
   const numOrNull = (v: string) => (v === "" ? null : Number(v));
+
+  const utilitiesForState = UTILITIES.filter((u) => it.state === "Other" || u.state === it.state);
+  const utilityKnown = UTILITIES.some((u) => u.utility === setup.utility);
+  const schedulesForUtility = RATE_LIBRARY.filter((r) => r.utility === setup.utility);
+  const scheduleOptions = schedulesForUtility.length > 0 ? schedulesForUtility.map((r) => r.schedule) : RATE_SCHEDULE_PICKER;
+  const chosenSchedule = RATE_LIBRARY.find((r) => r.schedule === it.rateSchedule && (schedulesForUtility.length === 0 || r.utility === setup.utility));
+  const utilityRow = UTILITIES.find((u) => u.utility === setup.utility);
+  const propertyTypes = it.propertyType && !PROPERTY_TYPES.includes(it.propertyType) ? [it.propertyType, ...PROPERTY_TYPES] : PROPERTY_TYPES;
+
+  const ic = { ...defaultInterconnection(), ...it.interconnection };
+  const icResult = computeInterconnection(project, result, proposal?.costBuildup);
+  function setIc<K extends keyof InterconnectionInput>(key: K, value: InterconnectionInput[K]) {
+    setProject((p) => {
+      const cur: InterconnectionInput = { ...defaultInterconnection(), ...p.intake?.interconnection, [key]: value };
+      let next: Project = { ...p, intake: { ...(p.intake ?? defaultIntake()), interconnection: cur } };
+      // Who builds the transformer-to-switchgear run decides whether that
+      // conductor is in our scope: the utility's EV rule → 0 ft of ours.
+      if (key === "serviceFeederBy") {
+        const chain = p.setup.serviceChain ?? { enabled: true, material: "Al" as const, utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 };
+        const byUtility = String(value).startsWith("Utility");
+        const ft = byUtility ? 0 : chain.utilityToSwitchgearFt > 0 ? chain.utilityToSwitchgearFt : 25;
+        next = { ...next, setup: { ...next.setup, serviceChain: { ...chain, utilityToSwitchgearFt: ft } } };
+        if (canRebuild(next)) next = rebuildProject(next, hardwareAllowance);
+      }
+      return next;
+    });
+  }
+
+  return { project, setProject, result, proposal, it, setup, update, setSetup, setIdentity, numOrNull, utilitiesForState, utilityKnown, schedulesForUtility, scheduleOptions, chosenSchedule, utilityRow, propertyTypes, ic, icResult, setIc };
+}
+
+/** Import a completed intake workbook as a new library project, with the mapped / skipped / look-at report. */
+export function IntakeImportPanel() {
+  const { importProject, hardwareAllowance } = useProject();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [report, setReport] = useState<IntakeImportReport | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   async function importFile(file: File) {
     setImporting(true);
@@ -80,22 +117,8 @@ export function IntakeTab() {
     }
   }
 
-  const utilitiesForState = UTILITIES.filter((u) => it.state === "Other" || u.state === it.state);
-  const utilityKnown = UTILITIES.some((u) => u.utility === setup.utility);
-  const schedulesForUtility = RATE_LIBRARY.filter((r) => r.utility === setup.utility);
-  const scheduleOptions = schedulesForUtility.length > 0 ? schedulesForUtility.map((r) => r.schedule) : RATE_SCHEDULE_PICKER;
-  const chosenSchedule = RATE_LIBRARY.find((r) => r.schedule === it.rateSchedule && (schedulesForUtility.length === 0 || r.utility === setup.utility));
-  const utilityRow = UTILITIES.find((u) => u.utility === setup.utility);
-  const propertyTypes = it.propertyType && !PROPERTY_TYPES.includes(it.propertyType) ? [it.propertyType, ...PROPERTY_TYPES] : PROPERTY_TYPES;
-
-  const ic = { ...defaultInterconnection(), ...it.interconnection };
-  const icResult = computeInterconnection(project, result, proposal?.costBuildup);
-  function setIc<K extends keyof InterconnectionInput>(key: K, value: InterconnectionInput[K]) {
-    update("interconnection", { ...ic, [key]: value });
-  }
-
   return (
-    <div>
+    <>
       <Section
         title="Import a completed intake workbook"
         subtitle="The CEO's EVSE Project Intake (template 2.x) filled in by the client or the RSM. Every blue cell lands where the estimator keeps it — chargers and distances, terms, revenue and carbon assumptions, the existing installation, the Rule 29 block and the override register — as a NEW project in the library. The estimator's own rates stay in force."
@@ -147,7 +170,16 @@ export function IntakeTab() {
           </div>
         )}
       </Section>
+    </>
+  );
+}
 
+/** 1 · Project — client and contact (intake Project rows 5–9). */
+export function ClientContactSection() {
+  const x = useIntakeEditing();
+  const { it, setup, update, setIdentity } = x;
+  return (
+    <>
       <Section title="Client and contact" subtitle="Who the proposal goes to. Client and address are shared with the Quick Estimate tab.">
         <Grid cols={3}>
           <Field label="Client">
@@ -170,7 +202,16 @@ export function IntakeTab() {
           </Field>
         </Grid>
       </Section>
+    </>
+  );
+}
 
+/** 1 · Project — site and access (intake Project rows 12–23). */
+export function SiteAccessSection() {
+  const x = useIntakeEditing();
+  const { it, setup, update, setIdentity, numOrNull, propertyTypes } = x;
+  return (
+    <>
       <Section title="Site and access" subtitle="What the site is and when drivers can reach it — the revenue model reads the access policy.">
         <Grid cols={3}>
           <Field label="Site address">
@@ -219,7 +260,16 @@ export function IntakeTab() {
           </Field>
         </Grid>
       </Section>
+    </>
+  );
+}
 
+/** 1 · Project — delivery utility, schedule, existing service (intake Project rows 26–30, 46). */
+export function UtilityTariffSection() {
+  const x = useIntakeEditing();
+  const { it, setup, update, setSetup, numOrNull, utilitiesForState, utilityKnown, scheduleOptions, chosenSchedule, utilityRow } = x;
+  return (
+    <>
       <Section
         title="Utility and tariff"
         subtitle="The delivery utility sets the EV tariff. Pick it from the roster (California IOUs, POUs and Michigan utilities from the CEO intake) or type another; the schedules offered follow the utility. A community choice aggregator changes only the generation $/kWh."
@@ -282,7 +332,16 @@ export function IntakeTab() {
           </Field>
         </Grid>
       </Section>
+    </>
+  );
+}
 
+/** 3 · Electrical — the utility interconnection / Rule 29 block (intake Electrical rows 51–67, 119). */
+export function InterconnectionSection() {
+  const x = useIntakeEditing();
+  const { project, setProject, numOrNull, ic, icResult, setIc } = x;
+  return (
+    <>
       <Section
         title="Utility interconnection"
         subtitle="Interconnection is the serving utility's answer, not ours. In California the IOUs publish EV infrastructure rules (PG&E and SCE Rule 29, SDG&E Rule 45): the utility designs, builds and owns the service extension; the customer bears the design fee, its own service equipment and the chargers. A publicly owned utility has its own policy and no Rule 29 allowance."
@@ -430,7 +489,16 @@ export function IntakeTab() {
           </div>
         </div>
       </Section>
+    </>
+  );
+}
 
+/** 1 · Project — proposal date, validity, prepared by (intake Project rows 33–36). */
+export function ProposalSection() {
+  const x = useIntakeEditing();
+  const { it, setup, update, setSetup, numOrNull } = x;
+  return (
+    <>
       <Section title="Proposal" subtitle="Who prepared it, when, and how long the price holds.">
         <Grid cols={4}>
           <Field label="Prepared by (CPM)">
@@ -452,6 +520,31 @@ export function IntakeTab() {
           </Field>
         </div>
       </Section>
+    </>
+  );
+}
+
+/** The intake's Project tab as one form, plus the import panel — the estimator-mode Intake tab. */
+export function ProjectSections() {
+  return (
+    <>
+      <ClientContactSection />
+      <SiteAccessSection />
+      <UtilityTariffSection />
+      <ProposalSection />
+    </>
+  );
+}
+
+export function IntakeTab() {
+  return (
+    <div>
+      <IntakeImportPanel />
+      <ClientContactSection />
+      <SiteAccessSection />
+      <UtilityTariffSection />
+      <InterconnectionSection />
+      <ProposalSection />
     </div>
   );
 }

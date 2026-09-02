@@ -6,7 +6,6 @@ import {
   INSTALL_METHOD_INFO,
   TERRAIN_INFO,
   adaStallBreakdownByLevel,
-  buildQuickProject,
   countChargers,
   defaultQuickInput,
   normalizeQuickInput,
@@ -16,9 +15,9 @@ import {
 import { effectiveInstallMethod, surfaceRouteFt } from "@/lib/calc/install";
 import type { InstallMethod, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { money, num, pct } from "@/lib/format";
-import { newId } from "@/lib/id";
 import { findSku } from "@/lib/ref/priceBook";
-import { CHARGER_SKUS, EXTRA_SKUS, applyEquipmentSchedule, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
+import { rebuildProject } from "@/lib/intake/rebuild";
+import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { Field, Pill, Section, inputCls, selectCls } from "./ui";
 
@@ -110,20 +109,10 @@ export function QuickEstimateTab() {
   }
 
   function build() {
-    // buildQuickProject sizes and prices from the load types; the SKU layer
-    // then overlays price-book list prices and the warranty / service / EVOLV
-    // lines derived from the service classes and the Commercial tab's terms.
-    setProject((p) =>
-      applyEquipmentSchedule(
-        buildQuickProject(
-          p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(),
-          p,
-          newId("qs"),
-          hardwareAllowance,
-        ),
-        hardwareAllowance,
-      ),
-    );
+    // The engine sizes and prices from the load types, the SKU layer overlays
+    // price-book list prices and the warranty / service / EVOLV lines, and any
+    // field pinned by hand on the intake tabs (lib/intake/rebuild) is restored.
+    setProject((p) => rebuildProject(p, hardwareAllowance));
   }
 
   return (

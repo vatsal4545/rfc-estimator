@@ -283,7 +283,7 @@ describe("Excel export — intake blocks for a replacement site with overrides",
     expect(labels.some((l) => l.startsWith("Existing installation — rip and replace"))).toBe(true);
     expect(labels).toContain("Availability recovered");
     expect(labels).toContain("Removal — concrete pads saw-cut and broken out");
-    expect(labels.some((l) => l.startsWith("Override register — 4 active"))).toBe(true);
+    expect(labels.some((l) => l.startsWith("Override register — 5 active"))).toBe(true);
     expect(labels).toContain("Main Distribution Switchgear — base, before contingency and markup");
     // The line-extension contribution is its own pass-through row on Cost Buildup, read from the B13 input.
     const cb = wb.getWorksheet("Cost Buildup")!;

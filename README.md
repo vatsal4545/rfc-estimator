@@ -134,6 +134,44 @@ matching sheets with live formulas (`lib/exportModel.ts`).
   payment, the delivered cost and the fixed utility cost force the business
   model. Every entry carries a reason and a source, and the export lists them.
 
+### Intake workflow — the CEO's intake, filled from the estimate
+
+The client does not fill the intake; we do. The app therefore has two ways
+through one project (the switch sits in the header, the choice is remembered
+per browser):
+
+- **Intake** — the CEO's EVSE Project Intake 2.9.0 tab for tab, in its order
+  and vocabulary: 1 · Project, Existing, 2 · Equipment, 3 · Electrical,
+  4 · Construction, 5 · Commercial, 6 · Revenue, 7 · Carbon, 8 · Deal
+  structure, 9 · Overrides, then the **Business model** output and **Version
+  & handoff**. Every tab is a view onto the same project the estimator tabs
+  edit — nothing is duplicated. Equipment is a capacity-then-SKU picker like
+  the sheet's; equipment and electrical edits **rebuild the estimate live**
+  (`lib/intake/rebuild.ts`). Fields the engine derives (crew days, site-works
+  quantities, fees, rentals, D&E) show as *auto*; typing one pins it on
+  `project.sticky` so rebuilds leave it alone, “→ auto” hands it back. The
+  intake tab bar carries a completeness dot per section.
+- **Estimator** — the engineering detail, unchanged: Quick Estimate, Setup,
+  Takeoff, Panel schedule, Peripherals, Financials, Costs Internal, Results…
+
+**⬇ Intake 2.9.0** (toolbar and the handoff tab) writes the project into a copy
+of the blank template shipped in `public/intake/` — values only, through a
+small jszip cell patcher (`lib/intake/xlsxWrite.ts`, the twin of the reader),
+so the template's formulas, live checks, dropdowns, comments and defined
+names survive and every green check recalculates on open. The cell map is
+`lib/intake/cells.ts`; the plan (which cell gets which value) is
+`lib/intake/plan.ts`; `fillIntake.ts` refuses a template whose version or
+content hash the map was not written for. The estimator's construction and
+engineering figures (cost-line bases before contingency and markup, D&E, the
+frame, the branch breaker) land in the intake's **Overrides register** with
+their reasons (`lib/intake/handoff.ts`), so the CEO's engine prices the job on
+the estimator's numbers while the intake's own derivation stays visible beside
+them. The handoff tab previews exactly those rows, lists the blue cells left
+for a human (trench depth, DC dispenser runs, drawing-set counts…), and shows
+how complete each section is. `lib/intake/__tests__/fillIntake.test.ts` fills
+a Best Western-shaped project, re-imports the result and ties the carried
+figures to the cent.
+
 ### CEO-basis defaults (Sept 2026)
 
 Three estimator defaults follow the CEO's intake rather than the RFC_V18

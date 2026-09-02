@@ -104,6 +104,17 @@ export interface IntakeInput {
   cca?: string;
   /** Utility interconnection record — the intake's Rule 29 block (lib/interconnection). */
   interconnection?: import("../interconnection").InterconnectionInput;
+  /** Document control for the handoff (the intake's Version tab): this file's revision, who completed it, what changed. */
+  fileVersion?: string;
+  completedBy?: string;
+  revisionNotes?: string;
+  /**
+   * Whether the filled intake carries the estimator's construction and
+   * engineering figures in its Overrides register (default true) — the
+   * CEO's engine then prices the job on the estimator's numbers while the
+   * intake's own derivation stays visible beside them.
+   */
+  carryEstimatorOverrides?: boolean;
 }
 
 export interface CommercialInput {

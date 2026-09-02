@@ -20,6 +20,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import sys
 
 import openpyxl
@@ -571,3 +572,12 @@ export const INTAKE_GEAR_480V: {{ item: string; size: string; cost: number }}[] 
 
 if __name__ == "__main__":
     main()
+
+
+# The blank template also ships in the app bundle: the intake filler
+# (lib/intake/fillIntake.ts) fetches it from public/intake and writes the
+# project's values into it. Keep the copy in step with the source.
+PUBLIC = os.path.join(ROOT, "public", "intake")
+os.makedirs(PUBLIC, exist_ok=True)
+shutil.copyfile(SRC, os.path.join(PUBLIC, os.path.basename(SRC)))
+print("copied", os.path.basename(SRC), "to public/intake/")

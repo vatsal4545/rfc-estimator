@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BusinessModelTab } from "./BusinessModelTab";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { ChargerPricingTab } from "./ChargerPricingTab";
 import { CommercialTab } from "./CommercialTab";
 import { ExistingTab } from "./ExistingTab";
 import { OverridesTab } from "./OverridesTab";
-import { IntakeTab } from "./IntakeTab";
+import { IntakeTab, ProjectSections } from "./IntakeTab";
 import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
@@ -18,9 +18,39 @@ import { QuickEstimateTab } from "./QuickEstimateTab";
 import { ResultsTab } from "./ResultsTab";
 import { SetupTab } from "./SetupTab";
 import { TakeoffTab } from "./TakeoffTab";
+import { ConstructionSection } from "./intake/ConstructionSection";
+import { ElectricalSection } from "./intake/ElectricalSection";
+import { EquipmentSection } from "./intake/EquipmentSection";
+import { HandoffSection } from "./intake/HandoffSection";
+import { CarbonIntakeTab, CommercialIntakeTab, DealIntakeTab, RevenueIntakeTab } from "./intake/ModelTabs";
 import { money } from "@/lib/format";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
+import { intakeCompleteness } from "@/lib/intake/handoff";
 
-const TABS = [
+// Two ways through one project. The Intake workflow mirrors the CEO's EVSE
+// Project Intake tab for tab, in its order and vocabulary, and ends with the
+// business model and the handoff; the Estimator workflow is the engineering
+// detail. Both edit the same project — nothing is duplicated.
+type Mode = "intake" | "estimator";
+const MODE_STORAGE = "rfc-estimator:ui:mode:v1";
+
+const INTAKE_TABS = [
+  { key: "project", label: "1 · Project", section: "project" },
+  { key: "existing", label: "Existing", section: "existing" },
+  { key: "equipment", label: "2 · Equipment", section: "equipment" },
+  { key: "electrical", label: "3 · Electrical", section: "electrical" },
+  { key: "construction", label: "4 · Construction", section: "construction" },
+  { key: "commercial", label: "5 · Commercial", section: "commercial" },
+  { key: "revenue", label: "6 · Revenue", section: "revenue" },
+  { key: "carbon", label: "7 · Carbon", section: "carbon" },
+  { key: "deal", label: "8 · Deal structure", section: "deal" },
+  { key: "overrides", label: "9 · Overrides", section: "overrides" },
+  { key: "model", label: "📈 Business model", section: "" },
+  { key: "handoff", label: "Version & handoff", section: "" },
+] as const;
+type IntakeTabKey = (typeof INTAKE_TABS)[number]["key"];
+
+const ESTIMATOR_TABS = [
   { key: "quick", label: "⚡ Quick Estimate" },
   { key: "intake", label: "Intake" },
   { key: "existing", label: "Existing site" },
@@ -37,13 +67,13 @@ const TABS = [
   { key: "model", label: "📈 Business model" },
   { key: "overrides", label: "Overrides" },
 ] as const;
-
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = (typeof ESTIMATOR_TABS)[number]["key"];
 
 function Toolbar() {
-  const { project, newProject, importProject, result } = useProject();
+  const { project, newProject, importProject, result, proposal } = useProject();
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  const [intakeBusy, setIntakeBusy] = useState(false);
   const [shared, setShared] = useState(false);
 
   async function shareLink() {
@@ -66,6 +96,19 @@ function Toolbar() {
       await downloadEstimateExcel(project, result);
     } finally {
       setExcelBusy(false);
+    }
+  }
+
+  async function exportIntake() {
+    setIntakeBusy(true);
+    try {
+      // The zip patcher loads only when someone actually exports.
+      const { downloadIntake } = await import("@/lib/intake/fillIntake");
+      await downloadIntake(project, result, proposal);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setIntakeBusy(false);
     }
   }
 
@@ -101,6 +144,14 @@ function Toolbar() {
         title="Download the full estimate as a formula-driven Excel workbook"
       >
         {excelBusy ? "Building…" : "⬇ Excel"}
+      </button>
+      <button
+        onClick={exportIntake}
+        disabled={intakeBusy}
+        className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+        title={`Download the CEO's EVSE Project Intake ${INTAKE_TEMPLATE.version} filled from this project — the estimator's figures in its override register`}
+      >
+        {intakeBusy ? "Filling…" : `⬇ Intake ${INTAKE_TEMPLATE.version}`}
       </button>
       <button
         onClick={shareLink}
@@ -151,10 +202,57 @@ function TotalBadge() {
   );
 }
 
+function readMode(): Mode {
+  try {
+    const v = localStorage.getItem(MODE_STORAGE);
+    return v === "estimator" ? "estimator" : "intake";
+  } catch {
+    return "intake";
+  }
+}
+
+/** The intake tab bar, with a completeness dot per section. */
+function IntakeTabBar({ tab, setTab }: { tab: IntakeTabKey; setTab: (k: IntakeTabKey) => void }) {
+  const { project, result, proposal } = useProject();
+  const status = useMemo(() => intakeCompleteness(project, result, proposal), [project, result, proposal]);
+  const dot = (section: string) => {
+    const st = status.find((x) => x.key === section)?.state;
+    if (!st) return null;
+    const cls = st === "done" ? "bg-green-500" : st === "partial" ? "bg-amber-400" : "bg-zinc-300 dark:bg-zinc-600";
+    return <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${cls}`} />;
+  };
+  return (
+    <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 pb-2">
+      {INTAKE_TABS.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => setTab(t.key)}
+          className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            tab === t.key ? "bg-blue-600 text-white" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          }`}
+        >
+          {t.section && dot(t.section)}
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 function AppShell() {
+  const [mode, setModeState] = useState<Mode>(readMode);
   const [tab, setTab] = useState<TabKey>("quick");
+  const [intakeTab, setIntakeTab] = useState<IntakeTabKey>("project");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { importProject } = useProject();
+  const setMode = (m: Mode) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_STORAGE, m);
+    } catch {
+      // storage unavailable — the choice lasts the session
+    }
+  };
 
   // Opening a share link (#p=...) imports that project into this browser's
   // library as an editable copy. The hash is cleared synchronously before the
@@ -174,6 +272,16 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const modeBtn = (m: Mode, label: string, title: string) => (
+    <button
+      onClick={() => setMode(m)}
+      title={title}
+      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${mode === m ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"}`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">
       <ProjectSidebar open={sidebarOpen} />
@@ -189,8 +297,14 @@ function AppShell() {
               ☰
             </button>
             <div>
-            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">RFC Estimator</h1>
-            <p className="text-xs text-zinc-500">EV charging infrastructure cost estimating, automated</p>
+              <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">RFC Estimator</h1>
+              <p className="text-xs text-zinc-500">
+                {mode === "intake" ? `EVSE Project Intake ${INTAKE_TEMPLATE.version} — filled from the estimate, business model automated` : "EV charging infrastructure cost estimating, automated"}
+              </p>
+            </div>
+            <div className="ml-3 flex items-center gap-0.5 rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-700" role="tablist" aria-label="Workflow">
+              {modeBtn("intake", "Intake", "The CEO's intake, tab for tab — fill it here and the estimate and business model follow")}
+              {modeBtn("estimator", "Estimator", "The engineering detail: takeoff, panel schedule, materials, peripherals, costs")}
             </div>
           </div>
           <div className="flex items-center gap-6">
@@ -198,39 +312,62 @@ function AppShell() {
             <Toolbar />
           </div>
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 pb-2">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                tab === t.key
-                  ? "bg-blue-600 text-white"
-                  : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
+        {mode === "intake" ? (
+          <IntakeTabBar tab={intakeTab} setTab={setIntakeTab} />
+        ) : (
+          <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 pb-2">
+            {ESTIMATOR_TABS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  tab === t.key
+                    ? "bg-blue-600 text-white"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
-        {tab === "quick" && <QuickEstimateTab />}
-        {tab === "intake" && <IntakeTab />}
-        {tab === "existing" && <ExistingTab />}
-        {tab === "setup" && <SetupTab />}
-        {tab === "takeoff" && <TakeoffTab />}
-        {tab === "panel" && <PanelScheduleTab />}
-        {tab === "chargers" && <ChargerLibraryTab />}
-        {tab === "pricing" && <ChargerPricingTab />}
-        {tab === "peripherals" && <PeripheralsTab />}
-        {tab === "financials" && <FinancialsTab />}
-        {tab === "costsInternal" && <CostsInternalTab />}
-        {tab === "results" && <ResultsTab />}
-        {tab === "commercial" && <CommercialTab />}
-        {tab === "model" && <BusinessModelTab />}
-        {tab === "overrides" && <OverridesTab />}
+        {mode === "intake" ? (
+          <>
+            {intakeTab === "project" && <ProjectSections />}
+            {intakeTab === "existing" && <ExistingTab />}
+            {intakeTab === "equipment" && <EquipmentSection />}
+            {intakeTab === "electrical" && <ElectricalSection />}
+            {intakeTab === "construction" && <ConstructionSection />}
+            {intakeTab === "commercial" && <CommercialIntakeTab />}
+            {intakeTab === "revenue" && <RevenueIntakeTab />}
+            {intakeTab === "carbon" && <CarbonIntakeTab />}
+            {intakeTab === "deal" && <DealIntakeTab />}
+            {intakeTab === "overrides" && <OverridesTab />}
+            {intakeTab === "model" && <BusinessModelTab />}
+            {intakeTab === "handoff" && <HandoffSection />}
+          </>
+        ) : (
+          <>
+            {tab === "quick" && <QuickEstimateTab />}
+            {tab === "intake" && <IntakeTab />}
+            {tab === "existing" && <ExistingTab />}
+            {tab === "setup" && <SetupTab />}
+            {tab === "takeoff" && <TakeoffTab />}
+            {tab === "panel" && <PanelScheduleTab />}
+            {tab === "chargers" && <ChargerLibraryTab />}
+            {tab === "pricing" && <ChargerPricingTab />}
+            {tab === "peripherals" && <PeripheralsTab />}
+            {tab === "financials" && <FinancialsTab />}
+            {tab === "costsInternal" && <CostsInternalTab />}
+            {tab === "results" && <ResultsTab />}
+            {tab === "commercial" && <CommercialTab />}
+            {tab === "model" && <BusinessModelTab />}
+            {tab === "overrides" && <OverridesTab />}
+          </>
+        )}
       </main>
       </div>
     </div>

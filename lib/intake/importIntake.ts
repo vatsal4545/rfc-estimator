@@ -575,6 +575,12 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     else if (key) {
       overrides.push({ id: `ov-${key}`, key, value: v, reason, source: `Intake ${templateVersion || ""} Overrides!B${row}`.trim(), date: today });
       mapped.push(`Override: ${label} = ${v}${reason ? ` (${reason})` : ""}`);
+      // The intake's one "switchgear and distribution" row spans the estimator's
+      // switchgear AND sub-panel / transformer / breaker lines — carry it on the
+      // first and zero the second, or the distribution gear would count twice.
+      if (row === 10) {
+        overrides.push({ id: "ov-line:Electrical Sub-Panels, Transformers, Breakers", key: "line:Electrical Sub-Panels, Transformers, Breakers", value: 0, reason: "Included in the switchgear and distribution override (intake Overrides row 10)", source: `Intake ${templateVersion || ""} Overrides!B10`.trim(), date: today });
+      }
     }
   }
   if (hardwareMsrpEach !== undefined) {

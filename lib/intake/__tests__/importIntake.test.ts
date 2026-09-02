@@ -176,7 +176,9 @@ describe("importing a completed intake workbook", async () => {
 
   it("Overrides tab → the register, with field-class entries written through", () => {
     const keys = (project.overrides ?? []).map((o) => o.key).sort();
-    expect(keys).toEqual(["kwhPerDay", "line:Main Distribution Switchgear", "retailPerKwh", "switchgearA"]);
+    expect(keys).toEqual(["kwhPerDay", "line:Electrical Sub-Panels, Transformers, Breakers", "line:Main Distribution Switchgear", "retailPerKwh", "switchgearA"]);
+    // The intake's one "switchgear and distribution" row spans both estimator lines: the quote lands on the first, the second is zeroed.
+    expect(estimate.costs.lines.find((l) => l.name === "Electrical Sub-Panels, Transformers, Breakers")!.base).toBe(0);
     const sg = project.overrides!.find((o) => o.key === "line:Main Distribution Switchgear")!;
     expect(sg.value).toBe(150000);
     expect(sg.reason).toBe("Vendor quote for the switchboard");

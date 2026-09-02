@@ -33,7 +33,7 @@ export function unescapeXml(s: string): string {
   });
 }
 
-function attrs(tag: string): Record<string, string> {
+export function attrs(tag: string): Record<string, string> {
   const out: Record<string, string> = {};
   const re = /([A-Za-z_:][\w:.-]*)\s*=\s*"([^"]*)"/g;
   let m: RegExpExecArray | null;
@@ -65,16 +65,17 @@ function isDateFormat(numFmtId: number, custom: Map<number, string>): boolean {
   return /[ymdh]/i.test(stripped) && !/[#0]/.test(stripped);
 }
 
-export async function readWorkbook(data: ArrayBuffer | Uint8Array): Promise<WorkbookCells> {
-  const zip = await JSZip.loadAsync(data);
-  const text = async (path: string): Promise<string | undefined> => {
-    const file = zip.file(path) ?? zip.file(path.replace(/^\//, ""));
-    return file ? file.async("string") : undefined;
-  };
+/** Text of a zip entry, tolerant of a leading slash in the path. */
+export async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
+  const file = zip.file(path) ?? zip.file(path.replace(/^\//, ""));
+  return file ? file.async("string") : undefined;
+}
 
-  const workbookXml = await text("xl/workbook.xml");
+/** Sheet names → part paths (xl/worksheets/sheetN.xml), in workbook order. */
+export async function sheetPathsOf(zip: JSZip): Promise<{ name: string; path: string }[]> {
+  const workbookXml = await zipText(zip, "xl/workbook.xml");
   if (!workbookXml) throw new Error("Not an .xlsx workbook (xl/workbook.xml missing)");
-  const relsXml = (await text("xl/_rels/workbook.xml.rels")) ?? "";
+  const relsXml = (await zipText(zip, "xl/_rels/workbook.xml.rels")) ?? "";
   const rels = new Map<string, string>();
   for (const m of relsXml.matchAll(/<Relationship\b[^>]*?\/?>/g)) {
     const a = attrs(m[0]);
@@ -89,6 +90,14 @@ export async function readWorkbook(data: ArrayBuffer | Uint8Array): Promise<Work
     const path = target.startsWith("/") ? target.slice(1) : target.startsWith("xl/") ? target : `xl/${target}`;
     sheets.push({ name: a.name, path });
   }
+  return sheets;
+}
+
+export async function readWorkbook(data: ArrayBuffer | Uint8Array): Promise<WorkbookCells> {
+  const zip = await JSZip.loadAsync(data);
+  const text = (path: string) => zipText(zip, path);
+
+  const sheets = await sheetPathsOf(zip);
 
   // Shared strings.
   const sharedXml = (await text("xl/sharedStrings.xml")) ?? "";
