@@ -115,22 +115,26 @@ export const DEFAULT_LOAD_TYPES: LoadType[] = [
 ];
 
 export const GEAR_CATALOG: GearCatalogRow[] = [
-  // Main switchgear 480V: the shop's own budgetary ladder. 2000A/2500A were
-  // re-set Aug 2026 to fix the old price inversion (2500A had been priced
-  // below the 2000A unit); every other size is the original list. NOARK MxS
-  // assembled-budgetary comparison research is on file (memory:
-  // switchgear-price-research) — RFQ NOARK Pomona or Butcher Power Products
-  // for real quotes before contract.
+  // Main switchgear 480V: the shop's own budgetary ladder up to 2500A
+  // (2000A/2500A re-set Aug 2026 to fix an inversion). 600A and 3200A added
+  // and 3000A/4000A/5000A re-set Sept 2026 on Larson Electronics' published
+  // main-breaker boards: 800A main-only $21,968 and 3000A main-only $58,842
+  // give $16.76/A; the shop's 400A ($20,427) sits on Larson's 400A board with
+  // eight feeders ($20,587). Larson's switch-only 3200A metal-enclosed gear
+  // (no main, no feeders) is $59,593 for comparison. NOARK / BPP research is
+  // on file (memory: switchgear-price-research) — RFQ before contract.
   { item: "Main switchgear", size: "400A", voltage: "480V", unitCost: 20426.82 },
+  { item: "Main switchgear", size: "600A", voltage: "480V", unitCost: 25500, note: "Added Sept 2026 — between the 400A and 800A boards; Larson 600A panelboards run $14.3k–$26.2k" },
   { item: "Main switchgear", size: "800A", voltage: "480V", unitCost: 31187 },
   { item: "Main switchgear", size: "1000A", voltage: "480V", unitCost: 36812.5 },
   { item: "Main switchgear", size: "1200A", voltage: "480V", unitCost: 43292.68 },
   { item: "Main switchgear", size: "1600A", voltage: "480V", unitCost: 56750 },
   { item: "Main switchgear", size: "2000A", voltage: "480V", unitCost: 55000, note: "Re-set Aug 2026 (was $60k) — keeps the ladder monotonic" },
   { item: "Main switchgear", size: "2500A", voltage: "480V", unitCost: 60000, note: "Re-set Aug 2026 (was $58.5k, priced below the 2000A unit)" },
-  { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 65000 },
-  { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 67500 },
-  { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 70000 },
+  { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 58842, note: "Sept 2026: Larson 3000A main-only Type 3R board, published $58,842.20 (was $65,000)" },
+  { item: "Main switchgear", size: "3200A", voltage: "480V", unitCost: 62200, note: "Added Sept 2026 — main-breaker basis on the Larson $16.76/A slope; their switch-only 3200A gear is $59,593" },
+  { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 75600, note: "Sept 2026: Larson $16.76/A slope (was $67,500, below even switch-only gear)" },
+  { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 100000, note: "Sept 2026: user's budget; slope gives $92.4k, Larson switch-only 5000A is $80.3k (was $70,000)" },
   { item: "Main switchgear", size: "350A", voltage: "208V", unitCost: 0, note: "No price on original list" },
   { item: "Main breaker", size: "110A", voltage: "480V", unitCost: 0, note: "No price on original list" },
   { item: "Main breaker", size: "125A", voltage: "480V", unitCost: 0, note: "No price on original list" },
@@ -175,7 +179,7 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
 export const STANDARD_BREAKERS_A: number[] = [
   15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175,
   200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600,
-  2000, 2500, 3000, 4000, 5000,
+  2000, 2500, 3000, 3200, 4000, 5000,
 ];
 
 /** Smallest value in `sizes` that is >= amps; falls back to the largest size. */

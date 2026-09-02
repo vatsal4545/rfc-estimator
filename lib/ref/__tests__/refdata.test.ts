@@ -143,9 +143,12 @@ describe("rate library, utilities, benchmarks, gear", () => {
     const mains = INTAKE_GEAR_480V.filter((g) => g.item === "Main");
     expect(mains.length).toBeGreaterThanOrEqual(8);
     // The estimator re-set 2000A/2500A in Aug 2026 to remove the price
-    // inversion the source table still carries (2500A priced below 2000A) —
-    // every other size must agree to the dollar.
-    const deliberatelyDifferent = new Set(["2000A", "2500A"]);
+    // inversion the source table still carries (2500A priced below 2000A),
+    // and 3000A/4000A/5000A in Sept 2026 on Larson Electronics' published
+    // main-breaker boards (the source table's $67.5k / $70k top end sat below
+    // even switch-only gear). Every other size must agree to the dollar; the
+    // estimator's 600A and 3200A frames have no row in the source table.
+    const deliberatelyDifferent = new Set(["2000A", "2500A", "3000A", "4000A", "5000A"]);
     for (const g of mains) {
       const size = g.size.replace(".0", "A").replace(/AA$/, "A");
       if (deliberatelyDifferent.has(size)) continue;

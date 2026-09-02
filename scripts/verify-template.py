@@ -172,7 +172,7 @@ check("Primary breaker from override", g("PANEL!F50"), 500)
 
 g = run({"'[RFC-Template.xlsx]PANEL'!D21": 3000}, "sg-override")
 check("SG override wins", g("PANEL!F21"), 3000)
-check("SG price re-derives (3000A = $65,000)", g("PANEL!F22"), 65000)
+check("SG price re-derives (3000A = $58,842)", g("PANEL!F22"), 58842)
 
 # ---- Per-line breaker override (website Takeoff parity) ----------------------
 g = run({"'[RFC-Template.xlsx]INTAKE'!I53": 400}, "breaker-override")
