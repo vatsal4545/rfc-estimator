@@ -5,16 +5,49 @@ import { reconcileHardwareCost } from "@/lib/catalog";
 import type { LaborItem } from "@/lib/calc/types";
 import { money } from "@/lib/format";
 import { newId } from "@/lib/id";
+import { reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls } from "./ui";
 
 export function FinancialsTab() {
-  const { project, setProject, hardwareAllowance } = useProject();
+  const { project, setProject, hardwareAllowance, result } = useProject();
   const f = project.financial;
 
   function update<K extends keyof typeof f>(key: K, value: (typeof f)[K]) {
     setProject((p) => ({ ...p, financial: { ...p.financial, [key]: value } }));
   }
+
+  // Warranty / service / EVOLV: derived from the price book's service classes
+  // and the Commercial tab's terms while serviceTermsAuto is on; typing a
+  // number switches the three to manual, "→ price book" re-derives them.
+  const serviceHint = f.serviceTermsAuto
+    ? "Auto — price-book service class × the Commercial tab's contract terms. Typing switches to manual."
+    : "Manual";
+  const serviceField = (label: string, key: "chargerWarrantyCost" | "evolvCommissioningCost" | "fiveYearServiceCost") => (
+    <Field label={label} hint={serviceHint}>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          className={inputCls}
+          value={f[key]}
+          onChange={(e) =>
+            setProject((p) => ({ ...p, financial: { ...p.financial, [key]: Number(e.target.value), serviceTermsAuto: false } }))
+          }
+        />
+        {f.serviceTermsAuto === false && project.commercial && (
+          <button
+            className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline"
+            title="Re-derive warranty, service and EVOLV from the price book and the Commercial tab's terms"
+            onClick={() =>
+              setProject((p) => reconcileServiceTerms({ ...p, financial: { ...p.financial, serviceTermsAuto: true } }, hardwareAllowance))
+            }
+          >
+            → price book
+          </button>
+        )}
+      </div>
+    </Field>
+  );
 
   const breakdown = laborBreakdown(f);
   const laborContingency = (f.applyContingencyToLabor ?? true) ? f.contingencyPct : 0;
@@ -51,6 +84,12 @@ export function FinancialsTab() {
           <Field label="Sales tax %" hint="Applied to the fully-loaded construction subtotal">
             <input type="number" step="0.001" className={inputCls} value={f.salesTaxPct} onChange={(e) => update("salesTaxPct", Number(e.target.value))} />
           </Field>
+          <Field
+            label="Construction PM — % of loaded labor"
+            hint={`CEO basis: 15% of labor after contingency. Currently ${money(result.costs.constructionPm)}`}
+          >
+            <input type="number" step="0.01" className={inputCls} value={f.pmPctOfLabor ?? 0} onChange={(e) => update("pmPctOfLabor", Number(e.target.value))} />
+          </Field>
         </Grid>
         <label className="mt-4 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
           <input
@@ -59,7 +98,7 @@ export function FinancialsTab() {
             checked={f.applyContingencyToLabor ?? true}
             onChange={(e) => update("applyContingencyToLabor", e.target.checked)}
           />
-          Apply contingency to the labor rate (both source workbooks do: $2,250 → $2,475/day)
+          Apply contingency to the labor rate (the source workbooks do; CEO basis $2,750 → $3,025/day)
         </label>
 
         {/* Itemized labor: optional roles/phases table. When rows exist they
@@ -138,7 +177,7 @@ export function FinancialsTab() {
             hint={
               f.chargerHardwareCostIsAuto === false
                 ? "Manual — catalog price changes won't move this project"
-                : "Auto: counts × the 💲 Charger pricing catalog. Typing here switches to manual."
+                : "Auto: price-book list per SKU, 💲 Charger pricing catalog for generic models. Typing here switches to manual."
             }
           >
             <div className="flex items-center gap-2">
@@ -175,15 +214,9 @@ export function FinancialsTab() {
               )}
             </div>
           </Field>
-          <Field label="Warranty ($)">
-            <input type="number" className={inputCls} value={f.chargerWarrantyCost} onChange={(e) => update("chargerWarrantyCost", Number(e.target.value))} />
-          </Field>
-          <Field label="EVOLV / commissioning ($)">
-            <input type="number" className={inputCls} value={f.evolvCommissioningCost} onChange={(e) => update("evolvCommissioningCost", Number(e.target.value))} />
-          </Field>
-          <Field label="5-year service agreement ($)">
-            <input type="number" className={inputCls} value={f.fiveYearServiceCost} onChange={(e) => update("fiveYearServiceCost", Number(e.target.value))} />
-          </Field>
+          {serviceField("Extended warranty ($)", "chargerWarrantyCost")}
+          {serviceField("EVOLV network / commissioning ($)", "evolvCommissioningCost")}
+          {serviceField("Service agreement ($)", "fiveYearServiceCost")}
         </Grid>
       </Section>
 
@@ -198,7 +231,7 @@ export function FinancialsTab() {
           <Field label="SLD / electrical engineering design ($)" hint="PE-stamped single-line, load calcs, panel schedule">
             <input type="number" className={inputCls} value={f.electricalEngDesignCost} onChange={(e) => update("electricalEngDesignCost", Number(e.target.value))} />
           </Field>
-          <Field label="Construction PM hours (CPM)">
+          <Field label="Design / permitting PM hours" hint="Manual entry. Construction PM is priced as % of labor above (CEO basis)">
             <input type="number" className={inputCls} value={f.pmHours} onChange={(e) => update("pmHours", Number(e.target.value))} />
           </Field>
           <Field label="PM hourly rate ($)">

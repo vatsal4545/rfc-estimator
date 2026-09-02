@@ -1,6 +1,10 @@
 "use client";
 
 import { computeEstimate } from "@/lib/calc/engine";
+import { computeProposal } from "@/lib/proposal";
+import { defaultCommercial } from "@/lib/proposal/defaults";
+import type { ProposalResult } from "@/lib/proposal/types";
+import { reconcileServiceTerms } from "@/lib/skus";
 import { defaultProject } from "@/lib/calc/defaults";
 import { DEFAULT_LOAD_TYPES } from "@/lib/calc/tables";
 import type { EstimateResult, LoadType, Project } from "@/lib/calc/types";
@@ -48,10 +52,19 @@ function withCurrentLoadTypes(project: Project): Project {
   return project;
 }
 
+// A brand-new project: the estimator defaults plus the CEO's commercial terms
+// (intake 2.9.0). Existing bodies are never given the section automatically —
+// the Commercial tab offers it — so their Total Cost and shape stay as saved.
+function freshProject(): Project {
+  return { ...defaultProject(), commercial: defaultCommercial() };
+}
+
 interface Ctx {
   project: Project;
   setProject: React.Dispatch<React.SetStateAction<Project>>;
   result: EstimateResult;
+  /** Proposal layer (customer price, margin, scope of supply) — null until the project has a commercial section. */
+  proposal: ProposalResult | null;
   loadTypes: LoadType[];
   resetProject: () => void;
   /** Project library (sidebar): every saved project, most recent first. */
@@ -103,13 +116,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   // Merge current load types + re-derive the hardware line from the price
   // catalog — applied to every project body coming out of the store.
   const prepare = (body: Project, allowance: Record<string, number> = hardwareAllowance): Project =>
-    reconcileHardwareCost(withCurrentLoadTypes(body), allowance);
+    reconcileServiceTerms(reconcileHardwareCost(withCurrentLoadTypes(body), allowance), allowance);
 
   const [state, setState] = useState<{ id: string; project: Project }>(() => {
     const allowance = effectiveHardwareAllowance(getCatalog().getOverrides());
     const boot = store.initStore();
-    if (boot) return { id: boot.id, project: reconcileHardwareCost(withCurrentLoadTypes(boot.project), allowance) };
-    const project = defaultProject();
+    if (boot)
+      return {
+        id: boot.id,
+        project: reconcileServiceTerms(reconcileHardwareCost(withCurrentLoadTypes(boot.project), allowance), allowance),
+      };
+    const project = freshProject();
     const meta = store.createProject(project, "", { touched: false });
     store.setActiveId(meta.id);
     return { id: meta.id, project };
@@ -153,6 +170,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   };
 
   const result = useMemo(() => computeEstimate(project), [project]);
+  const proposal = useMemo(() => computeProposal(project, result), [project, result]);
 
   const switchProject = (id: string) => {
     if (id === activeId) return;
@@ -163,7 +181,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   };
 
   const newProject = () => {
-    const body = defaultProject();
+    const body = freshProject();
     const meta = store.createProject(body, "", { touched: false });
     store.setActiveId(meta.id);
     setState({ id: meta.id, project: body });
@@ -181,9 +199,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       if (next) {
         const body = store.loadProject(next.id);
         store.setActiveId(next.id);
-        setState({ id: next.id, project: body ? prepare(body) : defaultProject() });
+        setState({ id: next.id, project: body ? prepare(body) : freshProject() });
       } else {
-        const body = defaultProject();
+        const body = freshProject();
         const meta = store.createProject(body, "", { touched: false });
         store.setActiveId(meta.id);
         setState({ id: meta.id, project: body });
@@ -231,7 +249,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     // Reflect the new price into the open project right away; every other
     // auto-priced project reconciles the moment it is opened.
     const allowance = effectiveHardwareAllowance(next);
-    setState((s) => ({ ...s, project: reconcileHardwareCost(s.project, allowance) }));
+    setState((s) => ({ ...s, project: reconcileServiceTerms(reconcileHardwareCost(s.project, allowance), allowance) }));
   };
 
   // ---- Cross-device sync ----------------------------------------------------
@@ -270,7 +288,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
             store.setActiveId(next.id);
             return { id: next.id, project: prepare(nextBody) };
           }
-          const fresh = defaultProject();
+          const fresh = freshProject();
           const meta = store.createProject(fresh, "", { touched: false });
           store.setActiveId(meta.id);
           return { id: meta.id, project: fresh };
@@ -348,7 +366,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
 
   // Kept for the toolbar: clears the CURRENT project back to defaults.
   const resetProject = () => {
-    setProject(defaultProject());
+    setProject(freshProject());
   };
 
   return (
@@ -357,6 +375,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         project,
         setProject,
         result,
+        proposal,
         loadTypes: project.loadTypes,
         resetProject,
         projects,

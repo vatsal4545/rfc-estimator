@@ -15,8 +15,10 @@ import {
 } from "@/lib/calc/autoplan";
 import { effectiveInstallMethod, surfaceRouteFt } from "@/lib/calc/install";
 import type { InstallMethod, QuickEstimateInput, Terrain } from "@/lib/calc/types";
-import { money, num } from "@/lib/format";
+import { money, num, pct } from "@/lib/format";
 import { newId } from "@/lib/id";
+import { findSku } from "@/lib/ref/priceBook";
+import { CHARGER_SKUS, EXTRA_SKUS, applyEquipmentSchedule, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { Field, Pill, Section, inputCls, selectCls } from "./ui";
 
@@ -33,16 +35,27 @@ const SERVICE_TOGGLES: {
   label: string;
   hint: string;
 }[] = [
-  { key: "includeChargerHardware", label: "Charger hardware", hint: "Budgetary allowance per unit — swap in vendor quotes later" },
+  { key: "includeChargerHardware", label: "Charger hardware", hint: "Price-book list per SKU (catalog allowance for generic models); warranty, service and EVOLV follow the Commercial tab's terms" },
   { key: "includeSitePlanDesign", label: "Site plan design (AutoCAD)", hint: "Parking layout, ADA stalls, equipment placement" },
   { key: "includeSldDesign", label: "SLD / electrical design", hint: "PE-stamped single-line diagram, load calcs, panel schedule" },
-  { key: "includeCpm", label: "Construction PM (CPM)", hint: "Preconstruction + per-day site management hours" },
+  { key: "includeCpm", label: "Construction PM (CPM)", hint: "15% of loaded construction labor — the CEO basis" },
   { key: "includePermits", label: "Permitting fees", hint: "AHJ plan check (% of valuation), permit issuance, utility application" },
   { key: "includePrivateScan", label: "Private utility scan (GPR)", hint: "Locate unmarked lines along the trench route before digging" },
 ];
 
+// Price-book SKUs grouped the way the intake's capacity picker groups them.
+const CHARGER_SKU_GROUPS: { capacity: string; skus: typeof CHARGER_SKUS }[] = [];
+for (const s of CHARGER_SKUS) {
+  const cap = s.capacity || "Other";
+  const g = CHARGER_SKU_GROUPS.find((x) => x.capacity === cap);
+  if (g) g.skus.push(s);
+  else CHARGER_SKU_GROUPS.push({ capacity: cap, skus: [s] });
+}
+const shortDesc = (d: string) => (d.length > 56 ? `${d.slice(0, 54).trimEnd()}…` : d);
+
 export function QuickEstimateTab() {
   const { project, setProject, hardwareAllowance } = useProject();
+  const schedule = computeEquipmentSchedule(project, hardwareAllowance);
   // The quick intake is edited straight on the project (auto-saved on every
   // keystroke like the other tabs), NOT in local component state — a local
   // draft evaporated on tab switches / accidental closes, and a stale draft
@@ -69,6 +82,23 @@ export function QuickEstimateTab() {
     setProject((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
   }
 
+  /** Pick a price-book SKU for a line: the model follows the SKU; clearing it keeps the model as a generic line. */
+  function setLineSku(idx: number, skuId: string) {
+    set(
+      "lines",
+      input.lines.map((l, i) => {
+        if (i !== idx) return l;
+        if (!skuId) return { loadTypeId: l.loadTypeId, count: l.count };
+        const s = findSku(skuId);
+        const mapped = s ? loadTypeIdForSku(s) : null;
+        return { ...l, sku: skuId, loadTypeId: mapped ?? l.loadTypeId };
+      }),
+    );
+  }
+  function setExtra(idx: number, patch: Partial<{ sku: string; count: number }>) {
+    set("extras", (input.extras ?? []).map((x, i) => (i === idx ? { ...x, ...patch } : x)));
+  }
+
   /** Client / site address live in both the quick intake and setup — keep
    * them in lockstep so nothing depends on when Build last ran. */
   function setIdentity(patch: { clientName?: string; siteAddress?: string }) {
@@ -80,11 +110,17 @@ export function QuickEstimateTab() {
   }
 
   function build() {
+    // buildQuickProject sizes and prices from the load types; the SKU layer
+    // then overlays price-book list prices and the warranty / service / EVOLV
+    // lines derived from the service classes and the Commercial tab's terms.
     setProject((p) =>
-      buildQuickProject(
-        p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(),
-        p,
-        newId("qs"),
+      applyEquipmentSchedule(
+        buildQuickProject(
+          p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput(),
+          p,
+          newId("qs"),
+          hardwareAllowance,
+        ),
         hardwareAllowance,
       ),
     );
@@ -98,51 +134,124 @@ export function QuickEstimateTab() {
       >
         {/* 1 — chargers */}
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">1 · Chargers</div>
-        {input.lines.map((line, idx) => (
-          <div key={idx} className="mb-2 flex items-center gap-2">
-            <select
-              className={selectCls}
-              value={line.loadTypeId}
-              onChange={(e) =>
-                set("lines", input.lines.map((l, i) => (i === idx ? { ...l, loadTypeId: e.target.value } : l)))
-              }
-            >
-              {chargerModels.map((lt) => (
-                <option key={lt.id} value={lt.id}>
-                  {lt.id}
-                </option>
-              ))}
-            </select>
-            <span className="text-sm text-zinc-500">×</span>
-            <input
-              type="number"
-              min={1}
-              className={`${inputCls} w-20`}
-              value={line.count}
-              onChange={(e) =>
-                set("lines", input.lines.map((l, i) => (i === idx ? { ...l, count: Number(e.target.value) } : l)))
-              }
-            />
-            {input.includeChargerHardware && (
-              <span className="text-xs text-zinc-400">
-                hardware allowance {money(hardwareAllowance[line.loadTypeId] ?? 0)}/unit
-              </span>
-            )}
-            <button
-              onClick={() => set("lines", input.lines.filter((_, i) => i !== idx))}
-              className="text-zinc-400 hover:text-red-600"
-              title="Remove line"
-            >
-              ✕
-            </button>
-          </div>
-        ))}
+        {input.lines.map((line, idx) => {
+          const sku = line.sku ? findSku(line.sku) : undefined;
+          return (
+            <div key={idx} className="mb-2 flex flex-wrap items-center gap-2">
+              <select
+                className={`${selectCls} max-w-xs`}
+                value={line.sku ?? ""}
+                title="Price-book SKU — sets the model and prices the line at the book's list price"
+                onChange={(e) => setLineSku(idx, e.target.value)}
+              >
+                <option value="">Generic model (catalog allowance)</option>
+                {CHARGER_SKU_GROUPS.map((g) => (
+                  <optgroup key={g.capacity} label={g.capacity}>
+                    {g.skus.map((s) => (
+                      <option key={s.sku} value={s.sku}>
+                        {s.sku} — {shortDesc(s.description)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <select
+                className={selectCls}
+                value={line.loadTypeId}
+                disabled={!!sku}
+                title={sku ? "Model derived from the SKU" : "Charger model the engine sizes with"}
+                onChange={(e) =>
+                  set("lines", input.lines.map((l, i) => (i === idx ? { ...l, loadTypeId: e.target.value } : l)))
+                }
+              >
+                {chargerModels.map((lt) => (
+                  <option key={lt.id} value={lt.id}>
+                    {lt.id}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm text-zinc-500">×</span>
+              <input
+                type="number"
+                min={1}
+                className={`${inputCls} w-20`}
+                value={line.count}
+                onChange={(e) =>
+                  set("lines", input.lines.map((l, i) => (i === idx ? { ...l, count: Number(e.target.value) } : l)))
+                }
+              />
+              {input.includeChargerHardware && (
+                <span className="text-xs text-zinc-400">
+                  {sku
+                    ? `list ${money(sku.msrp)}/unit · price book`
+                    : `hardware allowance ${money(hardwareAllowance[line.loadTypeId] ?? 0)}/unit`}
+                </span>
+              )}
+              <button
+                onClick={() => set("lines", input.lines.filter((_, i) => i !== idx))}
+                className="text-zinc-400 hover:text-red-600"
+                title="Remove line"
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
         <button
           onClick={() => set("lines", [...input.lines, { loadTypeId: chargerModels[0]?.id ?? "", count: 1 }])}
           className="mb-3 text-sm font-medium text-blue-600 hover:underline"
         >
           + Add charger model
         </button>
+
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Dispensers &amp; accessories <span className="font-normal normal-case">— price-book items without a circuit of their own</span>
+        </div>
+        {(input.extras ?? []).map((x, idx) => {
+          const s = findSku(x.sku);
+          return (
+            <div key={idx} className="mb-2 flex flex-wrap items-center gap-2">
+              <select className={`${selectCls} max-w-md`} value={x.sku} onChange={(e) => setExtra(idx, { sku: e.target.value })}>
+                {EXTRA_SKUS.map((e) => (
+                  <option key={e.sku} value={e.sku}>
+                    {e.sku} — {shortDesc(e.description)}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm text-zinc-500">×</span>
+              <input
+                type="number"
+                min={1}
+                className={`${inputCls} w-20`}
+                value={x.count}
+                onChange={(e) => setExtra(idx, { count: Number(e.target.value) })}
+              />
+              <span className="text-xs text-zinc-400">
+                {s ? `list ${money(s.msrp)}/unit${s.role === "dispenser" ? " · 2 ports" : ""}` : "not in the price book"}
+              </span>
+              <button
+                onClick={() => set("extras", (input.extras ?? []).filter((_, i) => i !== idx))}
+                className="text-zinc-400 hover:text-red-600"
+                title="Remove line"
+              >
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        <button
+          onClick={() => set("extras", [...(input.extras ?? []), { sku: EXTRA_SKUS[0]?.sku ?? "", count: 1 }])}
+          className="mb-3 text-sm font-medium text-blue-600 hover:underline"
+        >
+          + Add dispenser / accessory
+        </button>
+        {schedule.warnings.length > 0 && (
+          <ul className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            {schedule.warnings.map((w) => (
+              <li key={w}>• {w}</li>
+            ))}
+          </ul>
+        )}
 
         <AdaCodeCard input={input} />
 
@@ -336,8 +445,9 @@ function AdaCodeCard({ input }: { input: QuickEstimateInput }) {
 }
 
 function BuildSummary() {
-  const { project, result } = useProject();
+  const { project, result, hardwareAllowance } = useProject();
   const { costs, rollups, peripherals, panel, qa } = result;
+  const schedule = computeEquipmentSchedule(project, hardwareAllowance);
   const f = project.financial;
   const per = project.peripherals;
   const allOk = qa.every((q) => q.ok);
@@ -399,7 +509,7 @@ function BuildSummary() {
           <Assumption label="Construction labor" value={`${num(f.laborBusinessDays)} business days`} detail={`${money(costs.labor)} crew cost`} />
           <Assumption label="Site plan design" value={money(f.autoCadDesignCost)} detail="AutoCAD layout, ADA, equipment placement" />
           <Assumption label="SLD / electrical design" value={money(f.electricalEngDesignCost)} detail="PE-stamped single-line & load calcs" />
-          <Assumption label="Construction PM (CPM)" value={`${num(f.pmHours)} h · ${money(f.pmHours * f.pmHourlyRate)}`} detail={`at ${money(f.pmHourlyRate)}/h`} />
+          <Assumption label="Construction PM (CPM)" value={`${pct(f.pmPctOfLabor ?? 0)} of loaded labor · ${money(costs.constructionPm)}`} detail="CEO basis — intake 2.9.0 Construction tab" />
           <Assumption label="Permits & utility fees" value={money(permitsTotal)} detail={`plan check ${money(f.planCheckPermitFee)} · issuance ${money(per.permitFeeTotal)} · utility ${money(per.utilityAppFee)}`} />
           <Assumption label="Private utility scan" value={gpr ? `${num(gpr.qty)} day${gpr.qty === 1 ? "" : "s"} · ${money(gpr.qty * gpr.unitCost)}` : "not included"} detail={gpr ? "GPR along the trench route" : undefined} />
           <Assumption
@@ -412,9 +522,78 @@ function BuildSummary() {
             detail={`CBC 11B-812 table · ${money(peripherals.adaAllowance)} incl. ramp`}
           />
           <Assumption label="Spoils / dump" value={money(per.dumpWasteCost)} detail="terrain-scaled haul-off allowance" />
-          <Assumption label="Charger hardware" value={money(f.chargerHardwareCost)} detail={f.chargerHardwareCost > 0 ? `+ ${money(f.evolvCommissioningCost)} commissioning` : "excluded"} />
+          <Assumption
+            label="Charger hardware"
+            value={money(f.chargerHardwareCost)}
+            detail={
+              f.chargerHardwareCost > 0
+                ? f.serviceTermsAuto
+                  ? `+ warranty ${money(f.chargerWarrantyCost)} · service ${money(f.fiveYearServiceCost)} · EVOLV ${money(f.evolvCommissioningCost)} — price book, ${schedule.terms.contractYears}-yr contract`
+                  : `+ ${money(f.evolvCommissioningCost)} commissioning`
+                : "excluded"
+            }
+          />
         </div>
       </Section>
+
+      {schedule.lines.length > 0 && (
+        <Section
+          title="Equipment schedule"
+          subtitle={`Price book ${schedule.terms.basis === "price-book" ? "terms" : "list prices"}: ${schedule.terms.contractYears}-year contract · EVOLV $${schedule.terms.evolvPerPortMonth.toFixed(2)}/port/month · warranty beyond the included years plus in-warranty service every contract year. Terms live on the Commercial tab.`}
+        >
+          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+              <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <tr>
+                  {["Item", "Qty", "List $/unit", "List total", "Ports", "Service class", "Ext. warranty", "Service", "EVOLV"].map((h, i) => (
+                    <th key={h} className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500 ${i > 0 ? "text-right" : "text-left"}`}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {schedule.lines.map((l, i) => (
+                  <tr key={`${l.sku ?? l.loadTypeId}-${i}`} title={l.warnings.join(" · ")}>
+                    <td className="max-w-md px-3 py-1.5">
+                      <div className="truncate">{l.description}</div>
+                      <div className="text-xs text-zinc-400">{l.priceBasis}{l.loadTypeId && l.sku ? ` · sized as ${l.loadTypeId}` : ""}</div>
+                    </td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{num(l.count)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{money(l.unitList)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{money(l.listTotal)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{num(l.ports)}</td>
+                    <td className="px-3 py-1.5 text-right text-xs text-zinc-500">{l.serviceClass ?? "—"}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{money(l.warrantyTotal)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{money(l.serviceTotal)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{money(l.evolvTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-zinc-50 font-medium dark:bg-zinc-900">
+                <tr>
+                  <td className="px-3 py-1.5">Total</td>
+                  <td />
+                  <td />
+                  <td className="px-3 py-1.5 text-right tabular-nums">{money(schedule.hardwareList)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{num(schedule.ports)}</td>
+                  <td />
+                  <td className="px-3 py-1.5 text-right tabular-nums">{money(schedule.warrantyTotal)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{money(schedule.serviceTotal)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{money(schedule.evolvTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {schedule.warnings.length > 0 && (
+            <ul className="mt-3 text-xs text-amber-800 dark:text-amber-300">
+              {schedule.warnings.map((w) => (
+                <li key={w}>• {w}</li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
 
       {timeline.length > 0 && (
         <Section

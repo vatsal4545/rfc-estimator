@@ -158,40 +158,85 @@ export function adaStallBreakdownByLevel(nL2: number, nDCFC: number): {
 export const ADA_UNIT_COST = { van: 6500, standard: 4900, ambulatory: 3500, ramp: 5200 } as const;
 
 // ---------------------------------------------------------------------------
-// Charger hardware — budgetary allowances per unit, replace with real quotes
+// Charger hardware — CEO price book list prices (HARDWARE_ALLOWANCE_BASIS names the SKU)
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-model hardware list price, from the CEO's EVSE Project Intake price
+ * book (template 2.9.0, Chargetronix). One rule: the TP5 all-in-one list
+ * price at the model's rating — the TP5 line prices by kW, not by connector
+ * count, so Single and Dual share a price. Ratings the book has no TP5 for
+ * (50, 100, 200, 275, 300 kW) are interpolated linearly between the two
+ * nearest listed ratings and rounded to $100. Level 2 maps to the CTX
+ * commercial (C-series) units. HARDWARE_ALLOWANCE_BASIS names the SKU or
+ * interpolation behind every number; the Charger pricing tab shows it.
+ * The proposal layer applies the hardware discount to these list prices.
+ */
 export const HARDWARE_ALLOWANCE: Record<string, number> = {
-  "L2 Single": 3000,
-  "L2 Single 32A": 3500,
-  "L2 Single 40A": 4000,
-  "L2 Single 80A": 5000,
-  "L2 Dual": 7500,
-  "L2 Dual 32A": 5500,
-  "L2 Dual 40A": 6500,
-  "L2 Dual 80A": 8500,
-  "DCFC 50kW": 32000,
-  "DCFC 50kW Dual": 35000,
-  "DCFC 60kW": 38000,
-  "DCFC 60kW Dual": 42000,
-  "DCFC 100kW": 52000,
-  "DCFC 100kW Dual": 57000,
-  "DCFC 120kW": 60000,
-  "DCFC 120kW Dual": 66000,
-  "DCFC 160kW": 72000,
-  "DCFC 160kW Dual": 79000,
-  "DCFC 180kW": 80000,
-  "DCFC 180kW Dual": 88000,
-  "DCFC 200kW": 92000,
-  "DCFC 200kW Dual": 100000,
-  "DCFC 240kW": 105000,
-  "DCFC 240kW Dual": 115000,
-  "DCFC 275kW": 120000,
-  "DCFC 275kW Dual": 130000,
-  "DCFC 300kW": 135000,
-  "DCFC 300kW Dual": 147000,
-  "DCFC 360kW": 155000,
-  "DCFC 360kW Dual": 168000,
+  "L2 Single": 1402.5,
+  "L2 Single 32A": 1402.5,
+  "L2 Single 40A": 1402.5,
+  "L2 Single 80A": 1650,
+  "L2 Dual": 1952.5,
+  "L2 Dual 32A": 1952.5,
+  "L2 Dual 40A": 1952.5,
+  "L2 Dual 80A": 2194.5,
+  "DCFC 50kW": 23600,
+  "DCFC 50kW Dual": 23600,
+  "DCFC 60kW": 28500,
+  "DCFC 60kW Dual": 28500,
+  "DCFC 100kW": 45500,
+  "DCFC 100kW Dual": 45500,
+  "DCFC 120kW": 54000,
+  "DCFC 120kW Dual": 54000,
+  "DCFC 160kW": 57000,
+  "DCFC 160kW Dual": 57000,
+  "DCFC 180kW": 62000,
+  "DCFC 180kW Dual": 62000,
+  "DCFC 200kW": 68000,
+  "DCFC 200kW Dual": 68000,
+  "DCFC 240kW": 80000,
+  "DCFC 240kW Dual": 80000,
+  "DCFC 275kW": 85500,
+  "DCFC 275kW Dual": 85500,
+  "DCFC 300kW": 89500,
+  "DCFC 300kW Dual": 89500,
+  "DCFC 360kW": 99000,
+  "DCFC 360kW Dual": 99000,
+};
+
+/** Where each HARDWARE_ALLOWANCE number comes from (price book 2.9.0). */
+export const HARDWARE_ALLOWANCE_BASIS: Record<string, string> = {
+  "L2 Single": "CTX-C48-240-1 list — 48A single commercial L2",
+  "L2 Single 32A": "CTX-C32-240-1 list",
+  "L2 Single 40A": "CTX-C48-240-1 list — nearest commercial single (the book's 40A single is a home unit)",
+  "L2 Single 80A": "CTX-C80-240-1 list",
+  "L2 Dual": "CTX-C40-240-2 list — 40A dual commercial L2",
+  "L2 Dual 32A": "CTX-C40-240-2 list — nearest commercial dual",
+  "L2 Dual 40A": "CTX-C40-240-2 list",
+  "L2 Dual 80A": "CTX-C80-240-2 list",
+  "DCFC 50kW": "interpolated between TP5-30 ($13,750) and TP5-60 ($28,500) — no 50 kW SKU in the book",
+  "DCFC 50kW Dual": "interpolated between TP5-30 and TP5-60 — no 50 kW SKU in the book",
+  "DCFC 60kW": "TP5-60-480-x list",
+  "DCFC 60kW Dual": "TP5-60-480-x list (dual-cable; price does not depend on connector count)",
+  "DCFC 100kW": "interpolated between TP5-60 ($28,500) and TP5-120 ($54,000) — no 100 kW SKU in the book",
+  "DCFC 100kW Dual": "interpolated between TP5-60 and TP5-120 — no 100 kW SKU in the book",
+  "DCFC 120kW": "TP5-120-480-x list",
+  "DCFC 120kW Dual": "TP5-120-480-x list",
+  "DCFC 160kW": "TP5-160-480-x list",
+  "DCFC 160kW Dual": "TP5-160-480-x list",
+  "DCFC 180kW": "TP5-180-480-x list",
+  "DCFC 180kW Dual": "TP5-180-480-x list",
+  "DCFC 200kW": "interpolated between TP5-180 ($62,000) and TP5-240 ($80,000) — no 200 kW SKU in the book",
+  "DCFC 200kW Dual": "interpolated between TP5-180 and TP5-240 — no 200 kW SKU in the book",
+  "DCFC 240kW": "TP5-240-480-x list",
+  "DCFC 240kW Dual": "TP5-240-480-x list",
+  "DCFC 275kW": "interpolated between TP5-240 ($80,000) and TP5-360 ($99,000) — no 275 kW SKU in the book",
+  "DCFC 275kW Dual": "interpolated between TP5-240 and TP5-360 — no 275 kW SKU in the book",
+  "DCFC 300kW": "interpolated between TP5-240 ($80,000) and TP5-360 ($99,000) — no 300 kW SKU in the book",
+  "DCFC 300kW Dual": "interpolated between TP5-240 and TP5-360 — no 300 kW SKU in the book",
+  "DCFC 360kW": "TP5-360-480-x-300 list",
+  "DCFC 360kW Dual": "TP5-360-480-x-300 list (the Best Western model's cabinet)",
 };
 
 // ---------------------------------------------------------------------------
@@ -222,9 +267,10 @@ export const RATE_CARD = {
   /** Utility application / engineering advance (often $0 under make-ready programs). */
   utilityAppFeeL2Only: 800,
   utilityAppFeeDcfc: 2500,
-  /** Construction PM: % of construction valuation, converted to hours at the PM rate. */
-  cpmPctOfConstruction: 0.05,
-  cpmMinHours: 24,
+  /** Construction PM as a share of the loaded labour line — the CEO basis
+   * (EVSE Project Intake 2.9.0, Construction!B10). Replaces the old
+   * 5%-of-valuation hours derivation; PM hours are a manual field now. */
+  cpmPctOfLabor: 0.15,
   /** Commissioning allowances per unit. */
   commissioningPerDcfc: 1500,
   commissioningPerL2: 250,
@@ -537,7 +583,7 @@ export function buildQuickProject(
     laborBusinessDays: laborDays,
     autoCadDesignCost: input.includeSitePlanDesign ? sitePlanFee(counts) : 0,
     electricalEngDesignCost: input.includeSldDesign ? sldFee(counts) : 0,
-    pmHours: 0, // set from valuation below
+    pmHours: 0, // design-phase PM hours are a manual entry on the Financials tab
     chargerHardwareCost: hardwareCost,
     chargerHardwareCostIsAuto: true,
     evolvCommissioningCost: commissioning,
@@ -556,14 +602,10 @@ export function buildQuickProject(
         ? Math.round(RATE_CARD.planCheckBase + RATE_CARD.planCheckPctOfValuation * valuation)
         : RATE_CARD.planCheckL2OnlyFlat;
   }
-  if (input.includeCpm && counts.nChargers > 0) {
-    // Construction management benchmarks at ~5-6% of construction cost;
-    // expressed as hours at the shop's PM rate so it stays editable.
-    p.financial.pmHours = Math.max(
-      RATE_CARD.cpmMinHours,
-      Math.round((RATE_CARD.cpmPctOfConstruction * valuation) / p.financial.pmHourlyRate),
-    );
-  }
+  // Construction PM on the CEO basis: a live share of the loaded labour line
+  // (computeCosts multiplies it out), so it follows labour edits on the
+  // Financials tab instead of being frozen at Build time.
+  p.financial.pmPctOfLabor = input.includeCpm && counts.nChargers > 0 ? RATE_CARD.cpmPctOfLabor : 0;
   const mainBusA = pass1.panel.bus480?.suggestedBusA ?? 0;
   p.peripherals.gfiTestQty = mainBusA > 1000 ? 1 : 0;
 

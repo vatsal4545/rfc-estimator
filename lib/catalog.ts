@@ -13,6 +13,7 @@
 import { HARDWARE_ALLOWANCE } from "./calc/autoplan";
 import type { Project } from "./calc/types";
 import type { StorageLike } from "./projectStore";
+import { hardwareListTotal } from "./skus";
 
 const CATALOG_KEY = "rfc-estimator:catalog:v1";
 
@@ -69,12 +70,11 @@ export function effectiveHardwareAllowance(overrides: CatalogOverrides): Record<
 }
 
 /** What the hardware line SHOULD be for a quick-built project under the given
- * allowance table; null when the project has no quick intake (manual builds). */
+ * allowance table; null when the project has no quick intake (manual builds).
+ * Lines carrying a price-book SKU price at the SKU's list price, dispensers
+ * and accessories add theirs, and generic models use the catalog allowance. */
 export function autoHardwareCost(project: Project, allowance: Record<string, number>): number | null {
-  const q = project.quick;
-  if (!q) return null;
-  if (!q.includeChargerHardware) return 0;
-  return q.lines.reduce((s, l) => s + (l.count > 0 ? l.count * (allowance[l.loadTypeId] ?? 0) : 0), 0);
+  return hardwareListTotal(project, allowance);
 }
 
 /** Auto unless the user hand-typed a hardware cost. Projects saved before the

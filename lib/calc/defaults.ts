@@ -68,7 +68,9 @@ export function defaultPeripherals(): PeripheralsInput {
 export function defaultFinancial(): FinancialInput {
   return {
     contingencyPct: 0.1,
-    laborDailyRate: 2250,
+    // CEO basis (intake 2.9.0, Construction!B6): $2,750/day fully burdened.
+    // Both source RFC_V18 workbooks carried $2,250 — see the replay tests.
+    laborDailyRate: 2750,
     laborBusinessDays: 30,
     applyContingencyToLabor: true,
     salesTaxPct: 0.0725,
@@ -80,6 +82,8 @@ export function defaultFinancial(): FinancialInput {
     electricalEngDesignCost: 0,
     pmHours: 0,
     pmHourlyRate: 358,
+    // CEO basis: construction PM is 15% of the loaded labour line.
+    pmPctOfLabor: 0.15,
     planCheckPermitFee: 0,
   };
 }

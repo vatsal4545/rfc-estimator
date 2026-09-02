@@ -36,8 +36,11 @@ export function CostsInternalTab() {
   // chain still ties to the engine's labor cost.
   const labor = laborBreakdown(fin);
   const rate = labor.blendedRate;
-  // Construction PM row: all design costs except the AHJ plan check.
-  const constructionPm = fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
+  // Construction PM row: the CEO-basis construction PM (% of loaded labour)
+  // plus the design-side fees except the AHJ plan check — everything the
+  // source layout keeps outside the G15 construction subtotal.
+  const constructionPm =
+    c.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
   const laborLoaded = rate * (1 + laborContingency) * days;
 
   const headers = ["Quantity", "Individual Cost", "Contingency", "Final Cost", "Total"];

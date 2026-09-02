@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { BusinessModelTab } from "./BusinessModelTab";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { ChargerPricingTab } from "./ChargerPricingTab";
+import { CommercialTab } from "./CommercialTab";
+import { ExistingTab } from "./ExistingTab";
+import { OverridesTab } from "./OverridesTab";
+import { IntakeTab } from "./IntakeTab";
 import { CostsInternalTab } from "./CostsInternalTab";
 import { FinancialsTab } from "./FinancialsTab";
 import { PanelScheduleTab } from "./PanelScheduleTab";
@@ -17,6 +22,8 @@ import { money } from "@/lib/format";
 
 const TABS = [
   { key: "quick", label: "⚡ Quick Estimate" },
+  { key: "intake", label: "Intake" },
+  { key: "existing", label: "Existing site" },
   { key: "setup", label: "Setup" },
   { key: "takeoff", label: "Takeoff" },
   { key: "panel", label: "Panel schedule" },
@@ -26,6 +33,9 @@ const TABS = [
   { key: "financials", label: "Financials" },
   { key: "costsInternal", label: "Costs Internal" },
   { key: "results", label: "Results" },
+  { key: "commercial", label: "Commercial" },
+  { key: "model", label: "📈 Business model" },
+  { key: "overrides", label: "Overrides" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -124,11 +134,19 @@ function Toolbar() {
 }
 
 function TotalBadge() {
-  const { result } = useProject();
+  const { result, proposal } = useProject();
   return (
-    <div className="text-right">
-      <div className="text-xs text-zinc-500">Total Cost</div>
-      <div className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{money(result.costs.totalCost)}</div>
+    <div className="flex items-center gap-5 text-right">
+      <div>
+        <div className="text-xs text-zinc-500">Total Cost</div>
+        <div className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{money(result.costs.totalCost)}</div>
+      </div>
+      {proposal && (
+        <div title="Customer price from the Commercial tab — markups, discounts and pass-through fees on top of Total Cost">
+          <div className="text-xs text-zinc-500">Customer price</div>
+          <div className="text-lg font-bold text-blue-700 dark:text-blue-300">{money(proposal.costBuildup.customerPrice)}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -199,6 +217,8 @@ function AppShell() {
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         {tab === "quick" && <QuickEstimateTab />}
+        {tab === "intake" && <IntakeTab />}
+        {tab === "existing" && <ExistingTab />}
         {tab === "setup" && <SetupTab />}
         {tab === "takeoff" && <TakeoffTab />}
         {tab === "panel" && <PanelScheduleTab />}
@@ -208,6 +228,9 @@ function AppShell() {
         {tab === "financials" && <FinancialsTab />}
         {tab === "costsInternal" && <CostsInternalTab />}
         {tab === "results" && <ResultsTab />}
+        {tab === "commercial" && <CommercialTab />}
+        {tab === "model" && <BusinessModelTab />}
+        {tab === "overrides" && <OverridesTab />}
       </main>
       </div>
     </div>

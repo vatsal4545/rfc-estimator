@@ -321,6 +321,13 @@ export interface PeripheralsInput {
   /** Site-specific hardware the standard list doesn't carry (GPR scan, uni strut, combo locks...). */
   customItems?: CustomLineItem[];
   /**
+   * Removal and demolition on a replacement site (cabinets out, pads broken
+   * out, disposal loads, site protection) — written by the Existing tab from
+   * its removal scope (lib/existing applyRemovalScope) and priced into the
+   * Dump / Waste line. Absent or empty on a greenfield project.
+   */
+  demolitionItems?: CustomLineItem[];
+  /**
    * ADA pricing. Default (no override): allowance of adaUnitCost per charger,
    * the CPM_Clean convention. Real bids often price by ADA stall count plus a
    * ramp — set adaQtyOverride (stalls) and adaRampCost for that.
@@ -386,6 +393,8 @@ export interface PeripheralsResult {
     hardware: HardwareItem[];
     civil: CivilItem[];
     signage: SignageItem[];
+    /** Removal and demolition lines (replacement sites) — inside dumpWaste. */
+    demolition: CivilItem[];
   };
 }
 
@@ -435,13 +444,28 @@ export interface FinancialInput {
    * (counts x $/unit, re-derived when catalog prices change); false once the
    * user hand-types a cost on the Financials tab. */
   chargerHardwareCostIsAuto?: boolean;
+  /**
+   * True while warranty, service and EVOLV track the price book's service
+   * classes and the Commercial tab's terms (lib/skus). Hand-typing any of the
+   * three on the Financials tab switches it off.
+   */
+  serviceTermsAuto?: boolean;
   chargerWarrantyCost: number;
   evolvCommissioningCost: number;
   fiveYearServiceCost: number;
   autoCadDesignCost: number;
   electricalEngDesignCost: number;
+  /** Design / permitting PM hours at pmHourlyRate — a manual entry. */
   pmHours: number;
   pmHourlyRate: number; // 358
+  /**
+   * Construction PM as a share of the loaded labour line — the CEO basis
+   * (EVSE Project Intake 2.9.0, Construction!B10 = 15%). computeCosts adds
+   * labor × pmPctOfLabor as its own line: not taxed, not in the construction
+   * subtotal. Absent on projects saved before Sept 2026 → 0, so their Total
+   * Cost is unchanged; defaultFinancial() and Quick Estimate set 0.15.
+   */
+  pmPctOfLabor?: number;
   planCheckPermitFee: number;
 }
 
@@ -454,8 +478,16 @@ export interface CostLine {
 
 export interface CostsResult {
   lines: CostLine[];
+  /**
+   * Design and engineering before the plan-check fee: site plan + stamped
+   * electrical set + PM hours × rate, or the override register's "design"
+   * figure when one is active. The price layer reads this, not the fields.
+   */
+  designAndEngineering: number;
   electricalSupplyConstructionTotal: number;
   labor: number;
+  /** Construction PM = labor × pmPctOfLabor (CEO basis). 0 when the field is unset. */
+  constructionPm: number;
   salesTaxOnConstruction: number;
   equipmentPurchaseInvoice: number;
   equipmentPurchaseTax: number;
@@ -472,6 +504,18 @@ export interface QACheck {
 /** One "model × count" line in the Quick Estimate wizard. */
 export interface QuickChargerLine {
   loadTypeId: string;
+  count: number;
+  /**
+   * Price-book SKU (lib/ref/priceBook). When set, the load type above was
+   * derived from it (lib/skus) and hardware prices at the SKU's list price
+   * instead of the catalog allowance.
+   */
+  sku?: string;
+}
+
+/** A price-book item with no circuit of its own: a dispenser (adds ports to a power cabinet) or an accessory (price only). */
+export interface QuickExtraLine {
+  sku: string;
   count: number;
 }
 
@@ -499,6 +543,24 @@ export interface QuickEstimateInput {
   includeCpm: boolean;
   includePermits: boolean;
   includePrivateScan: boolean;
+  /** Dispensers and accessories from the price book — priced and counted for EVOLV ports, never in the takeoff. */
+  extras?: QuickExtraLine[];
+}
+
+/**
+ * One row of the override register (the intake's Overrides tab): a typed value
+ * that replaces an engine- or model-derived figure, with the reason. The key
+ * catalogue lives in lib/overrides.ts; the engine honours the "line:<name>",
+ * "siteWorks" and "design" keys in computeCosts, the business model honours
+ * its own, and field-class keys are written through to the field they name.
+ */
+export interface OverrideEntry {
+  id: string;
+  key: string;
+  value: number;
+  reason: string;
+  source?: string;
+  date?: string;
 }
 
 export interface Project {
@@ -510,6 +572,19 @@ export interface Project {
   financial: FinancialInput;
   /** Last Quick Estimate wizard state, so the tab restores after reload. */
   quick?: QuickEstimateInput;
+  /**
+   * Proposal layer (lib/proposal): the CEO's commercial terms — markups,
+   * discounts, pass-through fees, scope of supply, margin assumptions. Optional:
+   * projects saved before the layer existed have none and price exactly as
+   * before; the engine never reads it.
+   */
+  commercial?: import("../proposal/types").CommercialInput;
+  /** Client, site, access, utility and proposal metadata (the CEO intake's Project tab). Optional. */
+  intake?: import("../proposal/types").IntakeInput;
+  /** The existing installation on a replacement site (the intake's Existing tab). Optional; absent on greenfield projects. */
+  existing?: import("../existing").ExistingInput;
+  /** The override register (the intake's Overrides tab). Optional; absent = every figure engine-derived. */
+  overrides?: OverrideEntry[];
 }
 
 export interface EstimateResult {

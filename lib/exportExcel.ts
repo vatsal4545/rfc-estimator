@@ -14,6 +14,15 @@ import { INSTALL_METHOD_INFO, effectiveInstallMethod, surfaceRouteFt } from "./c
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
 import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
+import { computeExisting, RETAIN_ELEMENTS } from "./existing";
+import { fillModelSheets } from "./exportModel";
+import { computeInterconnection } from "./interconnection";
+import { activeOverrideCount, overrideSpec } from "./overrides";
+import { computeProposal } from "./proposal";
+import { modelInputsOf } from "./proposal/defaults";
+import { MARKET_BENCHMARKS } from "./ref/benchmarks";
+import { fillProposalSheets } from "./exportProposal";
+import { computeEquipmentSchedule, computeSiteCapacity } from "./skus";
 
 const MONEY = '"$"#,##0.00';
 const PCT = "0.00%";
@@ -92,9 +101,13 @@ export async function buildEstimateWorkbook(
     businessDays: { formula: "'Cost Detail'!$B$7", cached: fin.laborBusinessDays },
     // Site plan + SLD + PM hours×rate — everything on the Design invoice
     // except the plan check / permit fee (permitting-side).
+    // Construction PM row (kept outside the G15 subtotal like the source
+    // sheet): the CEO-basis % of loaded labour plus the design-side fees
+    // except the AHJ plan check.
     constructionPm: {
-      formula: `'Cost Detail'!D${refs.designStartRow}+'Cost Detail'!D${refs.designStartRow + 1}+'Cost Detail'!D${refs.designStartRow + 2}`,
-      cached: fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
+      formula: `${refs.constructionPm}+'Cost Detail'!D${refs.designStartRow}+'Cost Detail'!D${refs.designStartRow + 1}+'Cost Detail'!D${refs.designStartRow + 2}`,
+      cached:
+        result.costs.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
     },
   });
   fillIntake(intake, project, result);
@@ -105,6 +118,11 @@ export async function buildEstimateWorkbook(
   fillPeripherals(peripherals, result);
   fillEquipment(equipment, result);
   fillAssumptions(assumptions, project, result);
+  // Proposal layer (customer price, margin) — two sheets appended after
+  // Assumptions, only when the project carries a commercial section — then
+  // the business model (tariff, revenue, carbon, financing, cashflow, deal).
+  const proposalRefs = fillProposalSheets(wb, project, result, refs);
+  if (proposalRefs) fillModelSheets(wb, project, result, proposalRefs);
   return wb;
 }
 
@@ -141,6 +159,8 @@ export async function downloadEstimateExcel(
 interface CostRefs {
   constructionSubtotal: string;
   labor: string;
+  /** Construction PM (% of loaded labour, CEO basis). */
+  constructionPm: string;
   salesTax: string;
   equipSubtotal: string;
   designSubtotal: string;
@@ -149,6 +169,8 @@ interface CostRefs {
   lineStartRow: number;
   /** Row of the first Design Invoice line (site plan; SLD and PM follow). */
   designStartRow: number;
+  /** Row of the first Equipment Purchase line (hardware; warranty, commissioning, service follow). */
+  equipStartRow: number;
 }
 
 function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostRefs {
@@ -174,8 +196,9 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
     ["B6", labor.itemized ? "Labor daily rate (blended — see Assumptions)" : "Labor daily rate", labor.blendedRate, MONEY],
     ["B7", "Labor business days", fin.laborBusinessDays],
     ["B8", "Apply contingency to labor", fin.applyContingencyToLabor ?? true],
-    ["B9", "PM hours (CPM)", fin.pmHours],
+    ["B9", "Design / permitting PM hours", fin.pmHours],
     ["B10", "PM hourly rate", fin.pmHourlyRate, MONEY],
+    ["B11", "Construction PM % of loaded labor", fin.pmPctOfLabor ?? 0, PCT],
   ];
   for (const [addr, label, value, fmt] of inputs) {
     const cell = ws.getCell(addr);
@@ -209,6 +232,10 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
   const laborRow = row;
   ws.getCell(row, 1).value = "Labor (rate × days, contingency per toggle)";
   ws.getCell(row, 4).value = f(`$B$6*(1+IF($B$8,$B$4,0))*$B$7`, c.labor);
+  row += 1;
+  const pmRow = row;
+  ws.getCell(row, 1).value = "Construction PM (% of loaded labor — CEO basis)";
+  ws.getCell(row, 4).value = f(`D${laborRow}*$B$11`, c.constructionPm);
   row += 1;
   const taxRow = row;
   ws.getCell(row, 1).value = "Sales tax on construction";
@@ -253,7 +280,7 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
   ws.getCell(row, 1).value = "SLD / electrical engineering design";
   ws.getCell(row, 4).value = fin.electricalEngDesignCost;
   row++;
-  ws.getCell(row, 1).value = "Construction PM (hours × rate)";
+  ws.getCell(row, 1).value = "Design / permitting PM (hours × rate)";
   ws.getCell(row, 4).value = f(`$B$9*$B$10`, fin.pmHours * fin.pmHourlyRate);
   row++;
   ws.getCell(row, 1).value = "Plan check / permit fee (financed)";
@@ -270,7 +297,7 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
   ws.getCell(row, 1).value = "TOTAL COST";
   ws.getCell(row, 1).font = { bold: true, size: 13 };
   ws.getCell(row, 4).value = f(
-    `D${subRow}+D${laborRow}+D${taxRow}+D${equipSubRow}+D${designSubRow}`,
+    `D${subRow}+D${laborRow}+D${pmRow}+D${taxRow}+D${equipSubRow}+D${designSubRow}`,
     c.totalCost,
   );
   ws.getCell(row, 4).font = { bold: true, size: 13 };
@@ -286,12 +313,14 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
   return {
     constructionSubtotal: `'Cost Detail'!D${subRow}`,
     labor: `'Cost Detail'!D${laborRow}`,
+    constructionPm: `'Cost Detail'!D${pmRow}`,
     salesTax: `'Cost Detail'!D${taxRow}`,
     equipSubtotal: `'Cost Detail'!D${equipSubRow}`,
     designSubtotal: `'Cost Detail'!D${designSubRow}`,
     total: `'Cost Detail'!D${totalRow}`,
     lineStartRow: firstLine,
     designStartRow: designStart,
+    equipStartRow: equipStart,
   };
 }
 
@@ -332,6 +361,7 @@ function fillSummary(ws: WS, project: Project, result: EstimateResult, refs: Cos
   const lines: [string, string, number][] = [
     ["Electrical supply & construction", refs.constructionSubtotal, c.electricalSupplyConstructionTotal],
     ["Labor", refs.labor, c.labor],
+    ["Construction PM (% of loaded labor)", refs.constructionPm, c.constructionPm],
     ["Sales tax on construction", refs.salesTax, c.salesTaxOnConstruction],
     ["Equipment purchase invoice (incl. tax)", refs.equipSubtotal, c.equipmentPurchaseInvoice + c.equipmentPurchaseTax],
     ["Design invoice", refs.designSubtotal, c.designInvoice],
@@ -901,7 +931,7 @@ function fillEquipment(ws: WS, result: EstimateResult): void {
 // ---------------------------------------------------------------------------
 
 function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
-  [36, 24, 50].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+  [36, 24, 50, 16, 10, 36, 16, 16, 16].forEach((w, i) => (ws.getColumn(i + 1).width = w));
   const per = project.peripherals;
   const q = project.quick;
   const terrain = project.setup.terrain ?? "flat";
@@ -938,12 +968,30 @@ function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
     ["Scope of work", project.setup.scopeOfWork || "—"],
   ]);
 
+  const it = project.intake;
+  const dash = (v: string | number | null | undefined) => (v === null || v === undefined || v === "" ? "—" : v);
+  writeGroup("Client, access and utility (intake)", [
+    ["Contact", it ? [it.contactName, it.contactTitle].filter(Boolean).join(", ") || "—" : "—"],
+    ["Email / phone", it ? [it.contactEmail, it.contactPhone].filter(Boolean).join(" · ") || "—" : "—"],
+    ["Property type", dash(it?.propertyType)],
+    ["Public access / hours", it ? `${dash(it.publicAccess)} · ${dash(it.hoursOpen)} h/day · ${dash(it.daysPerWeek)} days/week` : "—"],
+    ["State / delivery utility", `${dash(it?.state)} · ${dash(project.setup.utility)}`],
+    ["Rate schedule", dash(it?.rateSchedule)],
+    ["Existing service", it ? `${dash(it.existingServiceA)} A · ${dash(it.existingServiceVoltage)} V · EV separately metered: ${dash(it.separatelyMeteredEv)}` : "—"],
+    ["Proposal date / validity", it ? `${dash(it.proposalDate)} · ${dash(it.validityDays)} days` : "—"],
+    ["Project reference", dash(it?.projectReference)],
+    ["Prepared by (CPM) / CRA", `${dash(project.setup.cpm)} / ${dash(project.setup.cra)}`],
+  ]);
+
   writeGroup("Chargers", [
     ...(q
       ? q.lines
           .filter((l) => l.count > 0)
-          .map((l): [string, string | number] => [l.loadTypeId, l.count])
+          .map((l): [string, string | number] => [l.sku ? `${l.loadTypeId} — ${l.sku}` : l.loadTypeId, l.count])
       : []),
+    ...((q?.extras ?? [])
+      .filter((x) => x.count > 0)
+      .map((x): [string, string | number] => [`${x.sku} (dispenser / accessory)`, x.count])),
     ["DCFC total", result.rollups.nDCFC],
     ["L2 total", result.rollups.nL2],
     ["Feeders", result.rollups.nFeeders],
@@ -987,6 +1035,206 @@ function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
     ["Utility application fee ($)", per.utilityAppFee],
     ["Transformer pad ($)", per.transformerPadCost],
   ]);
+
+  // Equipment schedule — price-book list prices, ports, service classes and
+  // the contract totals behind the Cost Detail equipment rows.
+  const schedule = computeEquipmentSchedule(project);
+  if (schedule.lines.length > 0) {
+    sectionTitle(
+      ws,
+      row,
+      `Equipment schedule — ${schedule.terms.basis === "price-book" ? "price-book terms" : "list prices"}: ${schedule.terms.contractYears}-year contract, EVOLV $${schedule.terms.evolvPerPortMonth.toFixed(2)}/port/month`,
+    );
+    row++;
+    ["Item", "Qty", "List $/unit", "List total", "Ports", "Service class", "Ext. warranty", "Service", "EVOLV"].forEach((h, i) => {
+      const c = ws.getCell(row, i + 1);
+      c.value = h;
+      c.font = { bold: true };
+    });
+    row++;
+    for (const l of schedule.lines) {
+      ws.getCell(row, 1).value = `${l.description}${l.sku && l.loadTypeId ? ` (sized as ${l.loadTypeId})` : ""}`;
+      ws.getCell(row, 2).value = l.count;
+      ws.getCell(row, 3).value = l.unitList;
+      ws.getCell(row, 4).value = l.listTotal;
+      ws.getCell(row, 5).value = l.ports;
+      ws.getCell(row, 6).value = l.serviceClass ?? "—";
+      ws.getCell(row, 7).value = l.warrantyTotal;
+      ws.getCell(row, 8).value = l.serviceTotal;
+      ws.getCell(row, 9).value = l.evolvTotal;
+      for (const col of [3, 4, 7, 8, 9]) ws.getCell(row, col).numFmt = MONEY;
+      row++;
+    }
+    ws.getCell(row, 1).value = "Total";
+    ws.getCell(row, 1).font = { bold: true };
+    ws.getCell(row, 4).value = schedule.hardwareList;
+    ws.getCell(row, 5).value = schedule.ports;
+    ws.getCell(row, 7).value = schedule.warrantyTotal;
+    ws.getCell(row, 8).value = schedule.serviceTotal;
+    ws.getCell(row, 9).value = schedule.evolvTotal;
+    for (const col of [4, 7, 8, 9]) ws.getCell(row, col).numFmt = MONEY;
+    row++;
+    for (const w of schedule.warnings) {
+      ws.getCell(row, 1).value = `• ${w}`;
+      ws.getCell(row, 1).font = { italic: true, size: 9, color: { argb: "FF9A6700" } };
+      row++;
+    }
+    row++;
+  }
+
+  const note = (text: string, color = "FF666666") => {
+    ws.getCell(row, 1).value = text;
+    ws.getCell(row, 1).font = { italic: true, size: 9, color: { argb: color } };
+    row++;
+  };
+  const tableHeader = (labels: string[]) => {
+    labels.forEach((h, i) => {
+      const c = ws.getCell(row, i + 1);
+      c.value = h;
+      c.font = { bold: true };
+    });
+    row++;
+  };
+
+  // Utility interconnection — the Rule 29 block: regime, what the customer
+  // bears and where it sits in the price, exclusions, obligations, checks.
+  const proposal = computeProposal(project, result);
+  const ic = computeInterconnection(project, result, proposal?.costBuildup);
+  const icIn = ic.input;
+  sectionTitle(ws, row, `Utility interconnection — ${ic.regime.label}`);
+  row++;
+  note(ic.regime.description);
+  for (const [label, value] of [
+    ["Service type / route", `${dash(icIn.serviceType)} · ${dash(icIn.serviceRoute)}`],
+    ["Point of connection", dash(icIn.pointOfConnection)],
+    ["Distance to the utility's point of interconnection (ft)", dash(icIn.distanceToPoiFt)],
+    ["Transformer-to-switchgear run provided by", dash(icIn.serviceFeederBy)],
+    ["Application submitted / utility project number", `${dash(icIn.applicationSubmitted)} · ${dash(icIn.utilityProjectNumber)}`],
+    ["Rule 15 indicated / allowance / Rule 16 / ITCC", `${dash(icIn.rule15Indicated)} · ${dash(icIn.rule15Allowance)} · ${dash(icIn.rule16)} · ${dash(icIn.itcc)}`],
+    ["Pad location agreed / proof of commitment / O&M accepted / activation accepted", `${dash(icIn.padLocationAgreed)} · ${dash(icIn.proofOfCommitment)} · ${dash(icIn.acceptsOandM)} · ${dash(icIn.acceptsActivation)}`],
+    ["Utility design submitted / returned", `${dash(icIn.designSubmitted)} · ${dash(icIn.designReturned)}`],
+  ] as [string, string | number][]) {
+    ws.getCell(row, 1).value = label;
+    ws.getCell(row, 1).font = { bold: true };
+    ws.getCell(row, 2).value = value;
+    row++;
+  }
+  row++;
+  tableHeader(["What the customer bears", "In this price?", "Amount", "Treatment"]);
+  for (const b of ic.customerBears) {
+    ws.getCell(row, 1).value = b.item;
+    ws.getCell(row, 2).value = b.inPrice;
+    if (b.amount !== null) {
+      ws.getCell(row, 3).value = b.amount;
+      ws.getCell(row, 3).numFmt = MONEY;
+    } else ws.getCell(row, 3).value = "—";
+    ws.getCell(row, 4).value = b.treatment;
+    row++;
+  }
+  row++;
+  ws.getCell(row, 1).value = "Exclusion wording for the proposal";
+  ws.getCell(row, 1).font = { bold: true };
+  ws.getCell(row, 2).value = ic.exclusionWording;
+  row++;
+  for (const o of ic.obligations) note(`• ${o}`);
+  for (const c of ic.checks) note(`${c.ok ? "OK" : "LOOK"} — ${c.label}: ${c.detail}`, c.ok ? "FF666666" : "FF9A6700");
+  row++;
+
+  // Existing installation — replacement sites only.
+  const ex = project.existing;
+  if (ex && ex.projectType !== "greenfield") {
+    const cap = computeSiteCapacity(project);
+    const revenue = modelInputsOf(project.commercial).revenue;
+    const bm = MARKET_BENCHMARKS.find((b) => b.state === revenue.benchmarkState);
+    const r = computeExisting(ex, {
+      newPorts: cap.dcPositions + cap.l2Positions,
+      newDcPositions: cap.dcPositions,
+      newDcKw: cap.dcNameplateKw,
+      newConnectedKw: cap.dcNameplateKw + cap.l2NameplateKw,
+      serviceVoltage: ex.infrastructure.voltage ?? 480,
+      benchmarkUtilisation: bm?.portUtilisation ?? null,
+      benchmarkState: revenue.benchmarkState,
+    });
+    sectionTitle(ws, row, "Existing installation — rip and replace");
+    row++;
+    for (const [label, value] of [
+      ["Project type", ex.projectType === "replace" ? "Rip and replace — reuse infrastructure" : "Replace and expand — reuse plus new capacity"],
+      ["Age (years) / reason / owner", `${dash(ex.ageYears)} · ${dash(ex.reason)} · ${dash(ex.owner)}`],
+      ["Scope profile", r.register.scopeProfile],
+      ["Electrical scope", r.register.electricalProfile],
+      ["Construction scope", r.register.constructionProfile],
+      ["Existing units / ports / connected kW", `${r.units.count} / ${r.units.ports} / ${r.units.connectedKw}`],
+      ["Units working / failed / unknown", `${r.units.working} / ${r.units.failed} / ${r.units.unknown}`],
+      ["Existing service carries the new load?", r.checks.serviceCarriesLoad],
+      ["Existing switchgear carries the new load?", r.checks.switchgearCarriesLoad],
+      ["Months of history / historical kWh per year", `${r.history.months} / ${Math.round(r.history.kwhPerYear)}`],
+      ["Implied retail / delivered cost ($/kWh)", `${r.history.impliedRetailPerKwh.toFixed(4)} / ${r.history.impliedDeliveredPerKwh.toFixed(4)}`],
+      ["Historical availability", `${(r.history.availability * 100).toFixed(1)}%`],
+      ["Combined uplift multiple / projected kWh per year", `${r.combinedUplift.toFixed(3)}× / ${Math.round(r.projectedKwhPerYear)}`],
+      ["Capacity check", r.capacityCheck],
+      ["Market plausibility", r.market.verdict],
+      ["Revenue basis in force", r.basisInForce],
+    ] as [string, string][]) {
+      ws.getCell(row, 1).value = label;
+      ws.getCell(row, 1).font = { bold: true };
+      ws.getCell(row, 2).value = value;
+      row++;
+    }
+    row++;
+    tableHeader(["Retained / replaced register", "Decision"]);
+    for (const e of RETAIN_ELEMENTS) {
+      ws.getCell(row, 1).value = e.label;
+      ws.getCell(row, 2).value = ex.register[e.key] || "—";
+      row++;
+    }
+    row++;
+    tableHeader(["Uplift", "Theoretical", "Capture", "Applied"]);
+    for (const u of r.uplifts) {
+      ws.getCell(row, 1).value = u.label;
+      ws.getCell(row, 2).value = Math.round(u.theoretical * 1000) / 1000;
+      ws.getCell(row, 3).value = u.capture;
+      ws.getCell(row, 4).value = Math.round(u.applied * 1000) / 1000;
+      row++;
+    }
+    row++;
+    tableHeader(["Removal scope (into Dump / Waste)", "Qty", "Unit cost", "Total"]);
+    for (const l of r.removal.lines) {
+      ws.getCell(row, 1).value = l.name;
+      ws.getCell(row, 2).value = l.qty;
+      ws.getCell(row, 3).value = l.unitCost;
+      ws.getCell(row, 4).value = l.total;
+      ws.getCell(row, 3).numFmt = MONEY;
+      ws.getCell(row, 4).numFmt = MONEY;
+      row++;
+    }
+    ws.getCell(row, 1).value = "Removal total · indicative removal crew days";
+    ws.getCell(row, 1).font = { bold: true };
+    ws.getCell(row, 4).value = r.removal.total;
+    ws.getCell(row, 4).numFmt = MONEY;
+    ws.getCell(row, 5).value = r.removal.crewDays;
+    row++;
+    note(r.removal.phasedProgramme);
+    row++;
+  }
+
+  // Override register — every typed figure, with its reason.
+  const overrides = project.overrides ?? [];
+  sectionTitle(ws, row, `Override register — ${activeOverrideCount(project) === 0 ? "none active; every figure is engine-derived" : `${activeOverrideCount(project)} active`}`);
+  row++;
+  if (overrides.length > 0) {
+    tableHeader(["Item", "Override", "Units", "Why", "Source", "Date"]);
+    for (const o of overrides) {
+      const spec = overrideSpec(o.key);
+      ws.getCell(row, 1).value = spec?.label ?? o.key;
+      ws.getCell(row, 2).value = o.value;
+      if (spec?.units === "$" || spec?.units === "$/yr") ws.getCell(row, 2).numFmt = MONEY;
+      ws.getCell(row, 3).value = spec?.units ?? "";
+      ws.getCell(row, 4).value = o.reason || "— no reason recorded";
+      ws.getCell(row, 5).value = o.source ?? "";
+      ws.getCell(row, 6).value = o.date ?? "";
+      row++;
+    }
+  } else note("Leave a row blank on the Overrides tab and the engine uses its own computed number.");
 }
 
 // ---------------------------------------------------------------------------

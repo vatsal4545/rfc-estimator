@@ -260,6 +260,11 @@ export function computePeripherals(
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);
 
+  // Removal and demolition on a replacement site (lib/existing writes these
+  // from the Existing tab's removal scope) — priced into Dump / Waste.
+  const demolition: CivilItem[] = (input.demolitionItems ?? []).map((c) => ({ name: c.name, qty: c.qty, unitCost: c.unitCost, auto: false }));
+  const demolitionTotal = demolition.reduce((s, d) => s + d.qty * d.unitCost, 0);
+
   const permitsSubtotal = input.permitFeeTotal;
 
   const utilitySubtotal =
@@ -281,7 +286,7 @@ export function computePeripherals(
     signageSubtotal,
     permitsSubtotal,
     utilitySubtotal,
-    dumpWaste: input.dumpWasteCost,
-    lines: { hardware, civil, signage },
+    dumpWaste: input.dumpWasteCost + demolitionTotal,
+    lines: { hardware, civil, signage, demolition },
   };
 }

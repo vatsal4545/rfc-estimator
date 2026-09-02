@@ -1,12 +1,14 @@
 "use client";
 
 import { money, num, pct } from "@/lib/format";
+import { activeOverrideCount } from "@/lib/overrides";
 import { useProject } from "./ProjectContext";
 import { Pill, Section } from "./ui";
 
 export function ResultsTab() {
-  const { result } = useProject();
+  const { result, project, proposal } = useProject();
   const { materials, costs, qa } = result;
+  const pmPct = project.financial.pmPctOfLabor ?? 0;
   const allOk = qa.every((q) => q.ok);
 
   const wireLines = materials.wireLines.filter((l) => l.cuFt > 0 || l.alFt > 0);
@@ -19,10 +21,78 @@ export function ResultsTab() {
         <div className="mt-1 text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{money(costs.totalCost)}</div>
         <div className="mt-2 text-sm text-zinc-500">
           Electrical supply & construction {money(costs.electricalSupplyConstructionTotal)} · Labor{" "}
-          {money(costs.labor)} · Sales tax {money(costs.salesTaxOnConstruction)} · Equipment purchase{" "}
+          {money(costs.labor)} · Construction PM {money(costs.constructionPm)} · Sales tax{" "}
+          {money(costs.salesTaxOnConstruction)} · Equipment purchase{" "}
           {money(costs.equipmentPurchaseInvoice + costs.equipmentPurchaseTax)} · Design {money(costs.designInvoice)}
         </div>
+        {activeOverrideCount(project) > 0 && (
+          <div className="mt-2 text-sm text-amber-700 dark:text-amber-400">
+            {activeOverrideCount(project)} override(s) active — one or more figures are typed, not computed. See the Overrides tab.
+          </div>
+        )}
       </div>
+
+      {proposal && (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+            <div className="text-xs font-medium uppercase text-zinc-500">Customer price</div>
+            <div className="mt-1 text-2xl font-bold text-blue-800 dark:text-blue-200">{money(proposal.costBuildup.customerPrice)}</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              list {money(proposal.costBuildup.listTotal)} · discount {money(proposal.costBuildup.discountToCustomer)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">Gross margin</div>
+            <div className="mt-1 text-2xl font-bold">{money(proposal.margin.grossMargin)}</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              {proposal.margin.marginRate !== null ? `${pct(proposal.margin.marginRate)} of the ${money(proposal.margin.contractValue)} contract` : "no contract value"}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">Price over Total Cost</div>
+            <div className="mt-1 text-2xl font-bold">{money(proposal.costBuildup.customerPrice - costs.totalCost)}</div>
+            <div className="mt-1 text-xs text-zinc-500">markups, discounts and pass-through policy — set on the Commercial tab</div>
+          </div>
+        </div>
+      )}
+
+      {proposal && (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">{proposal.model.financing.offered ? "Monthly payment" : "Cash price"}</div>
+            <div className="mt-1 text-2xl font-bold">
+              {money(proposal.model.financing.offered ? proposal.model.financing.payment : proposal.model.financing.baseAmount)}
+            </div>
+            <div className="mt-1 text-xs text-zinc-500">
+              {proposal.model.financing.offered
+                ? `${proposal.model.financing.nPayments} payments at ${pct(proposal.model.financing.annualRate)}`
+                : "no financing offered"}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">{proposal.model.revenue.years.length}-year NPV</div>
+            <div className="mt-1 text-2xl font-bold">{money(proposal.model.cashflow.npv)}</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              IRR {proposal.model.cashflow.irr === null ? "n/a" : pct(proposal.model.cashflow.irr)} · break-even{" "}
+              {proposal.model.cashflow.breakEvenYear === null ? "beyond horizon" : `year ${proposal.model.cashflow.breakEvenYear}`}
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">Year-1 charging profit</div>
+            <div className="mt-1 text-2xl font-bold">{money(proposal.model.revenue.years[0]?.chargingProfit ?? 0)}</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              {num(proposal.model.usage.siteKwhPerYear)} kWh/yr at steady state · all-in ${proposal.model.tariff.horizonAllInPerKwh.toFixed(4)}/kWh
+            </div>
+          </div>
+          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="text-xs font-medium uppercase text-zinc-500">Carbon credit, net / yr</div>
+            <div className="mt-1 text-2xl font-bold">{money(proposal.model.carbon.netPerYear)}</div>
+            <div className="mt-1 text-xs text-zinc-500">
+              {num(proposal.model.carbon.dcNameplateKw)} kW DC · {proposal.model.carbon.capBinds ? "cap binds" : "cap does not bind"} — Business model tab
+            </div>
+          </div>
+        </div>
+      )}
 
       <Section title="QA checks" subtitle="All six must read OK before the estimate goes out.">
         <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -69,7 +139,7 @@ export function ResultsTab() {
             </tr>
             <tr>
               <td className="py-1 text-zinc-500" colSpan={3}>
-                Sales tax on construction ({pct(0.0725)})
+                Sales tax on construction ({pct(project.financial.salesTaxPct)})
               </td>
               <td className="py-1 text-right text-zinc-500">{money(costs.salesTaxOnConstruction)}</td>
             </tr>
@@ -78,6 +148,12 @@ export function ResultsTab() {
                 Labor
               </td>
               <td className="py-1 text-right text-zinc-500">{money(costs.labor)}</td>
+            </tr>
+            <tr>
+              <td className="py-1 text-zinc-500" colSpan={3}>
+                Construction PM ({pct(pmPct)} of loaded labor — CEO basis)
+              </td>
+              <td className="py-1 text-right text-zinc-500">{money(costs.constructionPm)}</td>
             </tr>
           </tfoot>
         </table>

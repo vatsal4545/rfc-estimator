@@ -56,9 +56,10 @@ export interface CostsInternalSpec {
   dailyRate: CellSource;
   /** Labor business days (K5, read by C18). */
   businessDays: CellSource;
-  /** Construction PM row (D14): all design costs except the AHJ plan check
-   * (that one is permitting-side). Shown at 0% contingency and kept out of
-   * the G15 construction subtotal — the source sums G3:G13 only. */
+  /** Construction PM row (D14): the CEO-basis construction PM (% of loaded
+   * labour) plus the design costs except the AHJ plan check (permitting-side).
+   * Shown at 0% contingency and kept out of the G15 construction subtotal —
+   * the source sums G3:G13 only. */
   constructionPm: CellSource;
 }
 
