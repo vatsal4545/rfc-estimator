@@ -3,6 +3,7 @@
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
+import { MaterialRatesSection } from "../MaterialRatesSection";
 import { useProject } from "../ProjectContext";
 import { InterconnectionSection } from "../IntakeTab";
 import { Field, Grid, Pill, Section, inputCls, selectCls } from "../ui";
@@ -149,6 +150,8 @@ export function ElectricalSection() {
           </div>
         )}
       </Section>
+
+      <MaterialRatesSection compact />
 
       <Section title="Service and switchgear" subtitle="Where the site connects, the customer-side feeder, and the frame being priced. The Rule 29 block below records the utility's side.">
         <Grid cols={4}>

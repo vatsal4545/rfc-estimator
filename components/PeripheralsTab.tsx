@@ -5,6 +5,7 @@ import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
 import { CIVIL_RATES } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
+import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls } from "./ui";
 
@@ -84,6 +85,7 @@ export function PeripheralsTab() {
 
   return (
     <div>
+      <MaterialRatesSection />
       <Section title="A. Electrical gear" subtitle="Unit cost is looked up from the gear catalog; override if you have a live quote.">
         {p.useAutoGear ? (
           <>

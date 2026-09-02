@@ -1,4 +1,4 @@
-import { CONDUIT_TABLE, WIRE_TABLE } from "./tables";
+import { conduitTableFor, wireTableFor } from "./tables";
 import type {
   ConduitMaterial,
   MaterialsConduitLine,
@@ -14,7 +14,7 @@ export function computeMaterials(
   setup: Setup,
   rollups: Rollups,
 ): MaterialsResult {
-  const wireLines: MaterialsWireLine[] = WIRE_TABLE.map((w) => {
+  const wireLines: MaterialsWireLine[] = wireTableFor(setup).map((w) => {
     const cuFt =
       rows.filter((r) => r.selectedWire === w.size && r.material === "Cu").reduce((s, r) => s + r.wireFt, 0) +
       (setup.groundingMaterial === "Cu"
@@ -39,7 +39,7 @@ export function computeMaterials(
   // cross-check against the row totals breaks.
   const conduitLines: MaterialsConduitLine[] = [];
   const otherType: ConduitMaterial = setup.conduitType === "PVC" ? "EMT" : "PVC";
-  for (const c of CONDUIT_TABLE) {
+  for (const c of conduitTableFor(setup)) {
     const ftOf = (m: ConduitMaterial) =>
       rows
         .filter((r) => r.conduitSize === c.tradeSize && (r.conduitOverride ?? setup.conduitType) === m)

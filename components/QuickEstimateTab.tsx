@@ -19,6 +19,7 @@ import { findSku } from "@/lib/ref/priceBook";
 import { rebuildProject } from "@/lib/intake/rebuild";
 import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
+import { useRebuild } from "./intake/useRebuild";
 import { Field, Pill, Section, inputCls, selectCls } from "./ui";
 
 const SERVICE_TOGGLES: {
@@ -53,7 +54,8 @@ for (const s of CHARGER_SKUS) {
 const shortDesc = (d: string) => (d.length > 56 ? `${d.slice(0, 54).trimEnd()}…` : d);
 
 export function QuickEstimateTab() {
-  const { project, setProject, hardwareAllowance } = useProject();
+  const { project, setProject, hardwareAllowance, result } = useProject();
+  const { auto, rebuild } = useRebuild();
   const schedule = computeEquipmentSchedule(project, hardwareAllowance);
   // The quick intake is edited straight on the project (auto-saved on every
   // keystroke like the other tabs), NOT in local component state — a local
@@ -65,10 +67,14 @@ export function QuickEstimateTab() {
 
   const chargerModels = project.loadTypes.filter((lt) => lt.category !== "Feeder");
   const totalChargers = input.lines.reduce((s, l) => s + Math.max(0, l.count), 0);
-  const built = (project.quick?.lines.length ?? 0) > 0 && project.takeoff.length > 0;
+  const built = project.takeoff.length > 0;
 
+  // Every input here rebuilds the estimate as it changes (takeoff, gear, civil,
+  // labour, fees); hand-pinned fields and hand-edited takeoff rows survive.
+  // A takeoff typed row by row on the Takeoff tab is left alone until the
+  // explicit build button below is used.
   function set<K extends keyof QuickEstimateInput>(key: K, value: QuickEstimateInput[K]) {
-    setProject((p) => ({
+    rebuild((p) => ({
       ...p,
       quick: {
         ...(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput()),
@@ -359,18 +365,25 @@ export function QuickEstimateTab() {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
-          <button
-            onClick={build}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            ⚡ Build full estimate
-          </button>
-          <span className="text-xs text-zinc-500">
-            {totalChargers} charger{totalChargers === 1 ? "" : "s"} · rebuilding replaces the current takeoff and derived
-            costs (export first to keep a version)
-          </span>
-        </div>
+        {auto ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-900 dark:border-green-900 dark:bg-green-950/30 dark:text-green-100">
+            <span>
+              Live — {totalChargers} charger{totalChargers === 1 ? "" : "s"} · the estimate rebuilds as you type · Total Cost {money(result.costs.totalCost)}
+            </span>
+            <button onClick={build} className="text-xs font-medium text-green-800 underline hover:no-underline dark:text-green-200" title="Regenerate from these inputs now (nothing to catch up on unless a field was pinned)">
+              rebuild now
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={build} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+              ⚡ Build from these inputs
+            </button>
+            <span className="text-xs text-zinc-500">
+              This project&apos;s takeoff was typed row by row on the Takeoff tab, so it is not regenerated automatically. Building replaces it with rows generated from the chargers above (rows marked manual stay).
+            </span>
+          </div>
+        )}
       </Section>
 
       {built && <BuildSummary />}

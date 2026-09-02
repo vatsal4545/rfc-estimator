@@ -1,10 +1,4 @@
-import type {
-  ConduitRow,
-  GearCatalogRow,
-  GroundingRow,
-  LoadType,
-  WireRow,
-} from "./types";
+import type { ConduitRow, GearCatalogRow, GroundingRow, LoadType, Setup, WireRow } from "./types";
 
 // WireTable — NEC 310.16 (75C) ampacity, circular mils, Rexel price list
 // (2026-03-20), conduit trade size. Carried verbatim from CPM_Clean.xlsx.
@@ -196,4 +190,24 @@ export function findLoadType(loadTypes: LoadType[], id: string): LoadType | unde
 
 export function wireIndexBySize(size: string): number {
   return WIRE_TABLE.findIndex((w) => w.size === size);
+}
+
+/** The wire table with a project's $/ft overrides applied (ampacities and sizes never change). */
+export function wireTableFor(setup?: Pick<Setup, "materialRates">): WireRow[] {
+  const o = setup?.materialRates?.wire;
+  if (!o || Object.keys(o).length === 0) return WIRE_TABLE;
+  return WIRE_TABLE.map((w) => {
+    const r = o[w.size];
+    return r ? { ...w, cuPerFt: r.cuPerFt ?? w.cuPerFt, alPerFt: r.alPerFt ?? w.alPerFt } : w;
+  });
+}
+
+/** The conduit table with a project's $/ft overrides applied. */
+export function conduitTableFor(setup?: Pick<Setup, "materialRates">): ConduitRow[] {
+  const o = setup?.materialRates?.conduit;
+  if (!o || Object.keys(o).length === 0) return CONDUIT_TABLE;
+  return CONDUIT_TABLE.map((c) => {
+    const r = o[c.tradeSize];
+    return r ? { ...c, pvcPerFt: r.pvcPerFt ?? c.pvcPerFt, emtPerFt: r.emtPerFt ?? c.emtPerFt } : c;
+  });
 }

@@ -9,7 +9,7 @@
 
 import { computeEstimate } from "./engine";
 import { INSTALL_METHOD_INFO, SURFACE_FT_PER_CREW_DAY, effectiveInstallMethod } from "./install";
-import { generateTakeoffRows } from "./quickstart";
+import { applyTakeoffEdits, generateTakeoffRows } from "./quickstart";
 import { findLoadType } from "./tables";
 import type {
   EstimateResult,
@@ -469,10 +469,16 @@ export function buildQuickProject(
   const isL2 = (id: string) => findLoadType(p.loadTypes, id)?.category === "L2";
   const l2Lines = input.lines.filter((l) => isL2(l.loadTypeId));
   const dcfcLines = input.lines.filter((l) => !isL2(l.loadTypeId));
-  p.takeoff = [
-    ...generateTakeoffRows(l2Lines, { startFt: input.firstRunFtL2, stepFt: input.stepFt }, `${idSeed}a`),
-    ...generateTakeoffRows(dcfcLines, { startFt: input.firstRunFtDcfc, stepFt: input.stepFt }, `${idSeed}b`),
-  ];
+  // Hand edits recorded on the Takeoff tab (project.takeoffEdits) and rows
+  // added there by hand survive the regeneration.
+  p.takeoff = applyTakeoffEdits(
+    [
+      ...generateTakeoffRows(l2Lines, { startFt: input.firstRunFtL2, stepFt: input.stepFt }, `${idSeed}a`),
+      ...generateTakeoffRows(dcfcLines, { startFt: input.firstRunFtDcfc, stepFt: input.stepFt }, `${idSeed}b`),
+    ],
+    base.takeoffEdits,
+    base.takeoff,
+  );
   p.setup = {
     ...p.setup,
     clientName: input.clientName,
