@@ -149,10 +149,16 @@ describe("CPM engine — Bartell fixture (validated against CPM_Clean.xlsx)", ()
     expect(result.costs.equipmentPurchaseInvoice).toBe(0);
     expect(result.costs.designInvoice).toBe(0);
     // Labor carries the 10% contingency like both source workbooks' Costs
-    // Internal ZIB block (2,250 -> 2,475/day x 30 = 74,250).
-    expect(result.costs.labor).toBe(2250 * 1.1 * 30);
+    // Internal ZIB block; the day rate is the CEO's $2,750 fully burdened
+    // (the source workbooks carried $2,250) -> 3,025/day x 30 = 90,750.
+    expect(result.costs.labor).toBe(2750 * 1.1 * 30);
+    // Construction PM on the CEO basis: 15% of the loaded labour line.
+    expect(result.costs.constructionPm).toBeCloseTo(result.costs.labor * 0.15, 6);
     expect(result.costs.totalCost).toBeCloseTo(
-      result.costs.electricalSupplyConstructionTotal + result.costs.salesTaxOnConstruction + result.costs.labor,
+      result.costs.electricalSupplyConstructionTotal +
+        result.costs.salesTaxOnConstruction +
+        result.costs.labor +
+        result.costs.constructionPm,
       2,
     );
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { HARDWARE_ALLOWANCE } from "@/lib/calc/autoplan";
+import { HARDWARE_ALLOWANCE, HARDWARE_ALLOWANCE_BASIS } from "@/lib/calc/autoplan";
 import { DEFAULT_LOAD_TYPES } from "@/lib/calc/tables";
 import { money } from "@/lib/format";
 import { useProject } from "./ProjectContext";
@@ -21,7 +21,7 @@ export function ChargerPricingTab() {
     <div>
       <Section
         title="Charger pricing — global catalog"
-        subtitle="These $/unit prices apply to EVERY project in your library (this browser). Leave a price blank to use the shipped default. Projects where you hand-typed a hardware cost on the Financials tab keep their manual number."
+        subtitle="These $/unit list prices apply to EVERY project in your library (this browser). The shipped defaults are the CEO price book's list prices (EVSE Project Intake 2.9.0, Chargetronix TP5 / CTX); leave a price blank to use them. Projects where you hand-typed a hardware cost on the Financials tab keep their manual number."
       >
         {manualProject && (
           <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
@@ -36,6 +36,7 @@ export function ChargerPricingTab() {
                 <th className="px-3 py-2">Model</th>
                 <th className="px-3 py-2">Category</th>
                 <th className="px-3 py-2 text-right">Default $/unit</th>
+                <th className="px-3 py-2">Price-book basis</th>
                 <th className="px-3 py-2 text-right">Your price $/unit</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -49,6 +50,7 @@ export function ChargerPricingTab() {
                     <td className="px-3 py-2 font-medium">{lt.id}</td>
                     <td className="px-3 py-2 text-zinc-500">{lt.category}</td>
                     <td className="px-3 py-2 text-right text-zinc-500">{money(dflt)}</td>
+                    <td className="max-w-xs px-3 py-2 text-xs text-zinc-500">{HARDWARE_ALLOWANCE_BASIS[lt.id] ?? "—"}</td>
                     <td className="px-3 py-2 text-right">
                       <input
                         type="number"
@@ -81,7 +83,7 @@ export function ChargerPricingTab() {
           {overrideCount > 0
             ? `${overrideCount} price${overrideCount === 1 ? "" : "s"} overridden (highlighted). `
             : "No overrides yet — all models at shipped defaults. "}
-          Prices are budgetary allowances — swap in vendor quotes when you have them.
+          Defaults are manufacturer list prices from the CEO price book; the Commercial tab applies the hardware discount on top. Override here when a vendor quote differs.
         </p>
       </Section>
     </div>

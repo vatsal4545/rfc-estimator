@@ -3,8 +3,10 @@ import {
   GROUNDING_TABLE,
   STANDARD_BREAKERS_A,
   WIRE_TABLE,
+  conduitTableFor,
   findLoadType,
   nextStandardSize,
+  wireTableFor,
 } from "./tables";
 import type {
   LoadType,
@@ -42,8 +44,8 @@ function wireSizeAtIndex(idx: number): string {
   return WIRE_TABLE[Math.min(25, idx) - 1].size;
 }
 
-function wirePricePerFt(size: string, material: Material): number {
-  const row = WIRE_TABLE.find((w) => w.size === size);
+function wirePricePerFt(size: string, material: Material, setup: Setup): number {
+  const row = wireTableFor(setup).find((w) => w.size === size);
   if (!row) return 0;
   return material === "Cu" ? row.cuPerFt : row.alPerFt;
 }
@@ -67,8 +69,8 @@ function conduitTradeSizeForWire(wireSize: string, upsizeSteps: number): string 
   return CONDUIT_TABLE[Math.max(1, idx) - 1]?.tradeSize ?? "";
 }
 
-function conduitPricePerFt(tradeSize: string, conduitType: "PVC" | "EMT"): number {
-  const row = CONDUIT_TABLE.find((c) => c.tradeSize === tradeSize);
+function conduitPricePerFt(tradeSize: string, conduitType: "PVC" | "EMT", setup: Setup): number {
+  const row = conduitTableFor(setup).find((c) => c.tradeSize === tradeSize);
   if (!row) return 0;
   return conduitType === "PVC" ? row.pvcPerFt : row.emtPerFt;
 }
@@ -189,22 +191,22 @@ export function computeTakeoffRow(
       : wireSizeAtIndex(Math.min(25, maxIdx + setup.wireUpsizeSteps));
 
   const wireFt = selectedWire === "" ? 0 : input.units * runsPerUnit * condPerRun * input.oneWayDistFt;
-  const wireCostPerFt = selectedWire ? wirePricePerFt(selectedWire, material) : 0;
+  const wireCostPerFt = selectedWire ? wirePricePerFt(selectedWire, material, setup) : 0;
   const wireCost = wireFt * wireCostPerFt;
 
   const groundSize = ocpdA === 0 ? "" : groundSizeForOcpd(ocpdA, groundMaterial);
   const groundFt = selectedWire === "" ? 0 : input.units * runsPerUnit * input.oneWayDistFt;
-  const groundCostPerFt = groundSize ? wirePricePerFt(groundSize, groundMaterial) : 0;
+  const groundCostPerFt = groundSize ? wirePricePerFt(groundSize, groundMaterial, setup) : 0;
   const groundCost = groundFt * groundCostPerFt;
 
   const conduitMaterial = input.conduitOverride ?? setup.conduitType;
   const conduitSize = selectedWire === "" ? "" : conduitTradeSizeForWire(selectedWire, setup.conduitUpsizeSteps);
   const conduitFt = selectedWire === "" ? 0 : input.units * runsPerUnit * input.oneWayDistFt;
-  const conduitCostPerFt = conduitSize ? conduitPricePerFt(conduitSize, conduitMaterial) : 0;
+  const conduitCostPerFt = conduitSize ? conduitPricePerFt(conduitSize, conduitMaterial, setup) : 0;
   const conduitCost = conduitFt * conduitCostPerFt;
 
   const dataFt = lt.hasDataCable ? input.units * input.oneWayDistFt : 0;
-  const dataConduitPerFt = conduitPricePerFt(setup.dataConduitTradeSize, conduitMaterial);
+  const dataConduitPerFt = conduitPricePerFt(setup.dataConduitTradeSize, conduitMaterial, setup);
   const dataCost = dataFt * (setup.dataRatePerFt + dataConduitPerFt);
 
   const rowTotal = wireCost + groundCost + conduitCost + dataCost;

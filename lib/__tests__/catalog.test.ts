@@ -32,8 +32,8 @@ describe("global charger-price catalog", () => {
       ...HARDWARE_ALLOWANCE,
       "DCFC 200kW": 85000,
     });
-    // 6 x 85,000 + 5 x 4,000 (L2 Single 40A default)
-    expect(p.financial.chargerHardwareCost).toBe(6 * 85000 + 5 * 4000);
+    // 6 x 85,000 + 5 x the L2 Single 40A price-book default
+    expect(p.financial.chargerHardwareCost).toBe(6 * 85000 + 5 * HARDWARE_ALLOWANCE["L2 Single 40A"]);
     expect(p.financial.chargerHardwareCostIsAuto).toBe(true);
   });
 
@@ -41,7 +41,7 @@ describe("global charger-price catalog", () => {
     const p = buildQuickProject(defaultQuickInput(), defaultProject(), "t");
     const newPrices = { ...HARDWARE_ALLOWANCE, "DCFC 200kW": 85000 };
     const r = reconcileHardwareCost(p, newPrices);
-    expect(r.financial.chargerHardwareCost).toBe(6 * 85000 + 5 * 4000);
+    expect(r.financial.chargerHardwareCost).toBe(6 * 85000 + 5 * HARDWARE_ALLOWANCE["L2 Single 40A"]);
 
     const manual = { ...p, financial: { ...p.financial, chargerHardwareCost: 500000, chargerHardwareCostIsAuto: false } };
     expect(reconcileHardwareCost(manual, newPrices).financial.chargerHardwareCost).toBe(500000);

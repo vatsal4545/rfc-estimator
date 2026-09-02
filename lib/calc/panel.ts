@@ -11,7 +11,7 @@ const SQRT3 = Math.sqrt(3);
 // Bus ratings available in the gear catalog. Suggestions stay on sizes the
 // estimate can actually price. Exported so the UI's override pickers offer
 // the same catalog.
-export const SWITCHGEAR_480V_A = [400, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
+export const SWITCHGEAR_480V_A = [400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 3200, 4000, 5000];
 export const SUBPANEL_208V_A = [150, 250, 400, 600, 800, 1000];
 export const TRANSFORMER_KVA = [75, 112.5, 150, 175, 225, 300, 500];
 

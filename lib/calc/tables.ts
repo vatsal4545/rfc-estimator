@@ -1,10 +1,4 @@
-import type {
-  ConduitRow,
-  GearCatalogRow,
-  GroundingRow,
-  LoadType,
-  WireRow,
-} from "./types";
+import type { ConduitRow, GearCatalogRow, GroundingRow, LoadType, Setup, WireRow } from "./types";
 
 // WireTable — NEC 310.16 (75C) ampacity, circular mils, Rexel price list
 // (2026-03-20), conduit trade size. Carried verbatim from CPM_Clean.xlsx.
@@ -106,27 +100,41 @@ export const DEFAULT_LOAD_TYPES: LoadType[] = [
   { id: "DCFC 300kW Dual", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 300, runsPerUnit: 2, conductorsPerRun: 3, feederOcpdA: 500, designMinCu: "250 kcmil", designMinAl: "350 kcmil", hasDataCable: true, runsAreParallel: true, portsPerUnit: 2, notes: "Dual-cable: same electrical as DCFC 300kW, two billable ports" },
   { id: "DCFC 360kW", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 360, runsPerUnit: 2, conductorsPerRun: 3, feederOcpdA: 600, designMinCu: "350 kcmil", designMinAl: "500 kcmil", hasDataCable: true, runsAreParallel: true, notes: "2 parallel sets sharing the load" },
   { id: "DCFC 360kW Dual", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 360, runsPerUnit: 2, conductorsPerRun: 3, feederOcpdA: 600, designMinCu: "350 kcmil", designMinAl: "500 kcmil", hasDataCable: true, runsAreParallel: true, portsPerUnit: 2, notes: "Dual-cable (e.g. HPC-360): same electrical as DCFC 360kW, two billable ports" },
+  // Price-book additions (Sept 2026): models the CEO's Chargetronix book
+  // carries that the original lineup lacked. Additive — existing ids and
+  // their sizing are untouched. Power cabinets are the Nexus distributed
+  // system's AC side; their connectors live on CTX-DST dispensers, which the
+  // SKU layer prices and counts for ports (DC runs are not in the takeoff).
+  { id: "DCFC 30kW", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 30, runsPerUnit: 1, conductorsPerRun: 3, feederOcpdA: 50, hasDataCable: true, runsAreParallel: false, notes: "TP5-30 wall-mount class: 36 A at 480 V, 50 A breaker at 125%" },
+  { id: "L2 Single 48A", category: "L2", voltage: 208, phases: 1, kwPerPort: 9.984, runsPerUnit: 1, conductorsPerRun: 2, feederOcpdA: 60, designAmpsOverride: 48, designMinCu: "8 AWG", designMinAl: "6 AWG", hasDataCable: true, runsAreParallel: false, notes: "Single-port 48A L2 (CTX-C48 / CTX-R48): one 2-pole 60A circuit (48A x 125%)" },
+  { id: "Power cabinet 360kW", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 196.5, runsPerUnit: 2, conductorsPerRun: 3, feederOcpdA: 300, designAmpsOverride: 236.4, unitInputAmps: 472.7, hasDataCable: true, runsAreParallel: false, portsPerUnit: 0, notes: "CTX-DSPB-360 Nexus power cabinet: 393 kW AC input on 2 circuits, 472.7 A total (DERIVED in the price book — confirm with Chargetronix). No connectors of its own." },
+  { id: "Power cabinet 480kW", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 262, runsPerUnit: 2, conductorsPerRun: 3, feederOcpdA: 400, designAmpsOverride: 315.2, unitInputAmps: 630.3, hasDataCable: true, runsAreParallel: false, portsPerUnit: 0, notes: "CTX-DSPB-480 Nexus power cabinet: 524 kW AC input, 2 circuits at 315 A (PUBLISHED). Takes up to 3 dual dispensers." },
+  { id: "Power cabinet 1280kW", category: "DCFC", voltage: 480, phases: 3, kwPerPort: 232.9, runsPerUnit: 6, conductorsPerRun: 3, feederOcpdA: 400, designAmpsOverride: 280.1, unitInputAmps: 1680.7, hasDataCable: true, runsAreParallel: false, portsPerUnit: 0, notes: "CTX-DSPB-1280 Nexus power cabinet: 1,397 kW AC input on 6 circuits, 1,680.7 A total (DERIVED). Takes up to 8 dual dispensers." },
   { id: "Feeder 480V", category: "Feeder", voltage: 480, phases: 3, kwPerPort: 0, runsPerUnit: 1, conductorsPerRun: 4, feederOcpdA: 400, hasDataCable: false, materialOverride: "Al", runsAreParallel: false, notes: "Gear-to-gear feeder. Leave kW at 0 and size on the Takeoff override, or enter kW served." },
   { id: "Feeder 208V", category: "Feeder", voltage: 208, phases: 3, kwPerPort: 0, runsPerUnit: 1, conductorsPerRun: 4, feederOcpdA: 400, hasDataCable: false, materialOverride: "Al", runsAreParallel: false, notes: "Transformer secondary / sub-panel feeder" },
 ];
 
 export const GEAR_CATALOG: GearCatalogRow[] = [
-  // Main switchgear 480V: the shop's own budgetary ladder. 2000A/2500A were
-  // re-set Aug 2026 to fix the old price inversion (2500A had been priced
-  // below the 2000A unit); every other size is the original list. NOARK MxS
-  // assembled-budgetary comparison research is on file (memory:
-  // switchgear-price-research) — RFQ NOARK Pomona or Butcher Power Products
-  // for real quotes before contract.
+  // Main switchgear 480V: the shop's own budgetary ladder up to 2500A
+  // (2000A/2500A re-set Aug 2026 to fix an inversion). 600A and 3200A added
+  // and 3000A/4000A/5000A re-set Sept 2026 on Larson Electronics' published
+  // main-breaker boards: 800A main-only $21,968 and 3000A main-only $58,842
+  // give $16.76/A; the shop's 400A ($20,427) sits on Larson's 400A board with
+  // eight feeders ($20,587). Larson's switch-only 3200A metal-enclosed gear
+  // (no main, no feeders) is $59,593 for comparison. NOARK / BPP research is
+  // on file (memory: switchgear-price-research) — RFQ before contract.
   { item: "Main switchgear", size: "400A", voltage: "480V", unitCost: 20426.82 },
+  { item: "Main switchgear", size: "600A", voltage: "480V", unitCost: 25500, note: "Added Sept 2026 — between the 400A and 800A boards; Larson 600A panelboards run $14.3k–$26.2k" },
   { item: "Main switchgear", size: "800A", voltage: "480V", unitCost: 31187 },
   { item: "Main switchgear", size: "1000A", voltage: "480V", unitCost: 36812.5 },
   { item: "Main switchgear", size: "1200A", voltage: "480V", unitCost: 43292.68 },
   { item: "Main switchgear", size: "1600A", voltage: "480V", unitCost: 56750 },
   { item: "Main switchgear", size: "2000A", voltage: "480V", unitCost: 55000, note: "Re-set Aug 2026 (was $60k) — keeps the ladder monotonic" },
   { item: "Main switchgear", size: "2500A", voltage: "480V", unitCost: 60000, note: "Re-set Aug 2026 (was $58.5k, priced below the 2000A unit)" },
-  { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 65000 },
-  { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 67500 },
-  { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 70000 },
+  { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 58842, note: "Sept 2026: Larson 3000A main-only Type 3R board, published $58,842.20 (was $65,000)" },
+  { item: "Main switchgear", size: "3200A", voltage: "480V", unitCost: 62200, note: "Added Sept 2026 — main-breaker basis on the Larson $16.76/A slope; their switch-only 3200A gear is $59,593" },
+  { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 75600, note: "Sept 2026: Larson $16.76/A slope (was $67,500, below even switch-only gear)" },
+  { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 100000, note: "Sept 2026: user's budget; slope gives $92.4k, Larson switch-only 5000A is $80.3k (was $70,000)" },
   { item: "Main switchgear", size: "350A", voltage: "208V", unitCost: 0, note: "No price on original list" },
   { item: "Main breaker", size: "110A", voltage: "480V", unitCost: 0, note: "No price on original list" },
   { item: "Main breaker", size: "125A", voltage: "480V", unitCost: 0, note: "No price on original list" },
@@ -171,7 +179,7 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
 export const STANDARD_BREAKERS_A: number[] = [
   15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175,
   200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600,
-  2000, 2500, 3000, 4000, 5000,
+  2000, 2500, 3000, 3200, 4000, 5000,
 ];
 
 /** Smallest value in `sizes` that is >= amps; falls back to the largest size. */
@@ -186,4 +194,24 @@ export function findLoadType(loadTypes: LoadType[], id: string): LoadType | unde
 
 export function wireIndexBySize(size: string): number {
   return WIRE_TABLE.findIndex((w) => w.size === size);
+}
+
+/** The wire table with a project's $/ft overrides applied (ampacities and sizes never change). */
+export function wireTableFor(setup?: Pick<Setup, "materialRates">): WireRow[] {
+  const o = setup?.materialRates?.wire;
+  if (!o || Object.keys(o).length === 0) return WIRE_TABLE;
+  return WIRE_TABLE.map((w) => {
+    const r = o[w.size];
+    return r ? { ...w, cuPerFt: r.cuPerFt ?? w.cuPerFt, alPerFt: r.alPerFt ?? w.alPerFt } : w;
+  });
+}
+
+/** The conduit table with a project's $/ft overrides applied. */
+export function conduitTableFor(setup?: Pick<Setup, "materialRates">): ConduitRow[] {
+  const o = setup?.materialRates?.conduit;
+  if (!o || Object.keys(o).length === 0) return CONDUIT_TABLE;
+  return CONDUIT_TABLE.map((c) => {
+    const r = o[c.tradeSize];
+    return r ? { ...c, pvcPerFt: r.pvcPerFt ?? c.pvcPerFt, emtPerFt: r.emtPerFt ?? c.emtPerFt } : c;
+  });
 }

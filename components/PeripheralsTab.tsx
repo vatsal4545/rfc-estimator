@@ -5,6 +5,7 @@ import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
 import { CIVIL_RATES } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
+import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls } from "./ui";
 
@@ -84,6 +85,7 @@ export function PeripheralsTab() {
 
   return (
     <div>
+      <MaterialRatesSection />
       <Section title="A. Electrical gear" subtitle="Unit cost is looked up from the gear catalog; override if you have a live quote.">
         {p.useAutoGear ? (
           <>
@@ -267,6 +269,14 @@ export function PeripheralsTab() {
             hint={`Auto-filled: ${BOLLARD_RULE.perCharger}/charger + ${BOLLARD_RULE.switchgear}-5 at switchgear + ${BOLLARD_RULE.stepDownSubPanel} at step-down TX & sub-panel`}
           ><input type="number" className={inputCls} value={p.bollardsQty} onChange={(e) => updateP("bollardsQty", Number(e.target.value))} /></Field>
           <Field label="Dump / waste ($)" hint="Not in the original workbook — real bids carry this line"><input type="number" className={inputCls} value={p.dumpWasteCost} onChange={(e) => updateP("dumpWasteCost", Number(e.target.value))} /></Field>
+          {(p.demolitionItems?.length ?? 0) > 0 && (
+            <Field label="Removal and demolition (Existing site tab)" hint="Set on the Existing site tab — priced into the Dump / Waste line">
+              <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+                {money((p.demolitionItems ?? []).reduce((s, d) => s + d.qty * d.unitCost, 0))}
+                <span className="ml-1 text-xs text-zinc-500">· {p.demolitionItems!.length} line(s)</span>
+              </div>
+            </Field>
+          )}
         </Grid>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Stat label="Ground rods (auto)" value={num(result.rollups.nChargers + result.rollups.nFeeders)} />

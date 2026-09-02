@@ -338,9 +338,9 @@ async function main() {
     ["TrenchRate", "Trenching $/ft (flat baseline)", 40.81, MONEY],
     ["ContingencyPct", "Contingency %", 0.1, PCT],
     ["TaxPct", "Sales tax %", 0.0725, PCT],
-    ["LaborDayRate", "Labor crew $/day", 2250, MONEY],
+    ["LaborDayRate", "Labor crew $/day (CEO basis, fully burdened)", 2750, MONEY],
     ["PmRate", "PM hourly rate (CPM)", 358, MONEY],
-    ["CpmPct", "CPM % of construction", 0.05, PCT],
+    ["CpmPct", "Construction PM % of loaded labour (CEO basis)", 0.15, PCT],
     ["GprDayRate", "GPR scan $/day", 1500, MONEY],
     ["GprFtPerDay", "GPR trench-ft per day", 2000],
     ["DataBoxCost", "Data/comms box $ (one per site)", 1500, MONEY],
@@ -1273,9 +1273,9 @@ async function main() {
   eHeader(34, "Design invoice");
   eLine(35, "Site plan design (AutoCAD)", 'IF(IncSitePlan="Yes",2500+150*NTotal+IF(NDcfc>0,1000,0),0)');
   eLine(36, "SLD / electrical engineering (PE)", 'IF(IncSLD="Yes",IF(NDcfc>0,6000+900*NDcfc+150*NumL2,2500+150*NumL2),0)');
-  estimate.getCell(37, 3).value = { formula: 'IF(IncCpm="Yes",MAX(24,ROUND(CpmPct*Valuation/PmRate,0)),0)' };
-  estimate.getCell(37, 3).numFmt = "0";
-  eLine(37, "Construction PM — hours in col C", "C37*PmRate");
+  // CEO basis (intake 2.9.0 Construction!B10): construction PM is a share of
+  // the contingency-loaded labour line, not hours against a valuation.
+  eLine(37, "Construction PM (% of loaded labour — CEO basis)", 'IF(IncCpm="Yes",LaborCost*CpmPct,0)');
   eLine(38, "Plan check (AHJ, % of valuation for DCFC)", 'IF(IncPermits="Yes",IF(NDcfc>0,500+0.02*Valuation,300),0)');
   eLine(39, "Design subtotal", "SUM(B35:B38)");
   estimate.getCell(39, 1).font = { bold: true };
@@ -1602,9 +1602,9 @@ async function main() {
     ["• Surface EMT: strut trapeze $28 + $3.25/strap per pipe per rack (every 10 ft, NEC 358.30); EMT hangs ~100 route-ft/crew-day.", false],
     ["   Open-air decks are damp/wet locations — swap set-screw fittings for listed raintight compression (≈2-3× price) per 358.42.", false],
     ["• Permits: L2-only = streamlined flat fees (AB 1236); DCFC = plan check ≈ 2% of construction valuation + issuance + utility fees.", false],
-    ["• Design: site plan $2.5k + $150/charger (+$1k DCFC); SLD $6k + $900/DCFC + $150/L2 (PE). CPM = 5% of construction at $358/h.", false],
+    ["• Design: site plan $2.5k + $150/charger (+$1k DCFC); SLD $6k + $900/DCFC + $150/L2 (PE). Construction PM = 15% of loaded labour (CEO basis).", false],
     ["• 450 kcmil: ampacity and the Al $/ft are interpolated (not NEC 310.16 / not on the vendor list) — verify before quoting.", false],
-    ["• Charger hardware and 'budgetary' breaker prices are allowances — swap in CTX price-book / vendor quotes on the RateCard.", false],
+    ["• Charger hardware = CTX price-book list prices (EVSE Project Intake 2.9.0); breaker prices are allowances — swap in vendor quotes on the RateCard.", false],
   ];
   helpLines.forEach(([text, bold], i) => {
     const c = help.getCell(1 + i, 1);
@@ -1725,12 +1725,12 @@ async function main() {
     equipCal.base + equipCal.perDay * laborDays +
     (200 + 60 * n) + (2500 + 5000);
   const loaded = constr * 1.1;
-  const labor = laborDays * 2250 * 1.1;
+  const labor = laborDays * 2750 * 1.1;
   const valuation = loaded + labor;
-  const hardware = 6 * 92000 + 5 * 4000;
+  const hardware = 6 * HARDWARE_ALLOWANCE["DCFC 200kW"] + 5 * HARDWARE_ALLOWANCE["L2 Single 40A"];
   const design =
     (2500 + 150 * n + 1000) + (6000 + 900 * nD + 150 * nL) +
-    Math.max(24, Math.round((0.05 * valuation) / 358)) * 358 +
+    labor * 0.15 /* construction PM, CEO basis */ +
     (500 + 0.02 * valuation);
   const templateTotal =
     loaded + labor + loaded * 0.0725 + hardware * 1.0725 + (1500 * nD + 250 * nL) + networkFees + design;

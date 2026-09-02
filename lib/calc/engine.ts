@@ -1,5 +1,5 @@
 import { buildServiceChain } from "./chain";
-import { computeCosts } from "./costs";
+import { computeCosts, engineOverridesOf } from "./costs";
 import { computeEquipment } from "./equipment";
 import { computeMaterials } from "./materials";
 import { computePanelSchedule } from "./panel";
@@ -35,7 +35,7 @@ export function computeEstimate(project: Project): EstimateResult {
     project.peripherals.useAutoGear ? panel.suggestedGear : undefined,
   );
   const equipment = computeEquipment(project.equipment, project.setup, rollups);
-  const costs = computeCosts(materials, peripherals, equipment, project.financial);
+  const costs = computeCosts(materials, peripherals, equipment, project.financial, engineOverridesOf(project.overrides));
   const qa = computeQA(rows, materials, rollups, project.setup);
 
   return { rows, rollups, materials, peripherals, equipment, costs, qa, panel };

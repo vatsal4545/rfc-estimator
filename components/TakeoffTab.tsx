@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { generateTakeoffRows, type QuickLine } from "@/lib/calc/quickstart";
 import { WIRE_TABLE } from "@/lib/calc/tables";
+import type { Project, TakeoffEdit, TakeoffRowInput } from "@/lib/calc/types";
+import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
 import { newId } from "@/lib/id";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
@@ -134,10 +136,24 @@ function QuickGenerate({ open, setOpen }: { open: boolean; setOpen: (v: boolean)
   );
 }
 
-export function TakeoffTab() {
-  const { project, setProject, result } = useProject();
-  const [qgOpen, setQgOpen] = useState(false);
+const EDITABLE: (keyof TakeoffEdit)[] = ["loadTypeId", "location", "units", "oneWayDistFt", "runsPerUnitOverride", "sizeOverride", "ocpdOverrideA", "conduitOverride"];
 
+/** The part of a row patch that a rebuild should re-apply. */
+function editOf(patch: Partial<TakeoffRowInput>): TakeoffEdit {
+  const out: TakeoffEdit = {};
+  for (const k of EDITABLE) if (k in patch) (out as Record<string, unknown>)[k] = (patch as Record<string, unknown>)[k];
+  return out;
+}
+
+export function TakeoffTab() {
+  const { project, setProject, result, hardwareAllowance } = useProject();
+  const [qgOpen, setQgOpen] = useState(false);
+  const edits = project.takeoffEdits ?? {};
+  const removedKeys = Object.keys(edits).filter((k) => edits[k].removed);
+  const generated = canRebuild(project) && project.takeoff.some((r) => r.genKey);
+
+  // Rows added here are flagged manual: a rebuild from the Quick Estimate
+  // lines regenerates the generated rows and carries these along untouched.
   function addRow() {
     setProject((p) => ({
       ...p,
@@ -149,20 +165,41 @@ export function TakeoffTab() {
           location: `Run ${p.takeoff.length + 1}`,
           units: 1,
           oneWayDistFt: 50,
+          manual: true,
         },
       ],
     }));
   }
 
+  // Removing a generated row is remembered, so the next rebuild leaves it out.
   function removeRow(id: string) {
-    setProject((p) => ({ ...p, takeoff: p.takeoff.filter((r) => r.id !== id) }));
+    setProject((p) => {
+      const row = p.takeoff.find((r) => r.id === id);
+      const next = { ...p, takeoff: p.takeoff.filter((r) => r.id !== id) };
+      if (row?.genKey) next.takeoffEdits = { ...(p.takeoffEdits ?? {}), [row.genKey]: { ...(p.takeoffEdits?.[row.genKey] ?? {}), removed: true } };
+      return next;
+    });
   }
 
-  function update(id: string, patch: Partial<(typeof project.takeoff)[number]>) {
-    setProject((p) => ({
-      ...p,
-      takeoff: p.takeoff.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    }));
+  // Editing a generated row records the edit under its genKey — every rebuild re-applies it.
+  function update(id: string, patch: Partial<TakeoffRowInput>) {
+    setProject((p) => {
+      const row = p.takeoff.find((r) => r.id === id);
+      const next = { ...p, takeoff: p.takeoff.map((r) => (r.id === id ? { ...r, ...patch } : r)) };
+      const e = editOf(patch);
+      if (row?.genKey && Object.keys(e).length) next.takeoffEdits = { ...(p.takeoffEdits ?? {}), [row.genKey]: { ...(p.takeoffEdits?.[row.genKey] ?? {}), ...e } };
+      return next;
+    });
+  }
+
+  /** Forget the hand edits on a row (or every removed row) and regenerate. */
+  function forget(keys: string[]) {
+    setProject((p) => {
+      const rest = { ...(p.takeoffEdits ?? {}) };
+      for (const k of keys) delete rest[k];
+      const next: Project = { ...p, takeoffEdits: Object.keys(rest).length ? rest : undefined };
+      return canRebuild(next) ? rebuildProject(next, hardwareAllowance) : next;
+    });
   }
 
   return (
@@ -172,6 +209,15 @@ export function TakeoffTab() {
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Takeoff</h2>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             One row per circuit run — chargers and gear feeders. Wire, ground, conduit sizing and cost compute live.
+            {generated && " Rows come from the Quick Estimate lines; edit any cell and that row keeps your value through every rebuild — “→ auto” hands it back. Rows you add here stay too."}
+            {removedKeys.length > 0 && (
+              <>
+                {" "}
+                <button className="font-medium text-blue-600 hover:underline" onClick={() => forget(removedKeys)}>
+                  Restore {removedKeys.length} removed row{removedKeys.length === 1 ? "" : "s"}
+                </button>
+              </>
+            )}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -326,6 +372,16 @@ export function TakeoffTab() {
                   <FlagBadge flag={row.flag} />
                 </td>
                 <td className="px-3 py-2">
+                  {row.genKey && edits[row.genKey] && (
+                    <button
+                      className="mr-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-200"
+                      title="Edited by hand — survives rebuilds. Click to hand the row back to the engine."
+                      onClick={() => forget([row.genKey!])}
+                    >
+                      edited → auto
+                    </button>
+                  )}
+                  {row.manual && <span className="mr-2 rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300" title="Added by hand — kept through rebuilds">manual</span>}
                   <button onClick={() => removeRow(row.id)} className="text-zinc-400 hover:text-red-600" title="Remove run">
                     ✕
                   </button>
