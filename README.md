@@ -191,6 +191,22 @@ figures to the cent.
   `lib/calc/tables.ts`); sizing never changes, only prices. Lump-sum quotes
   for a whole cost line still go on the Overrides tab.
 
+### Utility substructures by delivery utility
+
+Who builds the transformer pad, the cable well and the pull boxes is the
+utility's rule, so Build derives them from the delivery utility
+(`lib/calc/utilityCivil.ts`): SMUD (Engineering Spec T007) and SDG&E (General
+Conditions 106-35140F §12) have the customer furnish and install the pad, the
+well / secondary handhole and the pull boxes; PG&E and SCE build the EV
+service extension themselves under Rule 29 when the intake says the utility
+provides the run; other publicly owned utilities follow the SMUD pattern.
+Installed budgets: pad $5,000, cable well $3,500, pull box $2,500 each, plus
+one Christy box with a traffic lid at the point of connection at $600 (a
+hardware line). Every figure is editable on the Peripherals tab and pinnable
+on 3 · Electrical; the intake carries them in override row 14 and lists them
+on its distribution schedule. `lib/__tests__/scenarios.test.ts` runs three
+sites on SMUD, SDG&E and PG&E end to end.
+
 ### CEO-basis defaults (Sept 2026)
 
 Three estimator defaults follow the CEO's intake rather than the RFC_V18

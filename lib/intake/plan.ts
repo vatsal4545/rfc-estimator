@@ -381,6 +381,10 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     distributionRow(`${g.item} ${g.size}`.trim(), gearType(g.item), g.qty, parseNumber(g.voltage), amps);
   }
   for (const item of per.customItems ?? []) if (/\(quoted\)$/.test(item.name) && item.qty > 0) distributionRow(item.name.replace(/\s*\(quoted\)$/, ""), "Other", item.qty);
+  // Customer-furnished utility substructures, so the CEO sees them on his schedule; their money travels in override row 14.
+  if (per.transformerPadCost > 0) distributionRow("Transformer pad (customer-furnished, utility sets the transformer)", "Other", 1);
+  if (per.cableWellCost > 0) distributionRow("Cable well / secondary handhole", "Other", 1);
+  if (per.pullBoxQty > 0) distributionRow("Utility pull box, traffic-rated", "Other", per.pullBoxQty);
   let l2Row = L2_CIRCUIT_TABLE.firstRow;
   let l2Overflow = 0;
   for (const r of result.rows) {

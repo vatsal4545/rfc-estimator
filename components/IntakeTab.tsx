@@ -49,7 +49,11 @@ export function useIntakeEditing() {
     setProject((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), [key]: value } }));
   }
   function setSetup<K extends keyof typeof setup>(key: K, value: (typeof setup)[K]) {
-    setProject((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
+    setProject((p) => {
+      const next = { ...p, setup: { ...p.setup, [key]: value } };
+      // The delivery utility decides which substructures we furnish (pad, well, pull boxes) — re-derive them.
+      return key === "utility" && canRebuild(next) ? rebuildProject(next, hardwareAllowance) : next;
+    });
   }
   /** Client and address also live on the Quick Estimate intake — keep both in step. */
   function setIdentity(patch: { clientName?: string; siteAddress?: string }) {

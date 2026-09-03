@@ -392,10 +392,19 @@ export interface PeripheralsInput {
   consumablesPerDcfc?: number; // default 550
   permitFeeTotal: number;
   utilityAppFee: number;
+  /**
+   * Customer-furnished utility substructures (lib/calc/utilityCivil): the
+   * transformer pad, the cable well under it, the utility's pull boxes.
+   * Set by Build from the delivery utility's rule; editable and pinnable.
+   */
   transformerPadCost: number;
   cableWellCost: number;
   pullBoxQty: number;
   pullBoxUnitCost: number;
+  /** Christy concrete box with traffic lid at the point of connection (hardware line). Absent = none. */
+  serviceBoxQty?: number;
+  /** Installed cost of that box. Default 600. */
+  serviceBoxUnitCost?: number;
   utilitySandCost: number;
   utilityVaultQty: number;
   utilityVaultUnitCost: number;

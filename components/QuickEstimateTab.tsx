@@ -84,7 +84,9 @@ export function QuickEstimateTab() {
   }
 
   function setSetup<K extends keyof typeof project.setup>(key: K, value: (typeof project.setup)[K]) {
-    setProject((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
+    // The utility decides which substructures we furnish — rebuild on that one; CPM / CRA are labels.
+    if (key === "utility") rebuild((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
+    else setProject((p) => ({ ...p, setup: { ...p.setup, [key]: value } }));
   }
 
   /** Pick a price-book SKU for a line: the model follows the SKU; clearing it keeps the model as a generic line. */

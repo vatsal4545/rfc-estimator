@@ -111,7 +111,14 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
     const demolition = result.peripherals.lines.demolition.length;
     put(OVERRIDE_ROWS.dump, base("Dump / Waste"), `RFC Estimator: terrain-scaled spoils haul-off${demolition ? ` + ${demolition} removal line(s) from the existing installation` : ""}`);
     put(OVERRIDE_ROWS.permits, base("Permits") + f.planCheckPermitFee, `RFC Estimator: plan check ${money(f.planCheckPermitFee)} (valuation-based) + permit issuance ${money(base("Permits"))} — pass-through`);
-    put(OVERRIDE_ROWS.utility, base("Utility"), "RFC Estimator: utility application fee — pass-through");
+    const per = project.peripherals;
+    const subs = [
+      per.transformerPadCost > 0 ? `transformer pad ${money(per.transformerPadCost)}` : "",
+      per.cableWellCost > 0 ? `cable well ${money(per.cableWellCost)}` : "",
+      per.pullBoxQty > 0 ? `${per.pullBoxQty} pull box(es) ${money(per.pullBoxQty * per.pullBoxUnitCost)}` : "",
+      per.utilityVaultQty > 0 ? `${per.utilityVaultQty} vault(s)` : "",
+    ].filter(Boolean);
+    put(OVERRIDE_ROWS.utility, base("Utility"), `RFC Estimator: utility application fee ${money(per.utilityAppFee)}${subs.length ? ` + customer-furnished substructures (${subs.join(", ")}) per the utility's rule` : ""} — pass-through`);
     put(OVERRIDE_ROWS.rentals, base("Construction Equipment"), `RFC Estimator: ${result.equipment.items.filter((i) => i.qty > 0).length} rental line(s), qty × rate × duration + delivery`);
     put(
       OVERRIDE_ROWS.design,

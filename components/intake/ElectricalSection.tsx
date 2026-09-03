@@ -2,6 +2,8 @@
 
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
+import { utilityCivilFor } from "@/lib/calc/utilityCivil";
+import type { StickyPath } from "@/lib/intake/rebuild";
 import { money, num } from "@/lib/format";
 import { MaterialRatesSection } from "../MaterialRatesSection";
 import { useProject } from "../ProjectContext";
@@ -20,6 +22,25 @@ const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
 const wrap = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
+
+/** A number the estimator derives from the utility's rule: type to pin it, “→ auto” to hand it back. */
+function PinnedMoney({ label, hint, path, value, step }: { label: string; hint?: string; path: StickyPath; value: number; step?: string }) {
+  const { pin, unpin, pinned } = useRebuild();
+  const typed = pinned(path);
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <input type="number" step={step ?? "any"} className={inputCls} value={value} onChange={(e) => pin(path, Number(e.target.value))} />
+        <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${typed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{typed ? "typed" : "auto"}</span>
+        {typed && (
+          <button className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline" onClick={() => unpin(path)}>
+            → auto
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+}
 
 export function ElectricalSection() {
   const { project, result } = useProject();
@@ -51,6 +72,7 @@ export function ElectricalSection() {
     return i < 0 ? "—" : String(i + 1);
   };
   const cabinets = input.lines.some((l) => l.count > 0 && l.loadTypeId.startsWith("Power cabinet"));
+  const civil = utilityCivilFor(s.utility, result.rollups, feederByUtility);
 
   return (
     <div>
@@ -201,6 +223,23 @@ export function ElectricalSection() {
             </table>
           </div>
         )}
+      </Section>
+
+      <Section
+        title="Utility substructures we install"
+        subtitle={`${civil.label}. ${civil.basis} Source: ${civil.source}. Installed budgets pending the utility's design — type over a value to pin it.`}
+      >
+        <Grid cols={4}>
+          <PinnedMoney label="Transformer pad ($)" hint="Three-phase precast pad on base rock, grounded" path="peripherals.transformerPadCost" value={project.peripherals.transformerPadCost} />
+          <PinnedMoney label="Cable well ($)" hint="Under the pad (SMUD) or the secondary handhole (SDG&E)" path="peripherals.cableWellCost" value={project.peripherals.cableWellCost} />
+          <PinnedMoney label="Pull boxes (ea)" hint="Utility pull boxes on the primary / secondary route" path="peripherals.pullBoxQty" value={project.peripherals.pullBoxQty} step="1" />
+          <PinnedMoney label="Pull box unit cost ($)" hint="Traffic-rated precast, installed" path="peripherals.pullBoxUnitCost" value={project.peripherals.pullBoxUnitCost} />
+          <PinnedMoney label="Christy box at the point of connection (ea)" hint="Concrete box with traffic lid" path="peripherals.serviceBoxQty" value={project.peripherals.serviceBoxQty ?? 0} step="1" />
+          <PinnedMoney label="Christy box unit cost ($)" hint="Installed — the shop's $600" path="peripherals.serviceBoxUnitCost" value={project.peripherals.serviceBoxUnitCost ?? 600} />
+          <Field label="Utility line, before uplift" hint="application fee + pad + well + pull boxes + sand + vaults → intake override row 14">
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">{money(result.costs.lines.find((l) => l.name === "Utility")?.base ?? 0)}</div>
+          </Field>
+        </Grid>
       </Section>
 
       <InterconnectionSection />

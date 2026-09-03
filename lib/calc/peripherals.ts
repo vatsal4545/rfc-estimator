@@ -117,6 +117,9 @@ export function computePeripherals(
       auto: true,
     },
     { name: "Junction box", qty: input.junctionBoxQty, unitCost: 177, auto: false },
+    // The concrete box with a traffic lid where the service conduit meets our
+    // route — one per site, priced installed (lib/calc/utilityCivil).
+    { name: "Christy box, traffic-rated (point of connection)", qty: input.serviceBoxQty ?? 0, unitCost: input.serviceBoxUnitCost ?? 600, auto: false },
     { name: "Data box", qty: input.dataBoxQty, unitCost: 1500, auto: false },
     { name: "Ground rods", qty: rollups.nChargers + rollups.nFeeders, unitCost: 34.87, auto: true },
     { name: "Charger anchor bolts", qty: rollups.nDCFC * 6 + rollups.nL2 * 4 + rollups.nFeeders * 4, unitCost: 5, auto: true },

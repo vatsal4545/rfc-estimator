@@ -5,6 +5,7 @@ import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
 import { CIVIL_RATES } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
+import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls } from "./ui";
@@ -72,6 +73,7 @@ export function PeripheralsTab() {
   }
 
   const customItems = p.customItems ?? [];
+  const civilRule = utilityCivilFor(project.setup.utility, result.rollups, (project.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility"));
   const civilLines = result.peripherals.lines.civil;
   const concreteLine = civilLines.find((c) => c.name.startsWith("Concrete ("));
   const asphaltLine = civilLines.find((c) => c.name === "Asphalt paving — parking stalls");
@@ -384,14 +386,19 @@ export function PeripheralsTab() {
         allowance={result.peripherals.adaAllowance}
       />
 
-      <Section title="C. Permits & utility fees">
+      <Section
+        title="C. Utility substructures & fees"
+        subtitle={`${civilRule.label}. ${civilRule.basis} Installed budgets pending the utility's design (${civilRule.source}); Build re-derives them from the utility on the Quick Estimate / 1 · Project tab — pin a typed value on 3 · Electrical to keep it.`}
+      >
         <Grid cols={3}>
           <Field label="Plan check & permit fees ($)"><input type="number" className={inputCls} value={p.permitFeeTotal} onChange={(e) => updateP("permitFeeTotal", Number(e.target.value))} /></Field>
           <Field label="Utility application / R16 fees ($)"><input type="number" className={inputCls} value={p.utilityAppFee} onChange={(e) => updateP("utilityAppFee", Number(e.target.value))} /></Field>
-          <Field label="Transformer pad ($)"><input type="number" className={inputCls} value={p.transformerPadCost} onChange={(e) => updateP("transformerPadCost", Number(e.target.value))} /></Field>
-          <Field label="Cable well ($)"><input type="number" className={inputCls} value={p.cableWellCost} onChange={(e) => updateP("cableWellCost", Number(e.target.value))} /></Field>
-          <Field label="Pull box qty"><input type="number" className={inputCls} value={p.pullBoxQty} onChange={(e) => updateP("pullBoxQty", Number(e.target.value))} /></Field>
-          <Field label="Pull box unit cost ($)"><input type="number" className={inputCls} value={p.pullBoxUnitCost} onChange={(e) => updateP("pullBoxUnitCost", Number(e.target.value))} /></Field>
+          <Field label="Transformer pad ($)" hint="Three-phase precast pad on base rock, installed; utility sets the transformer"><input type="number" className={inputCls} value={p.transformerPadCost} onChange={(e) => updateP("transformerPadCost", Number(e.target.value))} /></Field>
+          <Field label="Cable well ($)" hint="Well under the pad (SMUD) or the secondary handhole (SDG&E), installed"><input type="number" className={inputCls} value={p.cableWellCost} onChange={(e) => updateP("cableWellCost", Number(e.target.value))} /></Field>
+          <Field label="Pull box qty" hint="Utility pull boxes on the primary / secondary route"><input type="number" className={inputCls} value={p.pullBoxQty} onChange={(e) => updateP("pullBoxQty", Number(e.target.value))} /></Field>
+          <Field label="Pull box unit cost ($)" hint="Traffic-rated precast, installed"><input type="number" className={inputCls} value={p.pullBoxUnitCost} onChange={(e) => updateP("pullBoxUnitCost", Number(e.target.value))} /></Field>
+          <Field label="Christy box at the point of connection (ea)" hint="Concrete box with traffic lid — a hardware line"><input type="number" className={inputCls} value={p.serviceBoxQty ?? 0} onChange={(e) => updateP("serviceBoxQty", Number(e.target.value))} /></Field>
+          <Field label="Christy box unit cost ($)" hint="Installed; default $600"><input type="number" className={inputCls} value={p.serviceBoxUnitCost ?? 600} onChange={(e) => updateP("serviceBoxUnitCost", Number(e.target.value))} /></Field>
           <Field label="Utility sand ($)"><input type="number" className={inputCls} value={p.utilitySandCost} onChange={(e) => updateP("utilitySandCost", Number(e.target.value))} /></Field>
           <Field label="Utility vault qty"><input type="number" className={inputCls} value={p.utilityVaultQty} onChange={(e) => updateP("utilityVaultQty", Number(e.target.value))} /></Field>
           <Field label="Utility vault unit cost ($)"><input type="number" className={inputCls} value={p.utilityVaultUnitCost} onChange={(e) => updateP("utilityVaultUnitCost", Number(e.target.value))} /></Field>

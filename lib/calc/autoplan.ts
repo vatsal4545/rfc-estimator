@@ -10,6 +10,7 @@
 import { computeEstimate } from "./engine";
 import { INSTALL_METHOD_INFO, SURFACE_FT_PER_CREW_DAY, effectiveInstallMethod } from "./install";
 import { applyTakeoffEdits, generateTakeoffRows } from "./quickstart";
+import { utilityCivilFor } from "./utilityCivil";
 import { findLoadType } from "./tables";
 import type {
   EstimateResult,
@@ -494,6 +495,8 @@ export function buildQuickProject(
   };
 
   // --- Civil / peripherals -------------------------------------------------
+  const feederByUtility = (base.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility");
+  const civil = utilityCivilFor(p.setup.utility, counts, feederByUtility);
   const gprDays = input.includePrivateScan && trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / RATE_CARD.gprFtPerDay)) : 0;
   const customItems = (p.peripherals.customItems ?? []).filter((c) => c.name !== GPR_ITEM_NAME);
   if (gprDays > 0) {
@@ -523,7 +526,13 @@ export function buildQuickProject(
     adaStdUnitCost: Math.round(ADA_UNIT_COST.standard * terrain.adaRegradeFactor),
     adaAmbUnitCost: Math.round(ADA_UNIT_COST.ambulatory * terrain.adaRegradeFactor),
     adaRampCost: ada.total > 0 ? ADA_UNIT_COST.ramp : 0,
-    transformerPadCost: counts.nDCFC > 0 ? 5000 : 0,
+    // Utility-side substructures we furnish — the delivery utility's rule.
+    transformerPadCost: civil.transformerPadCost,
+    cableWellCost: civil.cableWellCost,
+    pullBoxQty: civil.pullBoxQty,
+    pullBoxUnitCost: civil.pullBoxUnitCost,
+    serviceBoxQty: civil.serviceBoxQty,
+    serviceBoxUnitCost: civil.serviceBoxUnitCost,
     dumpWasteCost: Math.round(trenchFt * terrain.spoilsPerFt),
     permitFeeTotal: input.includePermits
       ? RATE_CARD.permitIssuanceBase + RATE_CARD.permitIssuancePerCharger * counts.nChargers

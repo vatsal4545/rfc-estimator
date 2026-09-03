@@ -115,9 +115,9 @@ check("CI ADA = app", g("COSTS INTERNAL!D9"), 28000)
 check("CI Dump/Waste = app", g("COSTS INTERNAL!D10"), 1675)
 check("CI Permits = app", g("COSTS INTERNAL!D11"), 860)
 check("CI Utility = app 7500 (GPR lives in the Wires row)", g("COSTS INTERNAL!D12"), 7500)
-check("CI Wires row = B7+B10+B15 (incl. GPR + site data box)",
+check("CI Wires row = B7+B10+B15 (incl. GPR, site data box, Christy box)",
       g("COSTS INTERNAL!D3"), g("ESTIMATE!B7") + g("ESTIMATE!B10") + g("ESTIMATE!B15"))
-check("CI Wires ~ app 39901 (calibrated allowance, ±2%)", g("COSTS INTERNAL!D3"), 39901, tol=39901 * 0.02)
+check("CI Wires ~ app 40501 (calibrated allowance, ±2%; incl. the $600 Christy box)", g("COSTS INTERNAL!D3"), 40501, tol=40501 * 0.02)
 check("CI Equipment ~ app 13209 (calibrated, ±2%)", g("COSTS INTERNAL!D13"), 13209, tol=13209 * 0.02)
 
 # ---- Editable civil rates flow through (RateCard yellow scalars) --------------

@@ -135,7 +135,7 @@ function calibrateModel(lt: LoadType): ModelCal {
     // box is ONE per site ($1,500, its own Estimate term), not $1,500/N per
     // charger — an 11-charger site was carrying $2,750 of data box.
     const siteLevel = r.peripherals.lines.hardware
-      .filter((h) => EMT_SUPPORT_LINES.includes(h.name) || h.name === "Data box")
+      .filter((h) => EMT_SUPPORT_LINES.includes(h.name) || h.name === "Data box" || h.name.startsWith("Christy box, traffic-rated"))
       .reduce((s, h) => s + h.qty * h.unitCost, 0);
     return {
       install: Math.round((r.materials.grandTotal + r.peripherals.hardwareSubtotal - wireTotal - siteLevel) / N),
@@ -380,6 +380,7 @@ async function main() {
     ["PermitPerChg", "Permit issuance $/charger", 60, MONEY],
     ["UtilAppDcfc", "Utility application $ (DCFC site)", 2500, MONEY],
     ["UtilAppL2", "Utility application $ (L2-only site)", 800, MONEY],
+    ["ServiceBoxCost", "Christy box at the point of connection $ (one per site, traffic lid)", 600, MONEY],
   ];
   scalars.forEach(([name, text, value, fmt], i) => {
     const row = 10 + i;
@@ -1217,8 +1218,8 @@ async function main() {
   eHeader(6, "Electrical supply & construction");
   eLine(
     7,
-    "Wire runs (Takeoff + feeders) + conduit & install allowance + data box",
-    `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})+IF(NTotal>0,DataBoxCost,0)`,
+    "Wire runs (Takeoff + feeders) + conduit & install allowance + data box + Christy box",
+    `WireTotal+SUM(Intake!E${CH_FIRST}:E${CH_LAST})+IF(NTotal>0,DataBoxCost+ServiceBoxCost,0)`,
   );
   eLine(8, "Switchgear, panels & transformer (Panel sheet)", "GearTotal");
   eLine(
@@ -1721,7 +1722,7 @@ async function main() {
   const constr =
     install + wireMirror + gearMirror + trench * 40.81 * t.trenchFactor + asphaltStallsM +
     civilMirror + signageMirror +
-    adaCost + trench * t.spoilsPerFt + 1500 /* GPR */ + 1500 /* site data box */ +
+    adaCost + trench * t.spoilsPerFt + 1500 /* GPR */ + 1500 /* site data box */ + 600 /* Christy box at the point of connection */ +
     equipCal.base + equipCal.perDay * laborDays +
     (200 + 60 * n) + (2500 + 5000);
   const loaded = constr * 1.1;
