@@ -8,7 +8,8 @@
 // Cells are written as inline strings, plain numbers or booleans into the
 // existing <c> element (its style is kept), or inserted into the right row in
 // column order when the template has no placeholder cell. A target cell that
-// carries a formula is refused, never overwritten.
+// carries a formula is refused unless the write opts in with
+// `overwriteFormula`; a cell defining a shared formula is refused either way.
 
 import JSZip from "jszip";
 import { attrs, sheetPathsOf, zipText } from "./xlsx";
@@ -21,6 +22,15 @@ export interface CellWrite {
   sheet: string;
   ref: string;
   value: WriteValue;
+  /**
+   * Replace the formula in the target cell with this literal value. Off by
+   * default, and deliberately so: filling the intake must never clobber the
+   * template's own math. The RFC/MSRP calculator fill opts in for the two
+   * ranges whose formulas it is meant to supersede — the Costs Internal
+   * "Individual Cost" column (which reads CPM Calcs) and the resolved utility
+   * rate cells (which read the workbook's own copy of the rate library).
+   */
+  overwriteFormula?: boolean;
 }
 
 export interface PatchResult {
@@ -68,6 +78,12 @@ interface ParsedCell {
   raw: string;
   styleAttr: string;
   hasFormula: boolean;
+  /**
+   * The cell defines a shared formula other cells depend on (`<f t="shared"
+   * ref="A1:A9" si="3">`). Replacing it would leave those dependents with no
+   * definition, so it is never overwritten even when the caller opts in.
+   */
+  sharedMaster: boolean;
 }
 
 function parseCells(inner: string): ParsedCell[] {
@@ -78,12 +94,16 @@ function parseCells(inner: string): ParsedCell[] {
     if (!ref) continue;
     const split = splitRef(ref);
     if (!split) continue;
+    const body = m[2] ?? "";
+    const f = /<f\b([^>]*?)(?:\/>|>)/.exec(body);
+    const fa = f ? attrs(`<f ${f[1]}>`) : {};
     out.push({
       ref,
       colIdx: colIndex(split.col),
       raw: m[0],
       styleAttr: a.s !== undefined ? ` s="${a.s}"` : "",
-      hasFormula: /<f\b/.test(m[2] ?? ""),
+      hasFormula: f !== null,
+      sharedMaster: fa.t === "shared" && fa.ref !== undefined,
     });
   }
   return out;
@@ -138,17 +158,23 @@ export function patchSheetXml(xml: string, writes: CellWrite[]): { xml: string; 
         continue;
       }
       pending.delete(c.ref);
-      if (c.hasFormula) {
+      if (c.hasFormula && !w.overwriteFormula) {
         refused.push(`${w.sheet}!${w.ref}: the template cell holds a formula — left as is`);
         out.push(c);
         continue;
       }
-      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value), hasFormula: false });
+      if (c.hasFormula && c.sharedMaster) {
+        refused.push(`${w.sheet}!${w.ref}: the template cell defines a shared formula other cells depend on — left as is`);
+        out.push(c);
+        continue;
+      }
+      // renderCell rebuilds the <c> from scratch, so any <f> goes with it.
+      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value), hasFormula: false, sharedMaster: false });
       written++;
     }
     for (const w of pending.values()) {
       const split = splitRef(w.ref)!;
-      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value), styleAttr: "", hasFormula: false });
+      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value), styleAttr: "", hasFormula: false, sharedMaster: false });
       written++;
     }
     out.sort((a, b) => a.colIdx - b.colIdx);
