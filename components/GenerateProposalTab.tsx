@@ -97,6 +97,35 @@ function coerce(spec: OperatorInputSpec, value: string): unknown {
   return value;
 }
 
+/**
+ * Let the browser paint before we block it.
+ *
+ * Pyodide runs on the main thread and the Python call is synchronous, so
+ * between setBusy(...) and the call returning there is no opportunity to
+ * render: React schedules the update, the thread goes into WASM for ten or
+ * twenty seconds, and the user sees the old markup the whole time. Two frames
+ * is enough to get the pending state on screen first.
+ */
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+}
+
+/**
+ * A CSS-only spinner. It has to be CSS-only: while the generator is running
+ * the main thread is inside WASM, so anything driven by JavaScript would sit
+ * frozen. A transform animation runs on the compositor and keeps turning.
+ */
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent ${className}`}
+    />
+  );
+}
+
 function levelClass(level: string): string {
   const l = level.toUpperCase();
   if (l === "ERROR") return "text-red-700 dark:text-red-400";
@@ -133,6 +162,8 @@ export default function GenerateProposalTab() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [disabledSections, setDisabledSections] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  /** Which step the busy message belongs to, so it renders beside its button. */
+  const [stage, setStage] = useState<"workbook" | "generating" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<GenerateResult | null>(null);
   const [showQa, setShowQa] = useState(false);
@@ -146,7 +177,9 @@ export default function GenerateProposalTab() {
     setOutcome(null);
     setInspection(null);
     setWorkbook(next);
+    setStage("workbook");
     setBusy("Reading the workbook…");
+    await nextPaint();
     try {
       const report = await inspectWorkbook(next.bytes, (m) => setBusy(m));
       if (!report.ok) {
@@ -172,13 +205,16 @@ export default function GenerateProposalTab() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
+      setStage(null);
     }
   }, []);
 
   /** The estimator path: the same bytes ⬇ Download RFC would produce. */
   const prepareFromEstimator = useCallback(async () => {
     setError(null);
+    setStage("workbook");
     setBusy("Filling the RFC calculator from this project…");
+    await nextPaint();
     try {
       const template = await fetchRfcTemplate();
       const { bytes, report } = await fillRfcWorkbook(template, project, result, proposal, {
@@ -192,6 +228,7 @@ export default function GenerateProposalTab() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(null);
+      setStage(null);
     }
   }, [project, result, proposal, hardwareAllowance, loadWorkbook]);
 
@@ -238,7 +275,10 @@ export default function GenerateProposalTab() {
       if (!workbook) return;
       setError(null);
       setOutcome(null);
+      setStage("generating");
       setBusy("Generating the proposal…");
+      // Get the pending state on screen before the thread goes into WASM.
+      await nextPaint();
       try {
         const operator: Record<string, unknown> = {};
         for (const spec of visibleSpecs) {
@@ -252,11 +292,11 @@ export default function GenerateProposalTab() {
           onProgress: (m) => setBusy(m),
         });
         setOutcome(res);
-        if (res.ok && res.docx) downloadDocx(res.docx, res.filename ?? "proposal.docx");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(null);
+        setStage(null);
       }
     },
     [workbook, visibleSpecs, values, disabledSections],
@@ -346,11 +386,14 @@ export default function GenerateProposalTab() {
           )}
         </div>
 
-        {busy && (
-          <p className="mt-4 text-sm text-blue-700 dark:text-blue-400">
-            {busy}
-            <span className="ml-2 text-zinc-400">
-              The proposal generator is Python; the first run downloads it and takes a moment.
+        {busy && stage === "workbook" && (
+          <p className="mt-4 flex items-center gap-2 text-sm text-blue-700 dark:text-blue-400">
+            <Spinner />
+            <span>
+              {busy}
+              <span className="ml-2 text-zinc-400">
+                The proposal generator is Python; the first run downloads it and takes a moment.
+              </span>
             </span>
           </p>
         )}
@@ -480,25 +523,20 @@ export default function GenerateProposalTab() {
             </Section>
           )}
 
-          <Section title="5 · Generate" subtitle="Produces the editable Word document, and a QA report beside it.">
+          <Section
+            title="5 · Generate"
+            subtitle="Builds the editable Word document and a QA report. Nothing downloads until you ask for it."
+          >
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={() => void generate(false)}
                 disabled={Boolean(busy)}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {busy ? "Working…" : "Generate proposal"}
+                {stage === "generating" && <Spinner />}
+                {stage === "generating" ? "Generating…" : outcome ? "Generate again" : "Generate proposal"}
               </button>
-              {outcome?.docx && (
-                <button
-                  type="button"
-                  onClick={() => downloadDocx(outcome.docx!, outcome.filename ?? "proposal.docx")}
-                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  Download again
-                </button>
-              )}
               {outcome?.qa && (
                 <button
                   type="button"
@@ -509,6 +547,27 @@ export default function GenerateProposalTab() {
                 </button>
               )}
             </div>
+
+            {/*
+              The generator runs on this thread, so while it is working the page
+              genuinely cannot respond. Say so, rather than letting it look
+              broken -- that is the whole complaint this panel answers. The
+              spinner is CSS-driven so it keeps turning regardless.
+            */}
+            {stage === "generating" && (
+              <div className="mt-4 flex items-start gap-3 rounded-md border border-blue-300 bg-blue-50 p-3 text-sm dark:border-blue-900 dark:bg-blue-950">
+                <Spinner className="mt-0.5 text-blue-700 dark:text-blue-400" />
+                <div>
+                  <p className="font-medium text-blue-900 dark:text-blue-300">
+                    {busy ?? "Generating the proposal…"}
+                  </p>
+                  <p className="mt-1 text-blue-800 dark:text-blue-400">
+                    This takes around ten to twenty seconds, and the page will not respond while it runs.
+                    A download button appears here when the document is ready.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {outcome && !outcome.ok && (
               <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm dark:border-red-900 dark:bg-red-950">
@@ -525,21 +584,46 @@ export default function GenerateProposalTab() {
                   These are the checks that stop a proposal going out with figures that do not add up. Fix
                   the workbook if you can — the QA report names the cells.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void generate(true)}
-                  className="mt-2 rounded-md border border-red-400 px-3 py-1.5 text-sm text-red-900 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900"
-                >
-                  Generate anyway
-                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void generate(true)}
+                    disabled={Boolean(busy)}
+                    className="rounded-md border border-red-400 px-3 py-1.5 text-sm text-red-900 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900"
+                  >
+                    Generate anyway
+                  </button>
+                  {outcome.docx && (
+                    <button
+                      type="button"
+                      onClick={() => downloadDocx(outcome.docx!, outcome.filename ?? "proposal.docx")}
+                      className="rounded-md border border-red-400 px-3 py-1.5 text-sm text-red-900 hover:bg-red-100 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900"
+                    >
+                      ⬇ Download it anyway
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
-            {outcome?.ok && (
-              <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950">
-                <p className="font-medium text-emerald-900 dark:text-emerald-300">
-                  {outcome.filename} downloaded.
+            {outcome?.ok && outcome.docx && (
+              <div className="mt-4 rounded-md border border-emerald-300 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950">
+                <p className="text-sm font-medium text-emerald-900 dark:text-emerald-300">
+                  The proposal is ready.
                 </p>
+                <p className="mt-0.5 text-sm text-emerald-800 dark:text-emerald-400">
+                  {outcome.filename}{" "}
+                  <span className="text-emerald-700/70 dark:text-emerald-500">
+                    ({(outcome.docx.length / 1024 / 1024).toFixed(2)} MB Word document)
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => downloadDocx(outcome.docx!, outcome.filename ?? "proposal.docx")}
+                  className="mt-3 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  ⬇ Download proposal
+                </button>
                 <FindingList findings={outcome.findings ?? []} />
               </div>
             )}
