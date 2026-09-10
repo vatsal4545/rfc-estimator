@@ -9,7 +9,12 @@
     "lint": "eslint",
     "test": "vitest run",
     "template": "npx -y tsx scripts/make-template.ts",
-    "refdata": "python3 scripts/import-intake-refdata.py"
+    "refdata": "python3 scripts/import-intake-refdata.py",
+    "proposal:sync": "node scripts/sync-proposal-agent.mjs",
+    "proposal:check": "node scripts/sync-proposal-agent.mjs --check",
+    "proposal:smoke": "node scripts/proposal-smoke.mjs",
+    "predev": "node scripts/sync-proposal-agent.mjs",
+    "prebuild": "node scripts/sync-proposal-agent.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",
@@ -27,6 +32,7 @@
     "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "pyodide": "^314.0.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.11"

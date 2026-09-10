@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BusinessModelTab } from "./BusinessModelTab";
+import dynamic from "next/dynamic";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { ChargerPricingTab } from "./ChargerPricingTab";
 import { CommercialTab } from "./CommercialTab";
@@ -34,6 +35,15 @@ import { intakeCompleteness } from "@/lib/intake/handoff";
 type Mode = "intake" | "estimator";
 const MODE_STORAGE = "rfc-estimator:ui:mode:v1";
 
+/**
+ * Loaded on demand. The tab boots a Python runtime to generate the document,
+ * so keeping it out of the main chunk means no other tab pays for it.
+ */
+const GenerateProposalTab = dynamic(() => import("./GenerateProposalTab"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-zinc-500">Loading the proposal generator…</p>,
+});
+
 const INTAKE_TABS = [
   { key: "project", label: "1 · Project", section: "project" },
   { key: "existing", label: "Existing", section: "existing" },
@@ -46,6 +56,7 @@ const INTAKE_TABS = [
   { key: "deal", label: "8 · Deal structure", section: "deal" },
   { key: "overrides", label: "9 · Overrides", section: "overrides" },
   { key: "model", label: "📈 Business model", section: "" },
+  { key: "proposal", label: "📄 Generate proposal", section: "" },
   { key: "handoff", label: "Version & handoff", section: "" },
 ] as const;
 type IntakeTabKey = (typeof INTAKE_TABS)[number]["key"];
@@ -376,6 +387,7 @@ function AppShell() {
             {intakeTab === "deal" && <DealIntakeTab />}
             {intakeTab === "overrides" && <OverridesTab />}
             {intakeTab === "model" && <BusinessModelTab />}
+            {intakeTab === "proposal" && <GenerateProposalTab />}
             {intakeTab === "handoff" && <HandoffSection />}
           </>
         ) : (
