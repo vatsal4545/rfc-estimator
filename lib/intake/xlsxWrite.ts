@@ -12,6 +12,7 @@
 // `overwriteFormula`; a cell defining a shared formula is refused either way.
 
 import JSZip from "jszip";
+import { recalculateWorkbook, type RecalcReport } from "../recalc";
 import { attrs, sheetPathsOf, zipText } from "./xlsx";
 
 export { isoToSerial } from "./serial";
@@ -33,12 +34,25 @@ export interface CellWrite {
   overwriteFormula?: boolean;
 }
 
+export interface PatchOptions {
+  /**
+   * Recalculate the workbook and store every formula's result beside its
+   * formula. On by default, and it has to be: Excel recalculates on open, so
+   * a missing cached value is invisible there, while openpyxl, pandas and
+   * SheetJS read the cached value and nothing else — they see a blank.
+   * Turn it off only to inspect what the writer alone did.
+   */
+  recalculate?: boolean;
+}
+
 export interface PatchResult {
   bytes: Uint8Array;
   /** Cells actually written (cleared cells count). */
   written: number;
   /** Writes refused: a formula cell, an unknown sheet, or a malformed reference. */
   refused: string[];
+  /** What the recalculation did, when it ran. */
+  recalc?: RecalcReport;
 }
 
 export function escapeXml(s: string): string {
@@ -214,11 +228,19 @@ function resolveSheet(sheets: { name: string; path: string }[], name: string): {
 
 /**
  * Write cells into a copy of the workbook. Every other part is carried over
- * untouched; the workbook is flagged to recalculate fully when Excel opens it
+ * untouched; the workbook is then recalculated so each formula carries its
+ * own result, it is flagged to recalculate fully when Excel opens it anyway
  * (so the template's live checks pick up the new inputs) and any stale
  * calculation chain is dropped.
+ *
+ * fullCalcOnLoad is belt and braces, not the fix: it moves Excel and nothing
+ * else. The cached values written here are what every other reader sees.
  */
-export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: CellWrite[]): Promise<PatchResult> {
+export async function patchWorkbook(
+  template: ArrayBuffer | Uint8Array,
+  writes: CellWrite[],
+  opts: PatchOptions = {},
+): Promise<PatchResult> {
   const zip = await JSZip.loadAsync(template);
   const sheets = await sheetPathsOf(zip);
   const refused: string[] = [];
@@ -246,6 +268,9 @@ export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: 
     zip.file(path, patched.xml);
   }
 
+  // Every formula's own result, for the readers that never recalculate.
+  const recalc = opts.recalculate === false ? undefined : await recalculateWorkbook(zip);
+
   // Full recalculation on open, so every green check reflects the values written.
   const workbookXml = await zipText(zip, "xl/workbook.xml");
   if (workbookXml) {
@@ -269,5 +294,5 @@ export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: 
   }
 
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
-  return { bytes, written, refused };
+  return { bytes, written, refused, recalc };
 }

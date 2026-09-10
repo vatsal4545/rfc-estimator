@@ -11,6 +11,7 @@
 
 import type { EstimateResult, Project } from "../calc/types";
 import { COSTS_INTERNAL_LABELS } from "../costsInternalSheet";
+import type { RecalcReport } from "../recalc";
 import { readWorkbook, type WorkbookCells } from "../intake/xlsx";
 import { patchWorkbook } from "../intake/xlsxWrite";
 import type { ProposalResult } from "../proposal/types";
@@ -30,6 +31,12 @@ export interface RfcFillReport {
   warnings: string[];
   /** Writes the workbook refused — should be empty. */
   refused: string[];
+  /**
+   * The recalculation that gave every formula cell its cached value. The
+   * workbook derives almost everything it shows, so this — not `filled` — is
+   * what any reader other than Excel actually sees.
+   */
+  recalc?: RecalcReport;
 }
 
 /**
@@ -102,10 +109,28 @@ export async function fillRfcWorkbook(
       bySheet,
       equipment: plan.equipment,
       leftBlank: plan.leftBlank,
-      warnings: [...plan.warnings, ...priceWarnings],
+      warnings: [...plan.warnings, ...priceWarnings, ...recalcWarnings(patched.recalc)],
       refused: patched.refused,
+      recalc: patched.recalc,
     },
   };
+}
+
+/**
+ * Anything about the recalculation a human should see. Errors are not
+ * automatically wrong — the workbook itself shows #N/A for an unpriced SKU —
+ * but a formula the engine could not evaluate is a gap in the export.
+ */
+function recalcWarnings(recalc: RecalcReport | undefined): string[] {
+  if (!recalc) return [];
+  const out: string[] = [];
+  const unique = new Set(recalc.warnings.map((w) => w.message));
+  for (const message of unique) {
+    const first = recalc.warnings.find((w) => w.message === message)!;
+    const count = recalc.warnings.filter((w) => w.message === message).length;
+    out.push(`recalculation: ${message} (${first.sheet}!${first.ref}${count > 1 ? ` and ${count - 1} more` : ""})`);
+  }
+  return out;
 }
 
 export function rfcFileName(project: Project): string {

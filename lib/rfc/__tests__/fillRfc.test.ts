@@ -10,51 +10,13 @@ import { COSTS_INTERNAL_LABELS } from "../../costsInternalSheet";
 import { readWorkbook } from "../../intake/xlsx";
 import { patchWorkbook } from "../../intake/xlsxWrite";
 import { computeProposal } from "../../proposal";
-import { defaultCommercial, defaultIntake, defaultTariff } from "../../proposal/defaults";
-import { PRICE_BOOK, findSku } from "../../ref/priceBook";
-import { applyEquipmentSchedule, loadTypeIdForSku } from "../../skus";
+import { defaultCommercial } from "../../proposal/defaults";
+import { PRICE_BOOK } from "../../ref/priceBook";
 import { crossCheckPriceBook, fillRfcWorkbook, planRfcFill, resolveStandInSku, rfcFileName, verifyRfcTemplate } from "../fillRfc";
 import { REVENUE_SCENARIO_COLUMNS } from "../template";
+import { rfcProject } from "./rfcProject";
 
 const TEMPLATE = join(__dirname, "..", "..", "..", "public", "rfc", "IntakeSheet_RFC_MSRP_Calculator_Simple_v17.updated.xlsx");
-
-/**
- * 4 × TP5-360 dual DC + 2 × CTX-C40 dual L2 + an accessory, on PG&E BEV-2-S.
- * That schedule is VERIFIED in the rate library and every one of its rates is
- * non-zero, so the tariff assertions below are not vacuous — SCE's TOU-EV-9,
- * for instance, is NOT PUBLISHED and resolves to all zeros.
- */
-function rfcProject(): Project {
-  const base: Project = { ...defaultProject(), commercial: defaultCommercial() };
-  const dc = findSku("TP5-360-480-2-300")!;
-  const l2 = findSku("CTX-C40-240-2")!;
-  const quick = {
-    ...defaultQuickInput(),
-    clientName: "Hoopa Motel",
-    siteAddress: "100 Main St, Hoopa, CA 95546",
-    lines: [
-      { loadTypeId: loadTypeIdForSku(dc)!, count: 4, sku: dc.sku },
-      { loadTypeId: loadTypeIdForSku(l2)!, count: 2, sku: l2.sku },
-    ],
-    extras: [{ sku: "CTX-FLUXPED-CMS-2", count: 3 }],
-  };
-  const project = applyEquipmentSchedule(buildQuickProject(quick, base, "t", HARDWARE_ALLOWANCE), HARDWARE_ALLOWANCE);
-  project.setup = { ...project.setup, utility: "PG&E — Pacific Gas and Electric" };
-  project.intake = { ...defaultIntake(), rateSchedule: "BEV-2-S", hoursOpen: 12, daysOpenPerYear: 360 };
-  project.financial = {
-    ...project.financial,
-    contingencyPct: 0.12,
-    laborBusinessDays: 42,
-    laborDailyRate: 2500,
-    applyContingencyToLabor: true,
-    autoCadDesignCost: 4000,
-    electricalEngDesignCost: 6000,
-    pmHours: 10,
-    pmHourlyRate: 358,
-  };
-  project.commercial = { ...project.commercial!, discountHardwarePct: 0.15, tariff: { ...defaultTariff(), basis: "library" } };
-  return project;
-}
 
 describe("filling the RFC / MSRP calculator from a project", async () => {
   const project = rfcProject();

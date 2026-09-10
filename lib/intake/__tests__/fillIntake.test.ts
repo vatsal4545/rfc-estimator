@@ -249,8 +249,10 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Revenue", "B82")).toBe("SCE TOU-EV rate fact sheet, July 2025");
     expect(wb.get("Revenue", "B91")).toBe(0.28);
     expect(wb.get("Revenue", "B92")).toBe(701.42);
-    expect(wb.get("Revenue", "B12")).toBeNull(); // the formula cell stays a formula
+    // The formula cell stays a formula AND now carries its computed value:
+    // Excel recalculates on open, every other reader reads the cached value.
     expect(wb.formula("Revenue", "B12")).toBe("Project!B22");
+    expect(wb.get("Revenue", "B12")).toBe(wb.get("Project", "B22"));
     expect(wb.get("Carbon", "B9")).toBe(0.05);
     expect(wb.get("Carbon", "B10")).toBe(71.6667);
     expect(wb.get("Carbon", "B18")).toBeCloseTo(proposal.model.usage.l2.kwhPerDay, 0);

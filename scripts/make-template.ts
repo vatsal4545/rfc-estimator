@@ -19,6 +19,7 @@
 // BOM) still comes from the app's "⬇ Excel" export.
 
 import ExcelJS from "exceljs";
+import fs from "node:fs";
 import path from "node:path";
 import {
   ADA_UNIT_COST,
@@ -32,6 +33,7 @@ import { computeEstimate } from "../lib/calc/engine";
 import { DEFAULT_LOAD_TYPES, GEAR_CATALOG, STANDARD_BREAKERS_A, WIRE_TABLE } from "../lib/calc/tables";
 import type { LoadType, QuickEstimateInput, Terrain } from "../lib/calc/types";
 import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "../lib/costsInternalSheet";
+import { cacheFormulaValues, type RecalcWarning } from "../lib/recalc";
 
 const MONEY = '"$"#,##0.00';
 const PCT = "0.00%";
@@ -182,6 +184,19 @@ function nextSizeCountif(sizes: number[], x: number): number {
 // ---------------------------------------------------------------------------
 // Template build
 // ---------------------------------------------------------------------------
+
+/** One line per distinct recalculation complaint, with an example cell. */
+function dedupeWarnings(warnings: RecalcWarning[]): string[] {
+  const seen = new Map<string, { count: number; first: RecalcWarning }>();
+  for (const w of warnings) {
+    const hit = seen.get(w.message);
+    if (hit) hit.count++;
+    else seen.set(w.message, { count: 1, first: w });
+  }
+  return [...seen].map(([message, { count, first }]) =>
+    `${message} — ${first.sheet}!${first.ref}${count > 1 ? ` and ${count - 1} more` : ""}`,
+  );
+}
 
 async function main() {
   const chargerModels = DEFAULT_LOAD_TYPES.filter((lt) => lt.category !== "Feeder");
@@ -1613,8 +1628,14 @@ async function main() {
   });
 
   const out = process.argv[2] ?? path.join(__dirname, "..", "templates", "RFC-Template.xlsx");
-  await wb.xlsx.writeFile(out);
-  console.log(`wrote ${out}`);
+  // ExcelJS writes the formulas; nothing has computed them yet. Every reader
+  // except Excel reads the cached result and only the cached result, so the
+  // workbook is recalculated before it lands on disk.
+  const built = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+  const { bytes, report } = await cacheFormulaValues(built);
+  fs.writeFileSync(out, bytes);
+  console.log(`wrote ${out} (${report.evaluated} formula cells given their computed value)`);
+  for (const w of dedupeWarnings(report.warnings)) console.log(`  ! ${w}`);
 
   // ------------------------------------------------------------ Verification
   const scenarios: [string, QuickEstimateInput][] = [
