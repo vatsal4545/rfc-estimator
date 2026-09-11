@@ -367,7 +367,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
     if (!session?.token) return;
     markPending();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, project, libraryVersion, catalogOverrides, session?.token]);
 
   // Kept for the toolbar: clears the CURRENT project back to defaults.

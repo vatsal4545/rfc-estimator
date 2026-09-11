@@ -56,11 +56,10 @@ const INTAKE_TABS = [
   { key: "carbon", label: "7 · Carbon", section: "carbon" },
   { key: "deal", label: "8 · Deal structure", section: "deal" },
   { key: "overrides", label: "9 · Overrides", section: "overrides" },
-  { key: "model", label: "📈 Business model", section: "" },
-  { key: "proposal", label: "📄 Generate proposal", section: "" },
   { key: "handoff", label: "Version & handoff", section: "" },
 ] as const;
-type IntakeTabKey = (typeof INTAKE_TABS)[number]["key"];
+// Same for the intake side: the header opens these two.
+type IntakeTabKey = (typeof INTAKE_TABS)[number]["key"] | "model" | "proposal";
 
 const ESTIMATOR_TABS = [
   { key: "quick", label: "⚡ Quick Estimate" },
@@ -76,10 +75,11 @@ const ESTIMATOR_TABS = [
   { key: "costsInternal", label: "Costs Internal" },
   { key: "results", label: "Results" },
   { key: "commercial", label: "Commercial" },
-  { key: "model", label: "📈 Business model" },
   { key: "overrides", label: "Overrides" },
 ] as const;
-type TabKey = (typeof ESTIMATOR_TABS)[number]["key"];
+// "model" is reachable from the header rather than the tab strip, so it is not
+// in ESTIMATOR_TABS any more — but it is still a tab the content area renders.
+type TabKey = (typeof ESTIMATOR_TABS)[number]["key"] | "model";
 
 /**
  * The actions you reach for occasionally. Keeping Export, Import and New
@@ -384,6 +384,24 @@ function AppShell() {
     </button>
   );
 
+  // The two outputs. They sit beside the totals rather than in the tab strip
+  // because that is what they are about — the money — and because a strip that
+  // scrolled sideways was a poor place to keep the things people open most.
+  // Active state matches the tabs they replace, so it is clear where you are.
+  const outputBtn = (active: boolean, onClick: () => void, label: string, title: string) => (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? "bg-blue-600 text-white"
+          : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">
       <ProjectSidebar open={sidebarOpen} />
@@ -410,6 +428,23 @@ function AppShell() {
             </div>
           </div>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
+            <div className="flex items-center gap-1">
+              {outputBtn(
+                mode === "intake" ? intakeTab === "model" : tab === "model",
+                () => (mode === "intake" ? setIntakeTab("model") : setTab("model")),
+                "📈 Business model",
+                "Revenue, tariff, carbon and the deal — the model the estimate feeds",
+              )}
+              {outputBtn(
+                mode === "intake" && intakeTab === "proposal",
+                () => {
+                  setMode("intake");
+                  setIntakeTab("proposal");
+                },
+                "📄 Generate proposal",
+                "Build the client-facing proposal document from this project",
+              )}
+            </div>
             <TotalBadge />
             <Toolbar />
           </div>
