@@ -374,6 +374,10 @@ export interface PeripheralsInput {
   adaAmbUnitCost?: number; // default 3500
   /** Installed bollard unit cost. Default 110. */
   bollardUnitCost?: number;
+  /** Quoted signage and striping rates; blank uses the shipped CIVIL_RATES. */
+  signUnitCost?: number;
+  signPostUnitCost?: number;
+  stripingUnitCost?: number;
   /**
    * Concrete supply (2500 PSI delivered). The order quantity is auto-derived
    * from pad volumes (DCFC pads, L2 pads, switchgear pad, step-down/sub-panel

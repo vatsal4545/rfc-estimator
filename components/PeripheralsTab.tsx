@@ -10,6 +10,15 @@ import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
+/** Which peripherals rate each signage line reads, for the editable cell. */
+const SIGNAGE_RATE_FIELD: Record<string, "signUnitCost" | "signPostUnitCost" | "stripingUnitCost" | "bollardUnitCost" | undefined> = {
+  Signs: "signUnitCost",
+  "Sign posts": "signPostUnitCost",
+  "ADA sign post": "signPostUnitCost",
+  Bollards: "bollardUnitCost",
+  Striping: "stripingUnitCost",
+};
+
 const GEAR_ITEMS = Array.from(new Set(GEAR_CATALOG.map((g) => g.item)));
 
 export function PeripheralsTab() {
@@ -357,6 +366,61 @@ export function PeripheralsTab() {
             <input type="number" className={inputCls} value={p.consumablesPerDcfc ?? CIVIL_RATES.consumablesPerDcfc} onChange={(e) => updateP("consumablesPerDcfc", Number(e.target.value))} />
           </Field>
         </Grid>
+
+        <h3 className="mt-6 text-sm font-semibold text-zinc-800 dark:text-zinc-200">Signage, striping and bollards</h3>
+        <p className="text-xs text-zinc-500">
+          Quantities follow the shop&apos;s RFC_V18 CPM Calcs sheet — one sign per charger, a post per L2 plus one per
+          two DC cabinets, the accessible stall&apos;s post on its own line, and striping counted in ten-stall units.
+          They move with the Takeoff; the rate is yours to quote.
+        </p>
+        <div className={`mt-2 ${tableWrapCls}`}>
+          <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+            <thead className={theadCls}>
+              <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Unit cost</th>
+                <th className="px-3 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {result.peripherals.lines.signage.map((s) => {
+                const key = SIGNAGE_RATE_FIELD[s.name];
+                return (
+                  <tr key={s.name}>
+                    <td className="px-3 py-2">
+                      {s.name}
+                      {s.auto && <span className="ml-2 text-xs text-zinc-400">auto</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{num(s.qty, s.qty % 1 ? 1 : 0)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {key ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          className={`${inputCls} w-24 text-right`}
+                          value={p[key] ?? s.unitCost}
+                          onChange={(e) => updateP(key, Number(e.target.value))}
+                        />
+                      ) : (
+                        money(s.unitCost)
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium tabular-nums">{money(s.qty * s.unitCost)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-zinc-50 dark:bg-zinc-900">
+              <tr className="font-medium">
+                <td colSpan={3} className="px-3 py-2 text-right">
+                  Signage, striping and bollards subtotal
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{money(result.peripherals.signageSubtotal)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
 
         <h3 className="mt-6 text-sm font-semibold text-zinc-800 dark:text-zinc-200">Custom line items</h3>
         <p className="text-xs text-zinc-500">
