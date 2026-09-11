@@ -337,6 +337,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const frame = result.panel.bus480 ?? result.panel.bus208;
   put("Electrical", ELECTRICAL_CELLS.switchgearPricedA, frame?.suggestedBusA);
   leftBlank.push("Electrical B32 distance to the pole, B34–B36 load management and board count — the estimator sizes one board at full nameplate.");
+  leftBlank.push("Electrical B45 demand-limiting setpoint — the billing setpoint the EMS holds the peak fifteen-minute draw to. Nothing is sized on it and the estimator does not model it; blank leaves the template falling back to the sizing cap above.");
   put("Electrical", ELECTRICAL_CELLS.serviceType, ic.serviceType);
   put("Electrical", ELECTRICAL_CELLS.serviceRoute, ic.serviceRoute);
   put("Electrical", ELECTRICAL_CELLS.distanceToPoiFt, ic.distanceToPoiFt ?? undefined);
@@ -524,6 +525,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       if (m.tariff.subscriptionPolicy === "manual") put("Revenue", REVENUE_CELLS.billingDemandKw, m.tariff.manualSubscribedKw);
     }
     leftBlank.push("Revenue B37 service voltage level, B46 expected site factor, B55 interval data — not modelled.");
+    leftBlank.push("Revenue B56 annual tariff escalation — the CEO's model reads it; the estimator has no escalation, so the template's 0 stands and holds every tariff flat for the horizon.");
 
     // ---- Carbon -------------------------------------------------------------
     put("Carbon", CARBON_CELLS.qualifies, m.carbon.qualifies);

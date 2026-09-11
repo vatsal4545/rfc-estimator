@@ -1,5 +1,6 @@
 "use client";
 
+import { tableWrapCls, theadCls } from "../ui";
 import { defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import type { QuickEstimateInput } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
@@ -77,11 +78,11 @@ export function EquipmentSection() {
     <div>
       <Section
         title="2 · Equipment — what is being sold"
-        subtitle="Pick a capacity, then the SKU: the list narrows the way the intake's picker does. Description, role, kW, connectors and MSRP come from the CEO's price book (template 2.9.0). Every change rebuilds the estimate — sizing, gear, civil, labour days — underneath."
+        subtitle="Pick a capacity, then the SKU: the list narrows the way the intake's picker does. Description, role, kW, connectors and MSRP come from the CEO's price book. Every change rebuilds the estimate — sizing, gear, civil, labour days — underneath."
       >
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Line</th>
                 <th className={th}>Capacity</th>

@@ -60,7 +60,7 @@ export function SLD({ result }: { result: EstimateResult }) {
   if (!mainBus) return <p className="text-sm text-zinc-400">Add chargers to draw the one-line.</p>;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="slim-scroll overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="min-w-[420px]">
         <NodeBox title="UTILITY TRANSFORMER" sub={`${has480 ? "480Y/277V" : "208Y/120V"} service`} />
         <Wire label={segLabel(svc)} warn={svc && svc.flag !== "OK" && svc.flag !== "Manual override in use" ? svc.flag : undefined} />

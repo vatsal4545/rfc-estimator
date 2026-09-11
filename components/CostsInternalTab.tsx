@@ -46,7 +46,7 @@ export function CostsInternalTab() {
   const headers = ["Quantity", "Individual Cost", "Contingency", "Final Cost", "Total"];
 
   return (
-    <div className="overflow-x-auto">
+    <div className="slim-scroll overflow-x-auto">
       <div className="mb-3 text-xs text-zinc-500">
         Mirrors the RFC_V18 “Costs Internal” sheet (and the Excel export’s tab of the same name). Read-only — the
         numbers come from the same engine results; change contingency, labor or line items on the Financials and

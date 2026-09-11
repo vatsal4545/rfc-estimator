@@ -1,5 +1,6 @@
 "use client";
 
+import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
@@ -20,7 +21,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
-const wrap = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = tableWrapCls;
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 
 /** A number the estimator derives from the utility's rule: type to pin it, “→ auto” to hand it back. */
@@ -138,7 +139,7 @@ export function ElectricalSection() {
         ) : (
           <div className={wrap}>
             <table className={table}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Unit</th>
                   <th className={th}>Equip. line</th>
@@ -198,7 +199,7 @@ export function ElectricalSection() {
         {svc.length > 0 && (
           <div className={`${wrap} mt-4`}>
             <table className={table}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Service run</th>
                   <th className={thNum}>Distance (ft)</th>
@@ -248,7 +249,7 @@ export function ElectricalSection() {
         <Section title="Level 2 circuits" subtitle="One circuit per run, at the unit's distance. These fill the intake's Electrical rows 151–166.">
           <div className={wrap}>
             <table className={table}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Unit</th>
                   <th className={th}>Equip. line</th>
@@ -285,7 +286,7 @@ export function ElectricalSection() {
         ) : (
           <div className={wrap}>
             <table className={table}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Item</th>
                   <th className={th}>Size</th>

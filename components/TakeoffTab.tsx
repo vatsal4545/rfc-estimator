@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { generateTakeoffRows, type QuickLine } from "@/lib/calc/quickstart";
+import { generateTakeoffRows, isAutoLocation, locationForLoadType, type QuickLine } from "@/lib/calc/quickstart";
 import { WIRE_TABLE } from "@/lib/calc/tables";
 import type { Project, TakeoffEdit, TakeoffRowInput } from "@/lib/calc/types";
 import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
 import { newId } from "@/lib/id";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
-import { FlagBadge, inputCls, selectCls } from "./ui";
+import { FlagBadge, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 function QuickGenerate({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const { project, setProject } = useProject();
@@ -202,6 +202,17 @@ export function TakeoffTab() {
     });
   }
 
+  // Switching a row's charger renames the row with it: a row reading
+  // "DCFC 200kW #1" carrying an L2 unit is how a takeoff gets misread. A
+  // location the user typed is theirs and survives untouched.
+  function changeLoadType(rowId: string, location: string, loadTypeId: string) {
+    const patch: Partial<TakeoffRowInput> = { loadTypeId };
+    if (isAutoLocation(location, project.loadTypes.map((lt) => lt.id))) {
+      patch.location = locationForLoadType(project.takeoff, rowId, loadTypeId);
+    }
+    update(rowId, patch);
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -238,9 +249,9 @@ export function TakeoffTab() {
 
       <QuickGenerate open={qgOpen} setOpen={setQgOpen} />
 
-      <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className={tableWrapCls}>
         <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
+          <thead className={theadCls}>
             <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
               <th className="px-3 py-2">Load type</th>
               <th className="px-3 py-2">Location</th>
@@ -285,7 +296,7 @@ export function TakeoffTab() {
                   <select
                     className={selectCls}
                     value={row.loadTypeId}
-                    onChange={(e) => update(row.id, { loadTypeId: e.target.value })}
+                    onChange={(e) => changeLoadType(row.id, row.location, e.target.value)}
                   >
                     {project.loadTypes.map((lt) => (
                       <option key={lt.id} value={lt.id}>
@@ -324,7 +335,7 @@ export function TakeoffTab() {
                     className={`${inputCls} w-16`}
                     value={row.runsPerUnitOverride ?? ""}
                     placeholder={String(row.resolvedRunsPerUnit)}
-                    title="Parallel conductor sets per unit — blank = auto. On DCFC/feeder runs an extra set splits the amps, letting each set use smaller wire (helps when voltage drop governs)."
+                    title="Parallel conductor sets per unit — blank = auto. An extra set splits the amps, letting each set use smaller wire (helps when voltage drop governs). On L2 rows only an explicit number here splits them; NEC 310.10(H) allows parallel sets at 1/0 AWG and larger only."
                     onChange={(e) =>
                       update(row.id, {
                         runsPerUnitOverride: e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
@@ -416,7 +427,9 @@ export function TakeoffTab() {
         limit (Setup tab) picked a fatter wire than the current alone needs — compliant, just pricier. On DCFC and
         feeder runs, typing a bigger number in <span className="font-medium">Runs/u</span> splits the amps across
         parallel sets so each can use smaller wire; compare the row total both ways and keep the cheaper one. On L2
-        runs each port is its own circuit, so extra runs don’t help — the upsized wire is the cost of the distance.
+        rows each port is its own circuit, so the automatic sizing never splits them — but typing a number in
+        Runs/u asks for parallel conductors explicitly and does split the amps. Watch for the NEC 310.10(H) flag:
+        parallel sets are only permitted at 1/0 AWG and larger, which L2 branch conductors rarely reach.
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">

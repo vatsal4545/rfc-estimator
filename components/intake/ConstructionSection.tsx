@@ -1,5 +1,7 @@
 "use client";
 
+import { tableWrapCls, theadCls } from "../ui";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
@@ -21,7 +23,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
-const wrap = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = tableWrapCls;
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 const readonlyCls = "rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900";
 
@@ -90,7 +92,7 @@ export function ConstructionSection() {
       <Section title="4 · Construction — labour" subtitle="Crew days come from the takeoff and the terrain; the CEO basis is $2,750 a day, fully burdened, contingency on top, construction PM as 15% of the loaded labour. Type over a derived value to pin it.">
         <Grid cols={4}>
           <PinnedNumber label="Crew days on site" hint="Estimator schedule from the takeoff — must match the schedule you publish" path="financial.laborBusinessDays" value={f.laborBusinessDays} step="1" />
-          <Field label="Crew day rate ($)" hint="Fully burdened — intake 2.9.0: $2,750">
+          <Field label="Crew day rate ($)" hint={`Fully burdened — intake ${INTAKE_TEMPLATE.version}: $2,750`}>
             <input type="number" className={inputCls} value={f.laborDailyRate} onChange={(e) => setFinancial("laborDailyRate", Number(e.target.value))} />
           </Field>
           <Field label="Contingency" hint="Every construction line; decimals (0.10 = 10%)">
@@ -161,7 +163,7 @@ export function ConstructionSection() {
         </div>
         <div className={wrap}>
           <table className={table}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Rental</th>
                 <th className={thNum}>Qty</th>

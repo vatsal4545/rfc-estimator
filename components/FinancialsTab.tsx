@@ -3,11 +3,11 @@
 import { laborBreakdown } from "@/lib/calc/costs";
 import { reconcileHardwareCost } from "@/lib/catalog";
 import type { LaborItem } from "@/lib/calc/types";
-import { money } from "@/lib/format";
+import { fractionToPct, money, pctToFraction } from "@/lib/format";
 import { newId } from "@/lib/id";
 import { reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls } from "./ui";
+import { Field, Grid, Section, inputCls, tableWrapCls, theadCls } from "./ui";
 
 export function FinancialsTab() {
   const { project, setProject, hardwareAllowance, result } = useProject();
@@ -73,7 +73,7 @@ export function FinancialsTab() {
       <Section title="Contingency, labor & tax">
         <Grid cols={3}>
           <Field label="Contingency %" hint="Applied to every construction cost line">
-            <input type="number" step="0.01" className={inputCls} value={f.contingencyPct} onChange={(e) => update("contingencyPct", Number(e.target.value))} />
+            <input type="number" step="1" className={inputCls} value={fractionToPct(f.contingencyPct)} onChange={(e) => update("contingencyPct", pctToFraction(Number(e.target.value)))} />
           </Field>
           <Field label="Labor — daily rate ($)">
             <input type="number" className={inputCls} value={f.laborDailyRate} onChange={(e) => update("laborDailyRate", Number(e.target.value))} />
@@ -82,13 +82,13 @@ export function FinancialsTab() {
             <input type="number" className={inputCls} value={f.laborBusinessDays} onChange={(e) => update("laborBusinessDays", Number(e.target.value))} />
           </Field>
           <Field label="Sales tax %" hint="Applied to the fully-loaded construction subtotal">
-            <input type="number" step="0.001" className={inputCls} value={f.salesTaxPct} onChange={(e) => update("salesTaxPct", Number(e.target.value))} />
+            <input type="number" step="0.01" className={inputCls} value={fractionToPct(f.salesTaxPct)} onChange={(e) => update("salesTaxPct", pctToFraction(Number(e.target.value)))} />
           </Field>
           <Field
             label="Construction PM — % of loaded labor"
             hint={`CEO basis: 15% of labor after contingency. Currently ${money(result.costs.constructionPm)}`}
           >
-            <input type="number" step="0.01" className={inputCls} value={f.pmPctOfLabor ?? 0} onChange={(e) => update("pmPctOfLabor", Number(e.target.value))} />
+            <input type="number" step="1" className={inputCls} value={fractionToPct(f.pmPctOfLabor ?? 0)} onChange={(e) => update("pmPctOfLabor", pctToFraction(Number(e.target.value)))} />
           </Field>
         </Grid>
         <label className="mt-4 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
@@ -112,9 +112,9 @@ export function FinancialsTab() {
             </button>
           </div>
           {breakdown.itemized ? (
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                     <th className="px-3 py-2">Role / phase</th>
                     <th className="px-3 py-2">Days</th>

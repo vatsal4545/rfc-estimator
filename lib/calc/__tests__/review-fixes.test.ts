@@ -20,20 +20,21 @@ describe("Review finding 1 — 125% continuous factor applied exactly once in pa
   };
   const { panel } = computeEstimate(project);
 
-  it("reports the transformer primary as RAW connected amps (208A, not 260A)", () => {
-    // 480A of connected L2 at 208V = 480 x 208/480 = 208A at 480V.
-    expect(panel.transformer?.primaryAmps480).toBeCloseTo(208, 0);
+  it("reports the transformer primary as RAW connected amps (120A, not 150A)", () => {
+    // 480A of connected L2 is SINGLE-phase 208V load = 99.84 kVA, which the
+    // transformer reflects onto the 480V bus as 99,840 / (480 x sqrt3) = 120A.
+    expect(panel.transformer?.primaryAmps480).toBeCloseTo(120.1, 0);
   });
 
-  it("bus demand is connected x 1.25 with no compounding (2,260A, not 2,325A)", () => {
-    expect(panel.bus480?.connectedAmps).toBeCloseTo(1808, 0);
-    expect(panel.bus480?.demandAmps).toBeCloseTo(2260, 0);
+  it("bus demand is connected x 1.25 with no compounding (2,150A, not 2,213A)", () => {
+    expect(panel.bus480?.connectedAmps).toBeCloseTo(1720.1, 0);
+    expect(panel.bus480?.demandAmps).toBeCloseTo(2150.1, 0);
     expect(panel.bus480?.suggestedBusA).toBe(2500);
   });
 
   it("primary breaker is 125% of the selected transformer's rated FLA", () => {
-    // 225 kVA at 480V = 270.6A FLA -> x1.25 = 338 -> 350A standard.
-    expect(panel.transformer?.primaryBreakerA).toBe(350);
+    // 150 kVA at 480V = 180.4A FLA -> x1.25 = 225.5 -> 250A standard.
+    expect(panel.transformer?.primaryBreakerA).toBe(250);
   });
 });
 

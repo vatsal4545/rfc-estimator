@@ -42,25 +42,25 @@ describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 40A", () => {
 
   it("sizes the 480V service conductors with auto parallel runs at 125% continuous (applied once)", () => {
     const svc = seg("SVC Utility→Switchgear");
-    // Connected 1,808A: 5x320 chargers + 208A raw transformer primary
-    // (480A of L2 at 208V reflects to 480x208/480 = 208A). The 125% factor
-    // is applied exactly once, by the sizing engine: x1.25 = 2,260A.
-    expect(svc.designAmps).toBeCloseTo(1808, 0);
-    // 7 parallel runs keep each run within the 600 kcmil Al cap (340A):
-    // 2260 / 7 = 323A -> 600 kcmil Al per run.
+    // Connected 1,720A: 5x320 chargers + 120A raw transformer primary. The L2
+    // side is 99.84 kVA of SINGLE-phase load, which reflects onto the 480V bus
+    // as 99,840 / (480 x sqrt3) = 120A. The 125% factor is applied exactly
+    // once, by the sizing engine: x1.25 = 2,150A.
+    expect(svc.designAmps).toBeCloseTo(1720.1, 0);
+    // 7 parallel runs: 2150 / 7 = 307A -> 500 kcmil Al per run.
     expect(svc.resolvedRunsPerUnit).toBe(7);
-    expect(svc.selectedWire).toBe("600 kcmil");
+    expect(svc.selectedWire).toBe("500 kcmil");
     expect(svc.material).toBe("Al");
     expect(svc.wireFt).toBe(7 * 4 * 25); // runs x conductors x distance
   });
 
-  it("sizes the transformer primary and secondary feeders from the suggested 225 kVA unit", () => {
+  it("sizes the transformer primary and secondary feeders from the suggested 150 kVA unit", () => {
     const pri = seg("FDR Switchgear→TX");
-    expect(pri.designAmps).toBeCloseTo(270.6, 1); // 225 kVA at 480V
+    expect(pri.designAmps).toBeCloseTo(180.4, 1); // 150 kVA at 480V
     expect(pri.volts).toBe(480);
 
     const sec = seg("FDR TX→Sub-panel");
-    expect(sec.designAmps).toBeCloseTo(624.5, 1); // 225 kVA at 208V
+    expect(sec.designAmps).toBeCloseTo(416.4, 1); // 150 kVA at 208V
     expect(sec.volts).toBe(208);
     expect(sec.resolvedRunsPerUnit).toBeGreaterThanOrEqual(2); // parallel set on the secondary
   });
@@ -71,24 +71,24 @@ describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 40A", () => {
       (g) => g.item === "Main switchgear" && g.size === "2500A" && g.voltage === "480V",
     )!;
     expect(r.peripherals.gearMainSwitchgear).toBeCloseTo(sg2500.unitCost, 2);
-    // ...and the 208V side gear prices automatically: 600A sub-panel $5,387 +
-    // 225KVA transformer $7,144 + branch breakers at budgetary catalog prices
-    // (5x 400A@480V $1,200 + 12x 50A@208V $75 + 1x 350A@480V transformer
-    // primary $1,000).
-    expect(r.peripherals.gearOtherTotal).toBeCloseTo(5387 + 7144 + 5 * 1200 + 12 * 75 + 1000, 2);
+    // ...and the 208V side gear prices automatically: 400A sub-panel $1,660 +
+    // 150KVA transformer $5,298 + branch breakers at budgetary catalog prices
+    // (5x 400A@480V $1,200 + 12x 50A@208V $75 + 1x 250A@480V transformer
+    // primary $750).
+    expect(r.peripherals.gearOtherTotal).toBeCloseTo(1660 + 5298 + 5 * 1200 + 12 * 75 + 750, 2);
   });
 
   it("keeps the chain out of the panel buses (no self-inflation)", () => {
     expect(r.panel.bus480?.suggestedBusA).toBe(2500);
-    expect(r.panel.bus208?.suggestedBusA).toBe(600);
-    expect(r.panel.transformer?.suggestedKva).toBe(225);
+    expect(r.panel.bus208?.suggestedBusA).toBe(400);
+    expect(r.panel.transformer?.suggestedKva).toBe(150);
   });
 
   it("chain wire/conduit money lands in the BOM", () => {
     const svc = seg("SVC Utility→Switchgear");
     expect(svc.rowTotal).toBeGreaterThan(0);
-    const al600 = r.materials.wireLines.find((l) => l.size === "600 kcmil")!;
-    expect(al600.alFt).toBeGreaterThanOrEqual(700); // 7 runs x 4 cond x 25 ft
+    const al500 = r.materials.wireLines.find((l) => l.size === "500 kcmil")!;
+    expect(al500.alFt).toBeGreaterThanOrEqual(700); // 7 runs x 4 cond x 25 ft
   });
 });
 

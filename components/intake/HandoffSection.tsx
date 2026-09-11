@@ -1,5 +1,6 @@
 "use client";
 
+import { tableWrapCls, theadCls } from "../ui";
 import { useMemo, useState } from "react";
 import { money, num } from "@/lib/format";
 import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
@@ -15,7 +16,7 @@ import { Field, Grid, Pill, Section, inputCls } from "../ui";
 // Version & handoff — the intake's Version tab plus the handoff itself: how
 // complete the intake is, what the estimator's figures will say in the CEO's
 // override register, what is left for a human, and the download of the
-// filled EVSE Project Intake 2.9.0.
+// filled EVSE Project Intake 3.1.0.
 
 const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 whitespace-nowrap";
 const td = "px-3 py-1.5 align-top";
@@ -120,9 +121,9 @@ export function HandoffSection() {
         {plan.overrides.length === 0 ? (
           <div className="text-sm text-zinc-500">Nothing to carry — the CEO&apos;s engine will price the job from the intake&apos;s own derivation.</div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className={tableWrapCls}>
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Row</th>
                   <th className={th}>Override</th>

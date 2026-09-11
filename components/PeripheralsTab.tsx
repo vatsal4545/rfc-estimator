@@ -2,19 +2,20 @@
 
 import { ADA_UNIT_COST, BOLLARD_RULE, adaStallBreakdown } from "@/lib/calc/autoplan";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
-import { CIVIL_RATES } from "@/lib/calc/peripherals";
+import { CIVIL_RATES, peripheralPriceOverrideCount, resetPeripheralPrices } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 const GEAR_ITEMS = Array.from(new Set(GEAR_CATALOG.map((g) => g.item)));
 
 export function PeripheralsTab() {
   const { project, setProject, result } = useProject();
   const p = project.peripherals;
+  const pricesOffShipped = peripheralPriceOverrideCount(p);
 
   function updateP<K extends keyof typeof p>(key: K, value: (typeof p)[K]) {
     setProject((proj) => ({ ...proj, peripherals: { ...proj.peripherals, [key]: value } }));
@@ -53,6 +54,12 @@ export function PeripheralsTab() {
       ...proj,
       equipment: proj.equipment.map((e, i) => (i === idx ? { ...e, ...patch } : e)),
     }));
+  }
+
+  // "No equipment on this job" in one click, and back again. Excluding keeps
+  // every quantity and rate, so the decision is reversible.
+  function setAllEquipExcluded(excluded: boolean) {
+    setProject((proj) => ({ ...proj, equipment: proj.equipment.map((e) => ({ ...e, excluded })) }));
   }
 
   function addEquip() {
@@ -99,9 +106,9 @@ export function PeripheralsTab() {
                 Switch to manual gear
               </button>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                     <th className="px-3 py-2">Item</th>
                     <th className="px-3 py-2">Size</th>
@@ -163,9 +170,9 @@ export function PeripheralsTab() {
             Switch to auto gear (re-sizes &amp; re-prices from the Panel schedule)
           </button>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Size</th>
@@ -255,6 +262,24 @@ export function PeripheralsTab() {
       </Section>
 
       <Section title="B. Hardware, civil, signage — manual counts" subtitle="Ground rods, anchor bolts, rebar, concrete, signs, striping and wheel stops are auto-derived from the Takeoff counts. Everything below is what you still count by hand.">
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+          {pricesOffShipped > 0 ? (
+            <>
+              <button
+                className="font-medium text-blue-600 hover:underline"
+                onClick={() => setProject((proj) => ({ ...proj, peripherals: resetPeripheralPrices(proj.peripherals) }))}
+              >
+                Reset unit prices to the shipped list
+              </button>
+              <span className="text-zinc-500">
+                {pricesOffShipped} price{pricesOffShipped === 1 ? "" : "s"} quoted on this project — quantities and custom
+                items are not touched.
+              </span>
+            </>
+          ) : (
+            <span className="text-zinc-500">Every unit price below is the shipped rate.</span>
+          )}
+        </div>
         <Grid cols={4}>
           <Field label="Nuts (ea)"><input type="number" className={inputCls} value={p.nutsQty} onChange={(e) => updateP("nutsQty", Number(e.target.value))} /></Field>
           <Field label="Washers (ea)"><input type="number" className={inputCls} value={p.washersQty} onChange={(e) => updateP("washersQty", Number(e.target.value))} /></Field>
@@ -405,11 +430,31 @@ export function PeripheralsTab() {
         </Grid>
       </Section>
 
-      <Section title="D. Construction equipment rental" subtitle="One formula on every row: Qty x Rate x Duration + delivery (delivery only charged if Qty > 0).">
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <Section title="D. Construction equipment rental" subtitle="One formula on every row: Qty x Rate x Duration + delivery (delivery only charged if Qty > 0). Clear a row's Incl. box to take it out of the estimate without losing what you typed.">
+        <div className="mb-2 flex items-center gap-3 text-sm">
+          <button
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            onClick={() => setAllEquipExcluded(true)}
+          >
+            Exclude all
+          </button>
+          <button
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            onClick={() => setAllEquipExcluded(false)}
+          >
+            Include all
+          </button>
+          {result.equipment.items.some((i) => i.excluded) && (
+            <span className="text-xs text-zinc-500">
+              {result.equipment.items.filter((i) => i.excluded).length} of {result.equipment.items.length} excluded
+            </span>
+          )}
+        </div>
+        <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <th className="px-3 py-2" title="Untick to leave this line out of the estimate">Incl.</th>
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Qty</th>
                 <th className="px-3 py-2">Rate</th>
@@ -422,7 +467,16 @@ export function PeripheralsTab() {
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {result.equipment.items.map((item, idx) => (
-                <tr key={idx}>
+                <tr key={idx} className={item.excluded ? "opacity-45" : undefined}>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-blue-600"
+                      checked={!item.excluded}
+                      title={item.excluded ? "Excluded — priced at zero" : "Included in the estimate"}
+                      onChange={(e) => updateEquip(idx, { excluded: !e.target.checked })}
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     {item.name === AUTO_QTY_ITEM ? (
                       item.name
@@ -456,7 +510,7 @@ export function PeripheralsTab() {
                       onChange={(e) => updateEquip(idx, { rate: Number(e.target.value) })}
                     />
                   </td>
-                  <td className="px-3 py-2 text-zinc-500">{item.rateBasis}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500">{item.rateBasis}</td>
                   <td className="px-3 py-2">
                     <input
                       type="number"
@@ -484,7 +538,7 @@ export function PeripheralsTab() {
             </tbody>
             <tfoot className="bg-zinc-50 dark:bg-zinc-900">
               <tr className="font-medium">
-                <td colSpan={6} className="px-3 py-2 text-right">
+                <td colSpan={7} className="px-3 py-2 text-right">
                   Equipment subtotal
                 </td>
                 <td className="px-3 py-2 text-right">{money(result.equipment.subtotal)}</td>

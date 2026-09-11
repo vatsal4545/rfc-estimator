@@ -12,6 +12,7 @@ import {
   estimateTimeline,
   timelineTotal,
 } from "@/lib/calc/autoplan";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { effectiveInstallMethod, surfaceRouteFt } from "@/lib/calc/install";
 import type { InstallMethod, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { money, num, pct } from "@/lib/format";
@@ -20,7 +21,7 @@ import { rebuildProject } from "@/lib/intake/rebuild";
 import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { useRebuild } from "./intake/useRebuild";
-import { Field, Pill, Section, inputCls, selectCls } from "./ui";
+import { Field, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 const SERVICE_TOGGLES: {
   key: keyof Pick<
@@ -513,7 +514,7 @@ function BuildSummary() {
           <Assumption label="Construction labor" value={`${num(f.laborBusinessDays)} business days`} detail={`${money(costs.labor)} crew cost`} />
           <Assumption label="Site plan design" value={money(f.autoCadDesignCost)} detail="AutoCAD layout, ADA, equipment placement" />
           <Assumption label="SLD / electrical design" value={money(f.electricalEngDesignCost)} detail="PE-stamped single-line & load calcs" />
-          <Assumption label="Construction PM (CPM)" value={`${pct(f.pmPctOfLabor ?? 0)} of loaded labor · ${money(costs.constructionPm)}`} detail="CEO basis — intake 2.9.0 Construction tab" />
+          <Assumption label="Construction PM (CPM)" value={`${pct(f.pmPctOfLabor ?? 0)} of loaded labor · ${money(costs.constructionPm)}`} detail={`CEO basis — intake ${INTAKE_TEMPLATE.version} Construction tab`} />
           <Assumption label="Permits & utility fees" value={money(permitsTotal)} detail={`plan check ${money(f.planCheckPermitFee)} · issuance ${money(per.permitFeeTotal)} · utility ${money(per.utilityAppFee)}`} />
           <Assumption label="Private utility scan" value={gpr ? `${num(gpr.qty)} day${gpr.qty === 1 ? "" : "s"} · ${money(gpr.qty * gpr.unitCost)}` : "not included"} detail={gpr ? "GPR along the trench route" : undefined} />
           <Assumption
@@ -545,9 +546,9 @@ function BuildSummary() {
           title="Equipment schedule"
           subtitle={`Price book ${schedule.terms.basis === "price-book" ? "terms" : "list prices"}: ${schedule.terms.contractYears}-year contract · EVOLV $${schedule.terms.evolvPerPortMonth.toFixed(2)}/port/month · warranty beyond the included years plus in-warranty service every contract year. Terms live on the Commercial tab.`}
         >
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className={tableWrapCls}>
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   {["Item", "Qty", "List $/unit", "List total", "Ports", "Service class", "Ext. warranty", "Service", "EVOLV"].map((h, i) => (
                     <th key={h} className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500 ${i > 0 ? "text-right" : "text-left"}`}>

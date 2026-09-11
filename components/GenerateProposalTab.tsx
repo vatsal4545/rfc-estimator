@@ -611,7 +611,7 @@ export default function GenerateProposalTab() {
             )}
 
             {showQa && outcome?.qa && (
-              <pre className="mt-4 max-h-96 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+              <pre className="slim-scroll mt-4 max-h-96 overflow-auto rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
                 {outcome.qa}
               </pre>
             )}

@@ -68,3 +68,38 @@ export function applyTakeoffEdits(
   for (const row of previous) if (row.manual && !row.synthetic) out.push({ ...row });
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Location naming
+// ---------------------------------------------------------------------------
+
+/**
+ * The location a row takes when its load type changes — the same
+ * "<loadTypeId> #<n>" the Quick Estimate generates, numbered past the rows
+ * already carrying that type. The row being changed is not counted, so
+ * switching the only L2 row to DCFC gives "#1" rather than "#2".
+ */
+export function locationForLoadType(
+  rows: { id: string; loadTypeId: string }[],
+  rowId: string,
+  nextLoadTypeId: string,
+): string {
+  const n = rows.filter((r) => r.id !== rowId && r.loadTypeId === nextLoadTypeId).length;
+  return `${nextLoadTypeId} #${n + 1}`;
+}
+
+/**
+ * Whether a location is still one of ours to rewrite. Anything a person typed
+ * is theirs — "North lot, by the pylon" survives a load-type change, while the
+ * generated "DCFC 200kW #1" and the hand-added "Run 3" do not.
+ *
+ * Matching against the project's real load type ids keeps this tight: "Pylon
+ * #3" is only an auto name if a load type is actually called "Pylon".
+ */
+export function isAutoLocation(location: string, loadTypeIds: string[]): boolean {
+  const s = location.trim();
+  if (s === "") return false;
+  if (/^Run \d+$/.test(s)) return true;
+  const escape = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return loadTypeIds.some((id) => new RegExp(`^${escape(id)} #\\d+$`).test(s));
+}

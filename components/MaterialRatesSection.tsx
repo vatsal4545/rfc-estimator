@@ -5,7 +5,7 @@ import { CONDUIT_TABLE, WIRE_TABLE } from "@/lib/calc/tables";
 import type { MaterialRates } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
-import { Section, inputCls } from "./ui";
+import { Section, inputCls, tableWrapCls, theadCls } from "./ui";
 
 // Conductor and conduit $/ft — the vendor list the engine prices every run
 // with, editable per project when a materials quote says otherwise. Blank
@@ -15,7 +15,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1 whitespace-nowrap";
 const tdNum = "px-3 py-1 text-right tabular-nums whitespace-nowrap";
-const wrap = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = tableWrapCls;
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 
 export function MaterialRatesSection({ compact = false }: { compact?: boolean }) {
@@ -78,9 +78,19 @@ export function MaterialRatesSection({ compact = false }: { compact?: boolean })
         <button className="font-medium text-blue-600 hover:underline" onClick={() => setShowAll((v) => !v)}>
           {showAll ? "Show only sizes in use" : "Show every size"}
         </button>
+        {Object.keys(rates.wire ?? {}).length > 0 && (
+          <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({ ...rates, wire: {} })}>
+            Reset conductor prices
+          </button>
+        )}
+        {Object.keys(rates.conduit ?? {}).length > 0 && (
+          <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({ ...rates, conduit: {} })}>
+            Reset conduit prices
+          </button>
+        )}
         {overridden > 0 && (
           <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({})}>
-            Reset all to the shipped list
+            Reset both to the shipped list
           </button>
         )}
         <span className="text-zinc-500">Lump-sum quotes for the whole line go on the Overrides tab instead.</span>
@@ -88,7 +98,7 @@ export function MaterialRatesSection({ compact = false }: { compact?: boolean })
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className={wrap}>
           <table className={table}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Conductor</th>
                 <th className={thNum}>Cu ft in use</th>
@@ -124,7 +134,7 @@ export function MaterialRatesSection({ compact = false }: { compact?: boolean })
         </div>
         <div className={wrap}>
           <table className={table}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Conduit</th>
                 <th className={thNum}>PVC ft in use</th>

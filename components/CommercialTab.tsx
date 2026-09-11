@@ -1,5 +1,6 @@
 "use client";
 
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { money, pct } from "@/lib/format";
 import { defaultCommercial, defaultServiceTerms } from "@/lib/proposal/defaults";
 import {
@@ -13,9 +14,9 @@ import {
 } from "@/lib/proposal/types";
 import { computeEquipmentSchedule, reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
-// Commercial — the CEO's price layer (EVSE Project Intake 2.9.0 terms and the
+// Commercial — the CEO's price layer (EVSE Project Intake terms and the
 // Best Western Business_Model), computed from the estimator's cost result.
 // Total Cost never changes here: this tab turns it into a customer price and
 // shows the margin that price carries.
@@ -25,7 +26,7 @@ const thNum = `${th} text-right`;
 const td = "px-3 py-1.5";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = tableWrapCls;
 const subtotalCls = "bg-zinc-50 font-medium dark:bg-zinc-900";
 
 const GROUPS: { key: BuildupGroup; label: string }[] = [
@@ -70,7 +71,7 @@ export function CommercialTab() {
           onClick={() => setProject((p) => ({ ...p, commercial: defaultCommercial() }))}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
         >
-          Set up pricing with the intake 2.9.0 defaults
+          Set up pricing with the intake {INTAKE_TEMPLATE.version} defaults
         </button>
         <p className="mt-3 text-xs text-zinc-500">
           20% markup on materials and labour · 7% off hardware, service and in-house work · permits and utility fees passed
@@ -143,7 +144,7 @@ export function CommercialTab() {
 
       <Section
         title="Markups and discounts"
-        subtitle="Intake 2.9.0 house terms. Markups turn cost into price on materials and labour; discounts come off list (hardware, service, EVOLV) or off in-house work (labour, construction PM, design). Enter decimals: 0.07 = 7%."
+        subtitle={`Intake ${INTAKE_TEMPLATE.version} house terms. Markups turn cost into price on materials and labour; discounts come off list (hardware, service, EVOLV) or off in-house work (labour, construction PM, design). Enter whole percents: 7 = 7%.`}
       >
         <Grid cols={3}>
           <PctField label="Markup on materials" hint="Switchgear, conductor, conduit, site works, rentals — after contingency" value={c.markupMaterialsPct} onChange={(v) => update("markupMaterialsPct", v)} />
@@ -166,10 +167,10 @@ export function CommercialTab() {
               <option value="allowance">Estimator commissioning allowances</option>
             </select>
           </Field>
-          <Field label="Contract length (years)" hint="Intake 2.9.0: 5">
+          <Field label="Contract length (years)" hint={`Intake ${INTAKE_TEMPLATE.version}: 5`}>
             <input type="number" min={0} className={inputCls} value={terms.contractYears} onChange={(e) => setTerms({ contractYears: Number(e.target.value) })} />
           </Field>
-          <Field label="EVOLV network $/port/month" hint="Intake 2.9.0: $39.99">
+          <Field label="EVOLV network $/port/month" hint={`Intake ${INTAKE_TEMPLATE.version}: $39.99`}>
             <input type="number" step="0.01" className={inputCls} value={terms.evolvPerPortMonth} onChange={(e) => setTerms({ evolvPerPortMonth: Number(e.target.value) })} />
           </Field>
           <Field label="Included warranty years (override)" hint="Blank = the class's own: DC 2 years, AC 1 year">
@@ -227,7 +228,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Line</th>
                 <th className={th}>Class</th>
@@ -310,7 +311,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Service line</th>
                 <th className={th}>Who provides</th>
@@ -395,7 +396,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Component</th>
                 <th className={thNum}>Price</th>

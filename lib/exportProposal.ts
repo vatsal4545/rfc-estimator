@@ -127,7 +127,7 @@ function fillCostBuildup(
   ws.getCell("A1").value = "Cost Buildup — estimator cost, list price, customer price";
   ws.getCell("A1").font = { bold: true, size: 12 };
   ws.getCell("A2").value =
-    "Intake 2.9.0 terms: markup on materials and labour after contingency; discounts off list (hardware, service, EVOLV) or off in-house work; pass-through fees at exactly cost. Edit the yellow cells. The estimator's Total Cost (Cost Detail) is unchanged.";
+    "Intake terms: markup on materials and labour after contingency; discounts off list (hardware, service, EVOLV) or off in-house work; pass-through fees at exactly cost. Edit the yellow cells. The estimator's Total Cost (Cost Detail) is unchanged.";
   ws.getCell("A2").font = { italic: true, size: 9, color: { argb: "FF666666" } };
 
   input(ws, "B4", "Markup on materials", c.markupMaterialsPct, PCT);

@@ -75,21 +75,25 @@ describe("Quick-generate — 5x DCFC 240kW + 6x L2 Dual 40A (user scenario)", ()
     expect(short.selectedWire).toBe("8 AWG");
   });
 
-  it("builds the full one-line: 2500A switchgear, 600A sub-panel, 225KVA transformer", () => {
+  it("builds the full one-line: 2500A switchgear, 400A sub-panel, 150KVA transformer", () => {
     const { panel } = result;
     expect(panel.bus480?.suggestedBusA).toBe(2500);
-    expect(panel.bus208?.suggestedBusA).toBe(600);
-    expect(panel.bus208?.connectedAmps).toBeCloseTo(480, 5); // 6 units x 80A
+    expect(panel.bus208?.suggestedBusA).toBe(400);
+    // 6 units x 80A = 480A of single-phase load = 99.84 kVA, which a 208Y bus
+    // carries as 277A per line. This used to read 480A — the branch-current sum
+    // mistaken for a line current, which bought a 600A panel and a 225 kVA
+    // transformer the load never needed.
+    expect(panel.bus208?.connectedAmps).toBeCloseTo(277.13, 1);
     expect(panel.bus208?.circuitCount).toBe(12);
-    expect(panel.transformer?.suggestedKva).toBe(225);
-    expect(panel.transformer?.primaryBreakerA).toBe(350);
+    expect(panel.transformer?.suggestedKva).toBe(150);
+    expect(panel.transformer?.primaryBreakerA).toBe(250);
   });
 
   it("suggests a priceable gear list", () => {
     const gear = result.panel.suggestedGear;
     expect(gear).toContainEqual({ item: "Main switchgear", size: "2500A", voltage: "480V", qty: 1 });
-    expect(gear).toContainEqual({ item: "Sub-panel", size: "600A", voltage: "208V", qty: 1 });
-    expect(gear).toContainEqual({ item: "Transformer", size: "225KVA", voltage: "208V", qty: 1 });
+    expect(gear).toContainEqual({ item: "Sub-panel", size: "400A", voltage: "208V", qty: 1 });
+    expect(gear).toContainEqual({ item: "Transformer", size: "150KVA", voltage: "208V", qty: 1 });
     const b400 = gear.find((g) => g.item === "Branch breaker" && g.size === "400A");
     expect(b400?.qty).toBe(5);
     const b50 = gear.find((g) => g.item === "Branch breaker" && g.size === "50A");
@@ -118,5 +122,30 @@ describe("Auto-OCPD for custom chargers", () => {
     );
     // 19.2kW @ 208V 1ph = 92.3A -> x1.25 = 115.4 -> next standard = 125A
     expect(row.ocpdA).toBe(125);
+  });
+});
+
+describe("Single-phase L2 aggregation — the 3-phase factor belongs to L3 only", () => {
+  // The shop's EV_LVL2SUB schedule enters each L2 port as flat per-pole VA and
+  // only divides by sqrt(3) at the end to reach line amps. L2 units are 2-pole
+  // 208V line-to-line loads, so their VA is I x V; treating the branch-current
+  // sum as a 3-phase line current overstated the load by 73%.
+  const project: Project = {
+    ...defaultProject(),
+    takeoff: [
+      { id: "dc", loadTypeId: "DCFC 240kW", location: "DC row", units: 1, oneWayDistFt: 100 },
+      { id: "l2", loadTypeId: "L2 Dual 40A", location: "L2 row", units: 6, oneWayDistFt: 120 },
+    ],
+  };
+  const { panel } = computeEstimate(project);
+
+  it("totals L2 kVA as amps x volts, without the sqrt(3)", () => {
+    // 6 units x 80A input = 480A of single-phase 208V load = 99.84 kVA.
+    expect(panel.transformer?.connectedKva).toBeCloseTo(99.84, 2);
+  });
+
+  it("sizes the 208V bus on line current, not the branch-current sum", () => {
+    // A 208Y sub-panel carries 99,840 VA / (208 x sqrt3) = 277.1A per line.
+    expect(panel.bus208?.connectedAmps).toBeCloseTo(277.1, 1);
   });
 });

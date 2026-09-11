@@ -234,7 +234,15 @@ describe("Gear overrides cascade through the service chain", () => {
   });
 
   it("an undersized override raises a panel note", () => {
-    const { p } = build();
+    // Enough L2 to put demand (346A) above the smallest cataloged panel; with
+    // the default 5 units the corrected single-phase demand is only 144A, so
+    // a 150A panel is genuinely adequate and rightly draws no note.
+    const { p } = build({
+      lines: [
+        { loadTypeId: "DCFC 200kW", count: 6 },
+        { loadTypeId: "L2 Single 40A", count: 12 },
+      ],
+    });
     p.setup.gearOverrides = { subpanel208A: 150 };
     const r = computeEstimate(p);
     expect(r.panel.bus208!.suggestedBusA).toBe(150);

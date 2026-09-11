@@ -78,3 +78,43 @@ export function FlagBadge({ flag }: { flag: string }) {
     </span>
   );
 }
+
+/**
+ * Wrapper for a data table whose header should stay put while you scroll it.
+ *
+ * The height cap is what makes the freeze possible: `position: sticky` resolves
+ * against the nearest scrolling ancestor, and these wrappers already set
+ * `overflow-x` for wide tables — which forces `overflow-y: auto` too. Without a
+ * height the box never scrolls vertically, the page does, and a sticky header
+ * inside it has nothing to stick to. Capping the height moves the vertical
+ * scroll into the box, where the header can hold its position — Excel's freeze
+ * panes, in the place the rows actually move. Short tables never reach the cap
+ * and look exactly as they did.
+ */
+export const tableWrapCls =
+  "data-table slim-scroll max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+
+/**
+ * The header row of such a table. Opaque, because the body scrolls underneath
+ * it, and carrying its bottom rule as an inset shadow — a border on a sticky
+ * header scrolls away with the cell it belongs to.
+ */
+export const theadCls =
+  "sticky top-0 z-10 bg-zinc-50 shadow-[inset_0_-1px_0_#e4e4e7] dark:bg-zinc-900 dark:shadow-[inset_0_-1px_0_#27272a]";
+// NOTE: the app header is z-30 on purpose. This header sticks inside its own
+// scroll box, so when the page scrolls the box travels up behind the app
+// chrome — and with equal z-index the later element in the DOM won, painting
+// the column labels straight over the tab bar.
+
+
+/** A quiet secondary action. Bordered, no fill — it should not compete. */
+export const ghostBtn =
+  "rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
+
+/**
+ * One segment of the download control. The three exports are one decision —
+ * which file — not three competing calls to action, so they share a single
+ * fill and sit in one bordered group rather than shouting side by side.
+ */
+export const downloadSeg =
+  "bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-800 disabled:opacity-50";

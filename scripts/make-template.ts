@@ -889,8 +889,16 @@ async function main() {
     panel.getCell(row, 5).value = { formula: `IF(B${row}>0,VLOOKUP(Intake!$A${src},ModelTable,8,FALSE),"")` };
     panel.getCell(row, 6).value = { formula: `IF(B${row}>0,B${row}*VLOOKUP(Intake!$A${src},ModelTable,8,FALSE),0)` };
   }
-  label(panel, PNL_BUS208_CONN, "208V bus connected amps", true);
-  panel.getCell(PNL_BUS208_CONN, 6).value = { formula: `SUM(F${PNL_P2}:F${PNL_P2 + N_CH - 1})` };
+  // Column F above is the SUM of branch currents. L2 units are single-phase
+  // 208V line-to-line loads, so their VA is I x V and a 208Y bus carries that
+  // VA as I/sqrt(3) per line. Treating the branch-current sum as a line current
+  // overstated the bus, the transformer and every conductor downstream by 73%.
+  // The sqrt(3) belongs to the 480V L3 side only — exactly as Input!C3 of the
+  // shop's own EV_MAIN schedule has it.
+  label(panel, PNL_BUS208_CONN, "208V bus connected amps (line)", true);
+  panel.getCell(PNL_BUS208_CONN, 6).value = {
+    formula: `SUM(F${PNL_P2}:F${PNL_P2 + N_CH - 1})/SQRT(3)`,
+  };
   label(panel, PNL_BUS208_CONN + 1, "208V bus demand amps (×125%)", true);
   panel.getCell(PNL_BUS208_CONN + 1, 6).value = { formula: `F${PNL_BUS208_CONN}*1.25` };
   label(panel, PNL_PNL_ROW, `208V panel (A) — auto, or type an override in D${PNL_PNL_ROW}`, true);
@@ -1656,11 +1664,15 @@ async function main() {
     const l2A = sumAmps("L2");
     const dcfcA = sumAmps("DCFC");
     const hasBoth = l2A > 0 && dcfcA > 0;
-    const txConnKva = hasBoth ? (l2A * 208 * SQRT3) / 1000 : 0;
+    // l2A is the SUM of single-phase branch currents. The 208Y bus carries that
+    // load as l2A/sqrt(3) per line, which is what the Panel sheet now computes
+    // and what the engine sizes from — the sqrt(3) is the L3 side's, not L2's.
+    const l2LineA = l2A / SQRT3;
+    const txConnKva = hasBoth ? (l2LineA * 208 * SQRT3) / 1000 : 0;
     const txKva = txConnKva > 0 ? nextSizeCountif(TX_TABLE.map((t) => t[0]), txConnKva * 1.25) : 0;
     const txPrimary = hasBoth ? (txConnKva * 1000) / (480 * SQRT3) : 0;
     const sg = dcfcA > 0 ? nextSizeCountif(SG_TABLE.map((t) => t[0]), (dcfcA + txPrimary) * 1.25) : 0;
-    const pnl = l2A > 0 ? nextSizeCountif(PNL_TABLE.map((t) => t[0]), l2A * 1.25) : 0;
+    const pnl = l2A > 0 ? nextSizeCountif(PNL_TABLE.map((t) => t[0]), l2LineA * 1.25) : 0;
     const ok =
       sg === (r.panel.bus480?.suggestedBusA ?? 0) &&
       pnl === (r.panel.bus208?.suggestedBusA ?? 0) &&

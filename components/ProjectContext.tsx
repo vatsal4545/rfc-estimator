@@ -53,7 +53,7 @@ function withCurrentLoadTypes(project: Project): Project {
 }
 
 // A brand-new project: the estimator defaults plus the CEO's commercial terms
-// (intake 2.9.0). Existing bodies are never given the section automatically —
+// (intake 3.1.0). Existing bodies are never given the section automatically —
 // the Commercial tab offers it — so their Total Cost and shape stay as saved.
 function freshProject(): Project {
   return { ...defaultProject(), commercial: defaultCommercial() };
