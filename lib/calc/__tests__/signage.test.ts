@@ -37,8 +37,10 @@ describe("signage and striping follow the RFC_V18 rules", () => {
     expect(line(r, "Sign posts").qty).toBe(5 + 3);
   });
 
-  it("strips at (L2 x 2 + DC) / 10", () => {
-    expect(line(build(12, 16), "Striping").qty).toBeCloseTo(4.4, 5);
+  it("strips in ten-stall units, counting L2 stalls by port", () => {
+    // 16 single-port L2 (16 stalls) + 12 DC (12) = 28. The RFC's
+    // (L2 x 2 + DC) / 10 reads 4.4 here by assuming every L2 is dual.
+    expect(line(build(12, 16), "Striping").qty).toBeCloseTo(2.8, 5);
   });
 
   it("takes a quoted rate for every signage line", () => {

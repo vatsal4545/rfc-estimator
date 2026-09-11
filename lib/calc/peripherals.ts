@@ -282,7 +282,7 @@ export function computePeripherals(
     { name: "Sign posts", ...counted(input.signPostQtyOverride, rollups.nL2 + Math.ceil(rollups.nDCFC / 2)), unitCost: signPostCost },
     { name: "ADA sign post", ...counted(input.adaSignPostQtyOverride, adaStalls > 0 ? 1 : 0), unitCost: signPostCost },
     { name: "Bollards", qty: input.bollardsQty, autoQty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
-    { name: "Striping", ...counted(input.stripingQtyOverride, (rollups.nL2 * 2 + rollups.nDCFC) / 10), unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall },
+    { name: "Striping", ...counted(input.stripingQtyOverride, (rollups.nL2Stalls + rollups.nDCFC) / 10), unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall },
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);
 
