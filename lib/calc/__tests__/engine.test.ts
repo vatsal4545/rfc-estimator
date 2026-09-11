@@ -122,7 +122,10 @@ describe("CPM engine — Bartell fixture (validated against CPM_Clean.xlsx)", ()
     // replacing the legacy 24 yd x $193.54).
     expect(result.peripherals.civilSubtotal).toBeCloseTo(36200.58, 2);
     expect(result.peripherals.adaAllowance).toBeCloseTo(19500, 2);
-    expect(result.peripherals.signageSubtotal).toBeCloseTo(3068.3, 2);
+    // 3,068.30 + one $56.10 post: the accessible stall's sign post is its own
+    // line now, which the CPM_Clean fixture predates. Every other signage
+    // quantity and rate is unchanged.
+    expect(result.peripherals.signageSubtotal).toBeCloseTo(3124.4, 2);
     expect(result.peripherals.permitsSubtotal).toBe(1000);
     expect(result.peripherals.utilitySubtotal).toBe(3364);
     // Gear prices from the live catalog (Bartell's manual list picked 1000A).

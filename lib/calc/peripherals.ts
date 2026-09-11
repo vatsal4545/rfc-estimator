@@ -31,6 +31,11 @@ import type {
  */
 export const CIVIL_RATES = {
   bollardEach: 110,
+  // Signage and striping, from the shop's RFC_V18 "CPM Calcs" sheet.
+  signEach: 40,
+  signPostEach: 56.1,
+  /** A striping "unit" is ten stalls' worth of work, which is how the sheet counts it. */
+  stripingPerStall: 1500,
   concretePerYard: 165, // 2500 PSI delivered
   concreteShortLoadFee: 125,
   shortLoadThresholdYd: 8,
@@ -255,11 +260,20 @@ export function computePeripherals(
     .reduce((s, c) => s + c.qty * c.unitCost, 0);
   const civilSubtotal = civil.reduce((s, c) => s + c.qty * c.unitCost, 0);
 
+  // Signage and striping follow the RFC_V18 "CPM Calcs" sheet: one sign per
+  // charger, a post per L2 plus one per two DC cabinets, and striping counted
+  // in ten-stall units. Posts round UP where the sheet allows a half — half a
+  // post cannot be ordered. The accessible stall's post is its own line rather
+  // than buried in the charger count, so it survives a change of charger mix
+  // and can be seen on the estimate.
+  const signPostCost = input.signPostUnitCost ?? CIVIL_RATES.signPostEach;
+  const adaStalls = adaByType ? adaVanQty + adaStdQty + adaAmbQty : adaQty;
   const signage: SignageItem[] = [
-    { name: "Signs", qty: rollups.nChargers, unitCost: 40, auto: true },
-    { name: "Sign posts", qty: rollups.nL2 + Math.ceil(rollups.nDCFC / 2), unitCost: 56.1, auto: true },
+    { name: "Signs", qty: rollups.nChargers, unitCost: input.signUnitCost ?? CIVIL_RATES.signEach, auto: true },
+    { name: "Sign posts", qty: rollups.nL2 + Math.ceil(rollups.nDCFC / 2), unitCost: signPostCost, auto: true },
+    { name: "ADA sign post", qty: adaStalls > 0 ? 1 : 0, unitCost: signPostCost, auto: true },
     { name: "Bollards", qty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
-    { name: "Striping", qty: (rollups.nL2 * 2 + rollups.nDCFC) / 10, unitCost: 1500, auto: true },
+    { name: "Striping", qty: (rollups.nL2 * 2 + rollups.nDCFC) / 10, unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall, auto: true },
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);
 

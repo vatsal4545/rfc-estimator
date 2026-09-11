@@ -1,7 +1,7 @@
 "use client";
 
 import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
-import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
+import { money, num, pct } from "@/lib/format";
 import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
