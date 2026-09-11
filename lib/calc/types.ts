@@ -243,6 +243,8 @@ export interface Rollups {
   nL2: number;
   nDCFC: number;
   nChargers: number;
+  /** Level 2 stalls — plugs, not units. A dual-port unit serves two. */
+  nL2Stalls: number;
   nFeeders: number;
   nCircuits: number;
   longestRunFt: number;
