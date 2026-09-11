@@ -31,7 +31,7 @@ export interface BranchCircuit {
 export interface BusSummary {
   voltage: 208 | 480;
   circuitCount: number;
-  connectedAmps: number; // sum of continuous unit input amps
+  connectedAmps: number; // line current the bus carries (3-phase loads contribute I, single-phase I/sqrt3)
   demandAmps: number; // connected x 125% (NEC 625.41/625.42 continuous)
   /** Bus in use: the manual override when set, else the code minimum. */
   suggestedBusA: number;
@@ -113,7 +113,19 @@ export function computePanelSchedule(
   let bus480: BusSummary | undefined;
 
   if (rows208.length > 0) {
-    const connectedAmps = rows208.reduce((s, r) => s + r.units * unitInputAmps(r), 0);
+    // Connected VA first, then the line current the 208Y bus actually carries.
+    // A 3-phase load's input amps are already a line current (VA = I x V x
+    // sqrt3); a single-phase L2 unit is a 2-pole line-to-line load, so its VA is
+    // I x V with no sqrt(3). Summing single-phase branch amps and treating that
+    // sum as a 3-phase line current overstated the L2 side — and every bus and
+    // transformer sized from it — by 73%. The shop's EV_LVL2SUB schedule does
+    // the same thing the right way round: per-pole VA summed, divided by
+    // V x 1.732 only at the end to reach line amps.
+    const connectedVa = rows208.reduce(
+      (s, r) => s + r.units * unitInputAmps(r) * r.volts * (r.phases === 3 ? SQRT3 : 1),
+      0,
+    );
+    const connectedAmps = connectedVa / (208 * SQRT3);
     const demandAmps = connectedAmps * 1.25;
     const autoBusA = nextStandardSize(SUBPANEL_208V_A, demandAmps);
     const overrideA = overrides?.subpanel208A;
