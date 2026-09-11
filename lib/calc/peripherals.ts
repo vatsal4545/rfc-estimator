@@ -293,3 +293,67 @@ export function computePeripherals(
     lines: { hardware, civil, signage, demolition },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Resetting prices to the shipped list
+// ---------------------------------------------------------------------------
+
+/**
+ * The peripheral unit prices that have a fixed shipped rate to return to, and
+ * that rate.
+ *
+ * Deliberately NOT here:
+ *  - quantities and scope (bollard count, which stalls are van accessible) —
+ *    not prices, and "reset" would mean deleting what someone surveyed;
+ *  - lump-sum fees quoted per job (permits, utility application) — no shipped
+ *    value exists;
+ *  - custom line items — same;
+ *  - the ADA unit costs. Those look like prices but the auto-planner derives
+ *    them from terrain (ADA_UNIT_COST.van x adaRegradeFactor), so there is no
+ *    single shipped number, and clearing them only invites the next rebuild to
+ *    write them straight back.
+ */
+export const PERIPHERAL_SHIPPED_PRICES = {
+  asphaltPerSf: CIVIL_RATES.asphaltPerSf,
+  bollardUnitCost: CIVIL_RATES.bollardEach,
+  concreteUnitCost: CIVIL_RATES.concretePerYard,
+  concreteShortLoadFee: CIVIL_RATES.concreteShortLoadFee,
+  consumablesPerL2: CIVIL_RATES.consumablesPerL2,
+  consumablesPerDcfc: CIVIL_RATES.consumablesPerDcfc,
+  serviceBoxUnitCost: 600,
+  pullBoxUnitCost: 0,
+  utilityVaultUnitCost: 0,
+} as const;
+
+export type PeripheralPriceKey = keyof typeof PERIPHERAL_SHIPPED_PRICES;
+
+export const PERIPHERAL_PRICE_KEYS = Object.keys(PERIPHERAL_SHIPPED_PRICES) as PeripheralPriceKey[];
+
+/** The two the type requires — cleared they would read as 0, so they are written back. */
+const REQUIRED_PRICE_KEYS: readonly PeripheralPriceKey[] = ["pullBoxUnitCost", "utilityVaultUnitCost"];
+
+/**
+ * Every unit price back to the shipped rate, leaving quantities, scope, fees
+ * and custom items untouched. Optional rates are cleared so they track the
+ * shipped table as it changes rather than freezing today's number.
+ */
+export function resetPeripheralPrices(p: PeripheralsInput): PeripheralsInput {
+  const out = { ...p } as Record<string, unknown>;
+  for (const key of PERIPHERAL_PRICE_KEYS) {
+    if (REQUIRED_PRICE_KEYS.includes(key)) out[key] = PERIPHERAL_SHIPPED_PRICES[key];
+    else delete out[key];
+  }
+  return out as unknown as PeripheralsInput;
+}
+
+/**
+ * How many unit prices this project has moved off the shipped list. Compares
+ * against the shipped RATE, not against a fresh project — a field the planner
+ * writes at its shipped value is not a quote, and counting it as one is how
+ * this read "5 prices quoted" on a project with none.
+ */
+export function peripheralPriceOverrideCount(p: PeripheralsInput): number {
+  return PERIPHERAL_PRICE_KEYS.filter(
+    (key) => p[key] !== undefined && p[key] !== PERIPHERAL_SHIPPED_PRICES[key],
+  ).length;
+}

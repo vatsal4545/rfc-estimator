@@ -78,9 +78,19 @@ export function MaterialRatesSection({ compact = false }: { compact?: boolean })
         <button className="font-medium text-blue-600 hover:underline" onClick={() => setShowAll((v) => !v)}>
           {showAll ? "Show only sizes in use" : "Show every size"}
         </button>
+        {Object.keys(rates.wire ?? {}).length > 0 && (
+          <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({ ...rates, wire: {} })}>
+            Reset conductor prices
+          </button>
+        )}
+        {Object.keys(rates.conduit ?? {}).length > 0 && (
+          <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({ ...rates, conduit: {} })}>
+            Reset conduit prices
+          </button>
+        )}
         {overridden > 0 && (
           <button className="font-medium text-blue-600 hover:underline" onClick={() => setRates({})}>
-            Reset all to the shipped list
+            Reset both to the shipped list
           </button>
         )}
         <span className="text-zinc-500">Lump-sum quotes for the whole line go on the Overrides tab instead.</span>

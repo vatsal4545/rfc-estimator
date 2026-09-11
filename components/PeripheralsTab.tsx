@@ -2,7 +2,7 @@
 
 import { ADA_UNIT_COST, BOLLARD_RULE, adaStallBreakdown } from "@/lib/calc/autoplan";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
-import { CIVIL_RATES } from "@/lib/calc/peripherals";
+import { CIVIL_RATES, peripheralPriceOverrideCount, resetPeripheralPrices } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
@@ -15,6 +15,7 @@ const GEAR_ITEMS = Array.from(new Set(GEAR_CATALOG.map((g) => g.item)));
 export function PeripheralsTab() {
   const { project, setProject, result } = useProject();
   const p = project.peripherals;
+  const pricesOffShipped = peripheralPriceOverrideCount(p);
 
   function updateP<K extends keyof typeof p>(key: K, value: (typeof p)[K]) {
     setProject((proj) => ({ ...proj, peripherals: { ...proj.peripherals, [key]: value } }));
@@ -261,6 +262,24 @@ export function PeripheralsTab() {
       </Section>
 
       <Section title="B. Hardware, civil, signage — manual counts" subtitle="Ground rods, anchor bolts, rebar, concrete, signs, striping and wheel stops are auto-derived from the Takeoff counts. Everything below is what you still count by hand.">
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
+          {pricesOffShipped > 0 ? (
+            <>
+              <button
+                className="font-medium text-blue-600 hover:underline"
+                onClick={() => setProject((proj) => ({ ...proj, peripherals: resetPeripheralPrices(proj.peripherals) }))}
+              >
+                Reset unit prices to the shipped list
+              </button>
+              <span className="text-zinc-500">
+                {pricesOffShipped} price{pricesOffShipped === 1 ? "" : "s"} quoted on this project — quantities and custom
+                items are not touched.
+              </span>
+            </>
+          ) : (
+            <span className="text-zinc-500">Every unit price below is the shipped rate.</span>
+          )}
+        </div>
         <Grid cols={4}>
           <Field label="Nuts (ea)"><input type="number" className={inputCls} value={p.nutsQty} onChange={(e) => updateP("nutsQty", Number(e.target.value))} /></Field>
           <Field label="Washers (ea)"><input type="number" className={inputCls} value={p.washersQty} onChange={(e) => updateP("washersQty", Number(e.target.value))} /></Field>
