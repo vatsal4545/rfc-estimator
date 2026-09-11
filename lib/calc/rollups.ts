@@ -1,7 +1,7 @@
 import { findLoadType, portsForLoadType } from "./tables";
-import type { LoadType, Rollups, TakeoffRowComputed } from "./types";
+import type { LoadType, Rollups, Setup, TakeoffRowComputed } from "./types";
 
-export function computeRollups(rows: TakeoffRowComputed[], loadTypes: LoadType[] = []): Rollups {
+export function computeRollups(rows: TakeoffRowComputed[], loadTypes: LoadType[] = [], setup?: Setup): Rollups {
   const nL2 = rows.filter((r) => r.category === "L2").reduce((s, r) => s + r.units, 0);
   const nDCFC = rows.filter((r) => r.category === "DCFC").reduce((s, r) => s + r.units, 0);
   const nFeeders = rows.filter((r) => r.category === "Feeder").reduce((s, r) => s + r.units, 0);
@@ -16,11 +16,18 @@ export function computeRollups(rows: TakeoffRowComputed[], loadTypes: LoadType[]
   // Charging STALLS, which is what gets striped: a unit serves as many stalls
   // as it has plugs, so a single-port L2 is one and a dual is two. Counting
   // chargers instead billed a site of single-port L2s for twice the striping.
+  // A DC cabinet's stall count is a siting decision, not a property of the
+  // hardware: a dual-cable unit is sometimes placed to serve one bay. The
+  // project answers when it knows; blank follows the cables. L2 always follows
+  // its own plugs — each port is its own stall.
+  const dcStalls = setup?.dcStallsPerCabinet;
   const nStalls = rows
     .filter((r) => r.category === "L2" || r.category === "DCFC")
     .reduce((s, r) => {
       const lt = findLoadType(loadTypes, r.loadTypeId);
-      return s + r.units * (lt ? portsForLoadType(lt) : 1);
+      const perUnit =
+        r.category === "DCFC" && dcStalls !== undefined ? dcStalls : lt ? portsForLoadType(lt) : 1;
+      return s + r.units * perUnit;
     }, 0);
 
   return {

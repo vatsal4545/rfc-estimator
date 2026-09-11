@@ -25,7 +25,7 @@ export function computeEstimate(project: Project): EstimateResult {
   const chainRows = chain.rows.map((row) => computeTakeoffRow(row, project.setup, chainLoadTypes));
 
   const rows = [...manualRows, ...chainRows];
-  const rollups = computeRollups(rows, chainLoadTypes);
+  const rollups = computeRollups(rows, chainLoadTypes, project.setup);
   const materials = computeMaterials(rows, project.setup, rollups);
   const peripherals = computePeripherals(
     project.peripherals,
