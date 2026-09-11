@@ -313,6 +313,12 @@ export interface SignageItem {
   qty: number;
   unitCost: number;
   auto: boolean;
+  /**
+   * What the Takeoff would give if nobody had typed over it. Carried even when
+   * overridden, so the UI can offer the derived count as the placeholder and
+   * say what "→ auto" would put back.
+   */
+  autoQty?: number;
 }
 
 export interface FeeItem {
@@ -378,6 +384,15 @@ export interface PeripheralsInput {
   signUnitCost?: number;
   signPostUnitCost?: number;
   stripingUnitCost?: number;
+  /**
+   * Typed signage counts. Blank hands the line back to the Takeoff; a zero is
+   * an answer ("no signs on this job") and is honoured, which is why these are
+   * read with ?? and not ||.
+   */
+  signQtyOverride?: number;
+  signPostQtyOverride?: number;
+  adaSignPostQtyOverride?: number;
+  stripingQtyOverride?: number;
   /**
    * Concrete supply (2500 PSI delivered). The order quantity is auto-derived
    * from pad volumes (DCFC pads, L2 pads, switchgear pad, step-down/sub-panel

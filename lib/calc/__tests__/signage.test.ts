@@ -62,3 +62,48 @@ describe("signage and striping follow the RFC_V18 rules", () => {
     expect(line(r, "Striping").unitCost).toBe(CIVIL_RATES.stripingPerStall);
   });
 });
+
+// The derived counts are right for a standard job and wrong for the one where
+// the AHJ wants a sign at each end of the row, or the striping contractor
+// quotes the lot rather than the stalls. A typed count wins; clearing it hands
+// the line back to the Takeoff.
+describe("a typed quantity overrides the derived one", () => {
+  it("takes a typed count on every signage line", () => {
+    const r = build(6, 5, {
+      signQtyOverride: 14,
+      signPostQtyOverride: 9,
+      adaSignPostQtyOverride: 3,
+      stripingQtyOverride: 6,
+      bollardsQty: 40,
+    });
+    expect(line(r, "Signs").qty).toBe(14);
+    expect(line(r, "Sign posts").qty).toBe(9);
+    expect(line(r, "ADA sign post").qty).toBe(3);
+    expect(line(r, "Striping").qty).toBe(6);
+    expect(line(r, "Bollards").qty).toBe(40);
+  });
+
+  it("reports an overridden line as no longer automatic", () => {
+    const r = build(6, 5, { signQtyOverride: 14 });
+    expect(line(r, "Signs").auto).toBe(false);
+    expect(line(r, "Sign posts").auto).toBe(true); // untouched
+  });
+
+  it("honours a deliberate zero — 'no signs on this job' is an answer", () => {
+    const r = build(6, 5, { signQtyOverride: 0 });
+    expect(line(r, "Signs").qty).toBe(0);
+    expect(line(r, "Signs").auto).toBe(false);
+  });
+
+  it("keeps reporting the derived count while overridden, so it can be put back", () => {
+    const r = build(6, 5, { signQtyOverride: 14 });
+    expect(line(r, "Signs").qty).toBe(14);
+    expect(line(r, "Signs").autoQty).toBe(11); // what "auto" would restore
+  });
+
+  it("falls back to the derived count when the override is cleared", () => {
+    const r = build(6, 5, { signQtyOverride: undefined });
+    expect(line(r, "Signs").qty).toBe(11);
+    expect(line(r, "Signs").auto).toBe(true);
+  });
+});
