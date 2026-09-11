@@ -100,6 +100,9 @@ export interface SyncState {
   status: "off" | "syncing" | "synced" | "error";
   at?: number;
   message?: string;
+  /** Local edits the cloud has not got yet. Manual sync makes this the only
+   *  way to know, so it has to be visible. */
+  pending?: boolean;
 }
 
 const ProjectCtx = createContext<Ctx | null>(null);
@@ -208,14 +211,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     }
     refreshLibrary();
-    if (session) scheduleSync();
+    markPending();
   };
 
   const restoreProject = (id: string) => {
     const meta = store.restoreProject(id);
     if (!meta) return;
     refreshLibrary();
-    if (session) scheduleSync();
+    markPending();
   };
 
   const renameProject = (id: string, name: string) => {
@@ -263,11 +266,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   });
   const [syncState, setSyncState] = useState<SyncState>({ status: "off" });
   const syncBusy = useRef(false);
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const scheduleSync = () => {
-    clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => void runSync(session?.token ?? ""), 4_000);
-  };
+
+  const markPending = () => setSyncState((s) => (s.status === "off" ? s : { ...s, pending: true }));
 
   const runSync = async (key: string) => {
     if (!key || syncBusy.current) return;
@@ -295,9 +295,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         });
         refreshLibrary();
       }
-      setSyncState({ status: "synced", at: Date.now() });
+      setSyncState({ status: "synced", at: Date.now(), pending: false });
     } catch (err) {
-      setSyncState({ status: "error", at: Date.now(), message: (err as Error).message });
+      setSyncState({ status: "error", at: Date.now(), message: (err as Error).message, pending: true });
     } finally {
       syncBusy.current = false;
     }
@@ -339,28 +339,34 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setSyncState({ status: "off" });
   };
 
-  // Boot sync + a 30 s poll so edits from other devices show up on their own.
-  // (The first run goes through setTimeout(0): runSync sets state, which an
-  // effect must not do synchronously.)
+  // One pull when a session appears, so signing in on another device shows the
+  // library instead of an empty sidebar. After that, syncing is manual: nothing
+  // here talks to the network unless somebody presses Sync now.
+  //
+  // It used to poll every 30 s and push 4 s after every edit settled, both
+  // unconditionally, which cost roughly 2,880 writes a day from an idle open
+  // tab and exhausted the blob store's monthly write allowance.
+  //
+  // (The run goes through setTimeout(0): runSync sets state, which an effect
+  // must not do synchronously.)
   useEffect(() => {
     const token = session?.token;
     if (!token) return;
     const boot = setTimeout(() => void runSync(token), 0);
-    const iv = setInterval(() => void runSync(token), 30_000);
-    return () => {
-      clearTimeout(boot);
-      clearInterval(iv);
-    };
+    return () => clearTimeout(boot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.token]);
 
-  // Push local edits shortly after they settle (piggybacks on the save effect).
+  // Local edits mark the workspace dirty. No request: this only lights the
+  // "unsynced" indicator so the Sync now button has something to say.
+  const firstEditPass = useRef(true);
   useEffect(() => {
-    const token = session?.token;
-    if (!token) return;
-    clearTimeout(syncTimer.current);
-    syncTimer.current = setTimeout(() => void runSync(token), 4_000);
-    return () => clearTimeout(syncTimer.current);
+    if (firstEditPass.current) {
+      firstEditPass.current = false;
+      return;
+    }
+    if (!session?.token) return;
+    markPending();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, project, libraryVersion, catalogOverrides, session?.token]);
 
