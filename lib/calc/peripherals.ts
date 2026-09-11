@@ -282,10 +282,7 @@ export function computePeripherals(
     { name: "Sign posts", ...counted(input.signPostQtyOverride, rollups.nL2 + Math.ceil(rollups.nDCFC / 2)), unitCost: signPostCost },
     { name: "ADA sign post", ...counted(input.adaSignPostQtyOverride, adaStalls > 0 ? 1 : 0), unitCost: signPostCost },
     { name: "Bollards", qty: input.bollardsQty, autoQty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
-    // Ten-stall units. The RFC reads (L2 x 2 + DC), which assumes every L2 is
-    // dual-port — true of the job it was written for, and double the striping
-    // on a site of single-port units. Stalls are plugs.
-    { name: "Striping", ...counted(input.stripingQtyOverride, rollups.nStalls / 10), unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall },
+    { name: "Striping", ...counted(input.stripingQtyOverride, (rollups.nL2 * 2 + rollups.nDCFC) / 10), unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall },
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);
 

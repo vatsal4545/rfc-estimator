@@ -1,7 +1,6 @@
-import { findLoadType, portsForLoadType } from "./tables";
-import type { LoadType, Rollups, TakeoffRowComputed } from "./types";
+import type { Rollups, TakeoffRowComputed } from "./types";
 
-export function computeRollups(rows: TakeoffRowComputed[], loadTypes: LoadType[] = []): Rollups {
+export function computeRollups(rows: TakeoffRowComputed[]): Rollups {
   const nL2 = rows.filter((r) => r.category === "L2").reduce((s, r) => s + r.units, 0);
   const nDCFC = rows.filter((r) => r.category === "DCFC").reduce((s, r) => s + r.units, 0);
   const nFeeders = rows.filter((r) => r.category === "Feeder").reduce((s, r) => s + r.units, 0);
@@ -13,21 +12,11 @@ export function computeRollups(rows: TakeoffRowComputed[], loadTypes: LoadType[]
   const totalConduitFt = rows.reduce((s, r) => s + r.conduitFt, 0);
   const totalDataFt = rows.reduce((s, r) => s + r.dataFt, 0);
   const feederMaterialsTotal = rows.reduce((s, r) => s + r.rowTotal, 0);
-  // Charging STALLS, which is what gets striped: a unit serves as many stalls
-  // as it has plugs, so a single-port L2 is one and a dual is two. Counting
-  // chargers instead billed a site of single-port L2s for twice the striping.
-  const nStalls = rows
-    .filter((r) => r.category === "L2" || r.category === "DCFC")
-    .reduce((s, r) => {
-      const lt = findLoadType(loadTypes, r.loadTypeId);
-      return s + r.units * (lt ? portsForLoadType(lt) : 1);
-    }, 0);
 
   return {
     nL2,
     nDCFC,
     nChargers: nL2 + nDCFC,
-    nStalls,
     nFeeders,
     nCircuits,
     longestRunFt,

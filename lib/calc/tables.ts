@@ -215,16 +215,3 @@ export function conduitTableFor(setup?: Pick<Setup, "materialRates">): ConduitRo
     return r ? { ...c, pvcPerFt: r.pvcPerFt ?? c.pvcPerFt, emtPerFt: r.emtPerFt ?? c.emtPerFt } : c;
   });
 }
-
-
-/**
- * Plugs per unit — the model's own override, else an L2's circuits (one per
- * port) and a DC cabinet's single cable.
- *
- * Deliberately reads lt.runsPerUnit and NOT a row's resolvedRunsPerUnit:
- * lowering Runs/u to parallel the conductors of one circuit must not change how
- * many cars can plug in.
- */
-export function portsForLoadType(lt: LoadType): number {
-  return lt.portsPerUnit ?? (lt.category === "L2" ? lt.runsPerUnit : lt.category === "DCFC" ? 1 : 0);
-}

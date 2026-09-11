@@ -243,8 +243,6 @@ export interface Rollups {
   nL2: number;
   nDCFC: number;
   nChargers: number;
-  /** Charging stalls — plugs, not cabinets. What striping is measured against. */
-  nStalls: number;
   nFeeders: number;
   nCircuits: number;
   longestRunFt: number;
