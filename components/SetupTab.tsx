@@ -3,7 +3,7 @@
 import { INSTALL_METHOD_INFO, effectiveInstallMethod } from "@/lib/calc/install";
 import type { InstallMethod } from "@/lib/calc/types";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, PctField, Section, inputCls, selectCls } from "./ui";
 
 export function SetupTab() {
   const { project, setProject, result } = useProject();
@@ -110,15 +110,13 @@ export function SetupTab() {
               onChange={(e) => update("continuousLoadFactor", Number(e.target.value))}
             />
           </Field>
-          <Field label="Max voltage drop (feeder)" hint="Fraction of nominal voltage, e.g. 0.03 = 3%">
-            <input
-              type="number"
-              step="0.001"
-              className={inputCls}
-              value={s.maxVoltageDropFraction}
-              onChange={(e) => update("maxVoltageDropFraction", Number(e.target.value))}
-            />
-          </Field>
+          <PctField
+            label="Max voltage drop (feeder)"
+            hint="Share of nominal voltage the run may lose — NEC recommends 3% on a feeder"
+            step="0.1"
+            value={s.maxVoltageDropFraction}
+            onChange={(v) => update("maxVoltageDropFraction", v)}
+          />
           <Field label="Power factor">
             <input
               type="number"

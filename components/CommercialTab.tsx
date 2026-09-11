@@ -14,7 +14,7 @@ import {
 } from "@/lib/proposal/types";
 import { computeEquipmentSchedule, reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
+import { Field, Grid, PctField, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 // Commercial — the CEO's price layer (EVSE Project Intake terms and the
 // Best Western Business_Model), computed from the estimator's cost result.
@@ -39,23 +39,6 @@ const GROUPS: { key: BuildupGroup; label: string }[] = [
 
 const STATUS_LABEL: Record<ScopeStatus, string> = { we: "We provide", others: "By others", none: "Not required" };
 
-function PctField({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      <input type="number" step="0.01" className={inputCls} value={value} onChange={(e) => onChange(Number(e.target.value))} />
-    </Field>
-  );
-}
 
 export function CommercialTab() {
   const { project, setProject, result, proposal, hardwareAllowance } = useProject();
@@ -380,13 +363,13 @@ export function CommercialTab() {
               onChange={(e) => updateMargin("hardwareCostTotal", e.target.value === "" ? undefined : Number(e.target.value))}
             />
           </Field>
-          <PctField label="Hardware cost, share of list" hint="BW: $118,107 on $401,654 list ≈ 0.294" value={c.margin.hardwarePctOfList} onChange={(v) => updateMargin("hardwarePctOfList", v)} />
-          <PctField label="Service cost, share of price" hint="BW assumption 0.55" value={c.margin.servicePctOfPrice} onChange={(v) => updateMargin("servicePctOfPrice", v)} />
-          <PctField label="EVOLV cost, share of price" hint="Platform fees paid through — BW 0.45" value={c.margin.evolvPctOfPrice} onChange={(v) => updateMargin("evolvPctOfPrice", v)} />
-          <PctField label="Design cost, share of price" hint="In-house hours at cost — BW 0.60" value={c.margin.designPctOfPrice} onChange={(v) => updateMargin("designPctOfPrice", v)} />
-          <PctField label="Interconnection cost, share of price" hint="BW 0.70" value={c.margin.interconnectPctOfPrice} onChange={(v) => updateMargin("interconnectPctOfPrice", v)} />
-          <PctField label="Contingency expected to be spent" hint="Unspent contingency falls to margin — BW 0.50" value={c.margin.contingencySpendShare} onChange={(v) => updateMargin("contingencySpendShare", v)} />
-          <PctField label="PM fee internal cost" hint="The rest of the construction PM fee is margin — BW 0.30" value={c.margin.pmInternalCostPct} onChange={(v) => updateMargin("pmInternalCostPct", v)} />
+          <PctField label="Hardware cost, share of list" hint="BW: $118,107 on $401,654 list ≈ 29.4%" value={c.margin.hardwarePctOfList} onChange={(v) => updateMargin("hardwarePctOfList", v)} />
+          <PctField label="Service cost, share of price" hint="BW assumption 55%" value={c.margin.servicePctOfPrice} onChange={(v) => updateMargin("servicePctOfPrice", v)} />
+          <PctField label="EVOLV cost, share of price" hint="Platform fees paid through — BW 45%" value={c.margin.evolvPctOfPrice} onChange={(v) => updateMargin("evolvPctOfPrice", v)} />
+          <PctField label="Design cost, share of price" hint="In-house hours at cost — BW 60%" value={c.margin.designPctOfPrice} onChange={(v) => updateMargin("designPctOfPrice", v)} />
+          <PctField label="Interconnection cost, share of price" hint="BW 70%" value={c.margin.interconnectPctOfPrice} onChange={(v) => updateMargin("interconnectPctOfPrice", v)} />
+          <PctField label="Contingency expected to be spent" hint="Unspent contingency falls to margin — BW 50%" value={c.margin.contingencySpendShare} onChange={(v) => updateMargin("contingencySpendShare", v)} />
+          <PctField label="PM fee internal cost" hint="The rest of the construction PM fee is margin — BW 30%" value={c.margin.pmInternalCostPct} onChange={(v) => updateMargin("pmInternalCostPct", v)} />
         </Grid>
       </Section>
 
