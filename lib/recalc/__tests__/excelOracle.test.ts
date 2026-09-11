@@ -82,11 +82,13 @@ describe("the engine reproduces what Excel computed", () => {
     const { compared, disagreements, warnings } = await diffAgainstCachedValues(INTAKE_TEMPLATE_PATH);
     expect(disagreements).toEqual([]);
     expect(compared).toBe(0);
-    // One genuine circular reference of the template's own: Revenue!B7 is
-    // derived from B95, which reaches B99/B100, whose SUMIFS key off B7.
-    // Excel flags it and shows 0; so do we, and we say so.
-    expect(warnings.map((w) => `${w.sheet}!${w.ref}: ${w.message}`)).toEqual([
-      "Revenue!B7: circular reference — treated as 0, as Excel does",
-    ]);
+    // Clean at 3.1.0. Through 2.9.0 this asserted one genuine circular
+    // reference of the template's own — Revenue!B7 derived from B95, which
+    // reached B99/B100, whose SUMIFS keyed off B7 — and Excel warned on every
+    // open. Template 3.0.0 repointed those SUMIFS at B35, the utility name,
+    // which is what they always meant to match; the loop is gone and this is
+    // our independent confirmation of it. A warning reappearing here means the
+    // template has regressed.
+    expect(warnings.map((w) => `${w.sheet}!${w.ref}: ${w.message}`)).toEqual([]);
   });
 });

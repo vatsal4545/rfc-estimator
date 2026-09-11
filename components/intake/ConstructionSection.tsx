@@ -1,6 +1,7 @@
 "use client";
 
 import { tableWrapCls, theadCls } from "../ui";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
@@ -91,7 +92,7 @@ export function ConstructionSection() {
       <Section title="4 · Construction — labour" subtitle="Crew days come from the takeoff and the terrain; the CEO basis is $2,750 a day, fully burdened, contingency on top, construction PM as 15% of the loaded labour. Type over a derived value to pin it.">
         <Grid cols={4}>
           <PinnedNumber label="Crew days on site" hint="Estimator schedule from the takeoff — must match the schedule you publish" path="financial.laborBusinessDays" value={f.laborBusinessDays} step="1" />
-          <Field label="Crew day rate ($)" hint="Fully burdened — intake 2.9.0: $2,750">
+          <Field label="Crew day rate ($)" hint={`Fully burdened — intake ${INTAKE_TEMPLATE.version}: $2,750`}>
             <input type="number" className={inputCls} value={f.laborDailyRate} onChange={(e) => setFinancial("laborDailyRate", Number(e.target.value))} />
           </Field>
           <Field label="Contingency" hint="Every construction line; decimals (0.10 = 10%)">

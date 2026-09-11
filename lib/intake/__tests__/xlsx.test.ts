@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readWorkbook, serialToIsoDate, unescapeXml } from "../xlsx";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_2.9.0.xlsx");
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-2.9.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.1.0.xlsx");
 
 describe("xlsx reader", () => {
   it("reads the CEO's intake template, which ExcelJS cannot open", async () => {
@@ -13,7 +13,7 @@ describe("xlsx reader", () => {
       "Version", "README", "Project", "Existing", "Equipment", "Electrical", "Construction", "Commercial",
       "Revenue", "Carbon", "Deal_Structure", "Overrides", "PriceBook", "RefData", "Utilities", "RateLibrary",
     ]);
-    expect(wb.get("Version", "B4")).toBe("2.9.0");
+    expect(wb.get("Version", "B4")).toBe("3.1.0");
     expect(wb.get("Version", "B8")).toBe("4aecae7d4b5f25a9");
     expect(wb.get("Project", "B22")).toBe(24);
     expect(wb.get("Project", "B23")).toBe(365);

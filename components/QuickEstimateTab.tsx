@@ -12,6 +12,7 @@ import {
   estimateTimeline,
   timelineTotal,
 } from "@/lib/calc/autoplan";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { effectiveInstallMethod, surfaceRouteFt } from "@/lib/calc/install";
 import type { InstallMethod, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { money, num, pct } from "@/lib/format";
@@ -513,7 +514,7 @@ function BuildSummary() {
           <Assumption label="Construction labor" value={`${num(f.laborBusinessDays)} business days`} detail={`${money(costs.labor)} crew cost`} />
           <Assumption label="Site plan design" value={money(f.autoCadDesignCost)} detail="AutoCAD layout, ADA, equipment placement" />
           <Assumption label="SLD / electrical design" value={money(f.electricalEngDesignCost)} detail="PE-stamped single-line & load calcs" />
-          <Assumption label="Construction PM (CPM)" value={`${pct(f.pmPctOfLabor ?? 0)} of loaded labor · ${money(costs.constructionPm)}`} detail="CEO basis — intake 2.9.0 Construction tab" />
+          <Assumption label="Construction PM (CPM)" value={`${pct(f.pmPctOfLabor ?? 0)} of loaded labor · ${money(costs.constructionPm)}`} detail={`CEO basis — intake ${INTAKE_TEMPLATE.version} Construction tab`} />
           <Assumption label="Permits & utility fees" value={money(permitsTotal)} detail={`plan check ${money(f.planCheckPermitFee)} · issuance ${money(per.permitFeeTotal)} · utility ${money(per.utilityAppFee)}`} />
           <Assumption label="Private utility scan" value={gpr ? `${num(gpr.qty)} day${gpr.qty === 1 ? "" : "s"} · ${money(gpr.qty * gpr.unitCost)}` : "not included"} detail={gpr ? "GPR along the trench route" : undefined} />
           <Assumption

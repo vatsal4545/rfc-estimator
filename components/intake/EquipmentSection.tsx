@@ -78,7 +78,7 @@ export function EquipmentSection() {
     <div>
       <Section
         title="2 · Equipment — what is being sold"
-        subtitle="Pick a capacity, then the SKU: the list narrows the way the intake's picker does. Description, role, kW, connectors and MSRP come from the CEO's price book (template 2.9.0). Every change rebuilds the estimate — sizing, gear, civil, labour days — underneath."
+        subtitle="Pick a capacity, then the SKU: the list narrows the way the intake's picker does. Description, role, kW, connectors and MSRP come from the CEO's price book. Every change rebuilds the estimate — sizing, gear, civil, labour days — underneath."
       >
         <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">

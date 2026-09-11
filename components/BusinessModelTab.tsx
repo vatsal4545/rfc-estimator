@@ -1,5 +1,6 @@
 "use client";
 
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
@@ -187,7 +188,7 @@ export function ModelUnavailable() {
           onClick={() => setProject((p) => ({ ...p, commercial: defaultCommercial() }))}
           className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
         >
-          Set up pricing with the intake 2.9.0 defaults
+          Set up pricing with the intake {INTAKE_TEMPLATE.version} defaults
         </button>
       </Section>
   );

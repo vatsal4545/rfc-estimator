@@ -16,7 +16,7 @@ import { Field, Grid, Pill, Section, inputCls } from "../ui";
 // Version & handoff — the intake's Version tab plus the handoff itself: how
 // complete the intake is, what the estimator's figures will say in the CEO's
 // override register, what is left for a human, and the download of the
-// filled EVSE Project Intake 2.9.0.
+// filled EVSE Project Intake 3.1.0.
 
 const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 whitespace-nowrap";
 const td = "px-3 py-1.5 align-top";

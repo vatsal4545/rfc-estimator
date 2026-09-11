@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 2.9.0 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.1.0 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -7,11 +7,16 @@
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "2.9.0",
+  version: "3.1.0",
+  /**
+   * Version!B8. Note it did NOT change between 2.9.0 and 3.1.0 even though 53
+   * cells did, so it identifies the template family rather than its contents —
+   * the version string is what actually gates a fill.
+   */
   contentHash: "4aecae7d4b5f25a9",
-  file: "EVSE_Project_Intake_TEMPLATE_2.9.0.xlsx",
+  file: "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_2.9.0.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -75,8 +80,17 @@ export const ELECTRICAL_CELLS = {
   switchgearToPoleFt: "B32",
   spareCapacityA: "B33",
   loadManagement: "B34",
+  /** SIZING cap: conductors, gear and power per position are sized on this. */
   cappedKw: "B35",
   boards: "B36",
+  /**
+   * BILLING setpoint, new at 3.0.0 — what the EMS holds the peak fifteen-minute
+   * draw to. Nothing is sized on it. Kept separate from cappedKw above because
+   * typing a billing figure into the sizing cap cut the revenue projection to
+   * buy a demand-charge saving. The estimator models neither, so this is
+   * reported rather than written.
+   */
+  demandSetpointKw: "B45",
   switchgearPricedA: "B42",
   // Rule 29 block
   serviceType: "B51",
@@ -186,6 +200,13 @@ export const COMMERCIAL_CELLS = {
   salesTax: "B9",
   contractYears: "B12",
   inWarrantyYears: "B13",
+  /**
+   * New at 3.0.0 and read by the CEO's model: whether service and extended
+   * warranty are renewed past the contract, since the model measures a longer
+   * horizon and charges the uncovered years as an operating cost. The template
+   * ships "Yes"; the estimator has no such field, so it leaves that standing.
+   */
+  renewService: "B17",
   evolvPerPortMonth: "B14",
   financingOffered: "B19",
   lender: "B20",
@@ -212,6 +233,12 @@ export const REVENUE_CELLS = {
   rampYear2: "B20",
   rampYear3: "B21",
   growth: "B22",
+  /**
+   * New at 3.0.0 and read by the CEO's model, which until then held every
+   * tariff flat for ten years. Applied to demand and block rates year by year.
+   * The estimator has no tariff escalation, so the template's 0 stands.
+   */
+  tariffEscalation: "B56",
   historyMonths: "B25",
   historyKwhPerDay: "B26",
   historyRevenuePerYear: "B27",
@@ -272,6 +299,11 @@ export const DEAL_CELLS = {
   minClientNpv: "B22",
   minReturnMultiple: "B23",
   maxContribution: "B24",
+  /**
+   * New at 3.0.0: what is being done about a guard-rail breach above and what
+   * would release it. Judgement written down, not a number the estimator holds.
+   */
+  pricePosition: "B25",
   clientFinances: "B41",
 } as const;
 /** Scope of supply rows (column B: We provide / By others / Not required). */

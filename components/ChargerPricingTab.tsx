@@ -21,7 +21,7 @@ export function ChargerPricingTab() {
     <div>
       <Section
         title="Charger pricing — global catalog"
-        subtitle="These $/unit list prices apply to EVERY project in your library (this browser). The shipped defaults are the CEO price book's list prices (EVSE Project Intake 2.9.0, Chargetronix TP5 / CTX); leave a price blank to use them. Projects where you hand-typed a hardware cost on the Financials tab keep their manual number."
+        subtitle="These $/unit list prices apply to EVERY project in your library (this browser). The shipped defaults are the CEO price book's list prices (the CEO price book, Chargetronix TP5 / CTX); leave a price blank to use them. Projects where you hand-typed a hardware cost on the Financials tab keep their manual number."
       >
         {manualProject && (
           <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">

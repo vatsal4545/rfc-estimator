@@ -14,7 +14,7 @@ import { defaultCommercial, defaultIntake, defaultTariff, zeroRates } from "../p
 import { findSku } from "../ref/priceBook";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
 
-const TEMPLATE = join(__dirname, "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_2.9.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx");
 
 interface Scenario {
   name: string;
