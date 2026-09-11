@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { generateTakeoffRows, type QuickLine } from "@/lib/calc/quickstart";
+import { generateTakeoffRows, isAutoLocation, locationForLoadType, type QuickLine } from "@/lib/calc/quickstart";
 import { WIRE_TABLE } from "@/lib/calc/tables";
 import type { Project, TakeoffEdit, TakeoffRowInput } from "@/lib/calc/types";
 import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
@@ -202,6 +202,17 @@ export function TakeoffTab() {
     });
   }
 
+  // Switching a row's charger renames the row with it: a row reading
+  // "DCFC 200kW #1" carrying an L2 unit is how a takeoff gets misread. A
+  // location the user typed is theirs and survives untouched.
+  function changeLoadType(rowId: string, location: string, loadTypeId: string) {
+    const patch: Partial<TakeoffRowInput> = { loadTypeId };
+    if (isAutoLocation(location, project.loadTypes.map((lt) => lt.id))) {
+      patch.location = locationForLoadType(project.takeoff, rowId, loadTypeId);
+    }
+    update(rowId, patch);
+  }
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-4">
@@ -285,7 +296,7 @@ export function TakeoffTab() {
                   <select
                     className={selectCls}
                     value={row.loadTypeId}
-                    onChange={(e) => update(row.id, { loadTypeId: e.target.value })}
+                    onChange={(e) => changeLoadType(row.id, row.location, e.target.value)}
                   >
                     {project.loadTypes.map((lt) => (
                       <option key={lt.id} value={lt.id}>
