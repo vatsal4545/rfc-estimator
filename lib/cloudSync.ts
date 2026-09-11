@@ -23,6 +23,8 @@ export interface CloudLibrary extends CloudLibraryData {
 export interface SyncOutcome {
   /** Anything local changed (UI should reload from the stores). */
   changedLocally: boolean;
+  /** Whether this round trip actually wrote anything. */
+  pushed: boolean;
 }
 
 // ---- auth calls ---------------------------------------------------------------
@@ -78,7 +80,32 @@ async function push(token: string, lib: CloudLibrary): Promise<void> {
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `sync push failed (${res.status})`);
 }
 
-/** One full round trip: pull -> merge into local -> push the union. */
+/**
+ * Content identity of a library, for deciding whether a write is worth making.
+ * exportedAt is excluded on purpose: it is stamped Date.now() on every call, so
+ * including it would make every snapshot look different from every other one.
+ * Keys are sorted so a change in property order cannot masquerade as an edit.
+ */
+function contentKey(lib: CloudLibrary): string {
+  return JSON.stringify(
+    { ...lib, exportedAt: undefined },
+    (_k, val) =>
+      val && typeof val === "object" && !Array.isArray(val)
+        ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+        : val,
+  );
+}
+
+/**
+ * One full round trip: pull -> merge into local -> push the union, but only if
+ * the union differs from what the server already holds.
+ *
+ * The push used to be unconditional. With a poll running while any signed-in
+ * tab is open that is a write every cycle whether or not anything changed —
+ * ~2,880 writes a day from a tab nobody is touching, which exhausted the blob
+ * store's monthly write allowance and got it suspended. An idle tab now costs
+ * one read per poll and no writes at all.
+ */
 export async function syncOnce(token: string, store: ProjectStore, catalog: CatalogStore): Promise<SyncOutcome> {
   const remote = await pull(token);
   let changedLocally = false;
@@ -92,6 +119,8 @@ export async function syncOnce(token: string, store: ProjectStore, catalog: Cata
     ...store.exportLibrary(),
     catalog: catalog.getOverrides(),
   };
-  await push(token, merged);
-  return { changedLocally };
+  // No remote at all means a new workspace, which always needs its first write.
+  const pushed = !remote || contentKey(merged) !== contentKey(remote);
+  if (pushed) await push(token, merged);
+  return { changedLocally, pushed };
 }

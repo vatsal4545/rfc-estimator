@@ -229,21 +229,29 @@ function SyncPanel() {
     }
   };
 
+  // Syncing is manual, so "unsynced" is the state that matters: nothing will
+  // send these edits but the button, and the old label promised a retry that
+  // no longer happens.
   const statusLine = () => {
-    switch (syncState.status) {
-      case "syncing":
-        return <span className="text-blue-500">Syncing…</span>;
-      case "synced":
-        return <span className="text-green-600">✓ Synced {syncState.at ? relativeTime(syncState.at) : ""}</span>;
-      case "error":
-        return (
-          <span className="text-red-500" title={syncState.message}>
-            Sync error — retrying
-          </span>
-        );
-      default:
-        return null;
+    if (syncState.status === "syncing") return <span className="text-blue-500">Syncing…</span>;
+    if (syncState.status === "error") {
+      return (
+        <span className="text-red-500" title={syncState.message}>
+          Sync failed — not sent
+        </span>
+      );
     }
+    if (syncState.pending) {
+      return (
+        <span className="text-amber-600 dark:text-amber-400" title="These edits are saved on this device. Press Sync now to send them to your other devices.">
+          ● Unsynced changes
+        </span>
+      );
+    }
+    if (syncState.status === "synced") {
+      return <span className="text-green-600">✓ Synced {syncState.at ? relativeTime(syncState.at) : ""}</span>;
+    }
+    return null;
   };
 
   // ---- signed in ------------------------------------------------------------
