@@ -8,9 +8,11 @@
 // Cells are written as inline strings, plain numbers or booleans into the
 // existing <c> element (its style is kept), or inserted into the right row in
 // column order when the template has no placeholder cell. A target cell that
-// carries a formula is refused, never overwritten.
+// carries a formula is refused unless the write opts in with
+// `overwriteFormula`; a cell defining a shared formula is refused either way.
 
 import JSZip from "jszip";
+import { recalculateWorkbook, type RecalcReport } from "../recalc";
 import { attrs, sheetPathsOf, zipText } from "./xlsx";
 
 export { isoToSerial } from "./serial";
@@ -21,6 +23,26 @@ export interface CellWrite {
   sheet: string;
   ref: string;
   value: WriteValue;
+  /**
+   * Replace the formula in the target cell with this literal value. Off by
+   * default, and deliberately so: filling the intake must never clobber the
+   * template's own math. The RFC/MSRP calculator fill opts in for the two
+   * ranges whose formulas it is meant to supersede — the Costs Internal
+   * "Individual Cost" column (which reads CPM Calcs) and the resolved utility
+   * rate cells (which read the workbook's own copy of the rate library).
+   */
+  overwriteFormula?: boolean;
+}
+
+export interface PatchOptions {
+  /**
+   * Recalculate the workbook and store every formula's result beside its
+   * formula. On by default, and it has to be: Excel recalculates on open, so
+   * a missing cached value is invisible there, while openpyxl, pandas and
+   * SheetJS read the cached value and nothing else — they see a blank.
+   * Turn it off only to inspect what the writer alone did.
+   */
+  recalculate?: boolean;
 }
 
 export interface PatchResult {
@@ -29,6 +51,8 @@ export interface PatchResult {
   written: number;
   /** Writes refused: a formula cell, an unknown sheet, or a malformed reference. */
   refused: string[];
+  /** What the recalculation did, when it ran. */
+  recalc?: RecalcReport;
 }
 
 export function escapeXml(s: string): string {
@@ -68,6 +92,12 @@ interface ParsedCell {
   raw: string;
   styleAttr: string;
   hasFormula: boolean;
+  /**
+   * The cell defines a shared formula other cells depend on (`<f t="shared"
+   * ref="A1:A9" si="3">`). Replacing it would leave those dependents with no
+   * definition, so it is never overwritten even when the caller opts in.
+   */
+  sharedMaster: boolean;
 }
 
 function parseCells(inner: string): ParsedCell[] {
@@ -78,12 +108,16 @@ function parseCells(inner: string): ParsedCell[] {
     if (!ref) continue;
     const split = splitRef(ref);
     if (!split) continue;
+    const body = m[2] ?? "";
+    const f = /<f\b([^>]*?)(?:\/>|>)/.exec(body);
+    const fa = f ? attrs(`<f ${f[1]}>`) : {};
     out.push({
       ref,
       colIdx: colIndex(split.col),
       raw: m[0],
       styleAttr: a.s !== undefined ? ` s="${a.s}"` : "",
-      hasFormula: /<f\b/.test(m[2] ?? ""),
+      hasFormula: f !== null,
+      sharedMaster: fa.t === "shared" && fa.ref !== undefined,
     });
   }
   return out;
@@ -138,17 +172,23 @@ export function patchSheetXml(xml: string, writes: CellWrite[]): { xml: string; 
         continue;
       }
       pending.delete(c.ref);
-      if (c.hasFormula) {
+      if (c.hasFormula && !w.overwriteFormula) {
         refused.push(`${w.sheet}!${w.ref}: the template cell holds a formula — left as is`);
         out.push(c);
         continue;
       }
-      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value), hasFormula: false });
+      if (c.hasFormula && c.sharedMaster) {
+        refused.push(`${w.sheet}!${w.ref}: the template cell defines a shared formula other cells depend on — left as is`);
+        out.push(c);
+        continue;
+      }
+      // renderCell rebuilds the <c> from scratch, so any <f> goes with it.
+      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value), hasFormula: false, sharedMaster: false });
       written++;
     }
     for (const w of pending.values()) {
       const split = splitRef(w.ref)!;
-      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value), styleAttr: "", hasFormula: false });
+      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value), styleAttr: "", hasFormula: false, sharedMaster: false });
       written++;
     }
     out.sort((a, b) => a.colIdx - b.colIdx);
@@ -188,11 +228,19 @@ function resolveSheet(sheets: { name: string; path: string }[], name: string): {
 
 /**
  * Write cells into a copy of the workbook. Every other part is carried over
- * untouched; the workbook is flagged to recalculate fully when Excel opens it
+ * untouched; the workbook is then recalculated so each formula carries its
+ * own result, it is flagged to recalculate fully when Excel opens it anyway
  * (so the template's live checks pick up the new inputs) and any stale
  * calculation chain is dropped.
+ *
+ * fullCalcOnLoad is belt and braces, not the fix: it moves Excel and nothing
+ * else. The cached values written here are what every other reader sees.
  */
-export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: CellWrite[]): Promise<PatchResult> {
+export async function patchWorkbook(
+  template: ArrayBuffer | Uint8Array,
+  writes: CellWrite[],
+  opts: PatchOptions = {},
+): Promise<PatchResult> {
   const zip = await JSZip.loadAsync(template);
   const sheets = await sheetPathsOf(zip);
   const refused: string[] = [];
@@ -220,6 +268,9 @@ export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: 
     zip.file(path, patched.xml);
   }
 
+  // Every formula's own result, for the readers that never recalculate.
+  const recalc = opts.recalculate === false ? undefined : await recalculateWorkbook(zip);
+
   // Full recalculation on open, so every green check reflects the values written.
   const workbookXml = await zipText(zip, "xl/workbook.xml");
   if (workbookXml) {
@@ -243,5 +294,5 @@ export async function patchWorkbook(template: ArrayBuffer | Uint8Array, writes: 
   }
 
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
-  return { bytes, written, refused };
+  return { bytes, written, refused, recalc };
 }

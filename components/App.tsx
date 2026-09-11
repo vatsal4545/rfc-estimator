@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BusinessModelTab } from "./BusinessModelTab";
+import dynamic from "next/dynamic";
 import { ChargerLibraryTab } from "./ChargerLibraryTab";
 import { ChargerPricingTab } from "./ChargerPricingTab";
 import { CommercialTab } from "./CommercialTab";
@@ -34,6 +35,15 @@ import { intakeCompleteness } from "@/lib/intake/handoff";
 type Mode = "intake" | "estimator";
 const MODE_STORAGE = "rfc-estimator:ui:mode:v1";
 
+/**
+ * Loaded on demand. The tab boots a Python runtime to generate the document,
+ * so keeping it out of the main chunk means no other tab pays for it.
+ */
+const GenerateProposalTab = dynamic(() => import("./GenerateProposalTab"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-zinc-500">Loading the proposal generator…</p>,
+});
+
 const INTAKE_TABS = [
   { key: "project", label: "1 · Project", section: "project" },
   { key: "existing", label: "Existing", section: "existing" },
@@ -46,6 +56,7 @@ const INTAKE_TABS = [
   { key: "deal", label: "8 · Deal structure", section: "deal" },
   { key: "overrides", label: "9 · Overrides", section: "overrides" },
   { key: "model", label: "📈 Business model", section: "" },
+  { key: "proposal", label: "📄 Generate proposal", section: "" },
   { key: "handoff", label: "Version & handoff", section: "" },
 ] as const;
 type IntakeTabKey = (typeof INTAKE_TABS)[number]["key"];
@@ -70,10 +81,11 @@ const ESTIMATOR_TABS = [
 type TabKey = (typeof ESTIMATOR_TABS)[number]["key"];
 
 function Toolbar() {
-  const { project, newProject, importProject, result, proposal } = useProject();
+  const { project, newProject, importProject, result, proposal, hardwareAllowance } = useProject();
   const fileRef = useRef<HTMLInputElement>(null);
   const [excelBusy, setExcelBusy] = useState(false);
   const [intakeBusy, setIntakeBusy] = useState(false);
+  const [rfcBusy, setRfcBusy] = useState(false);
   const [shared, setShared] = useState(false);
 
   async function shareLink() {
@@ -109,6 +121,26 @@ function Toolbar() {
       alert((e as Error).message);
     } finally {
       setIntakeBusy(false);
+    }
+  }
+
+  async function exportRfc() {
+    setRfcBusy(true);
+    try {
+      // The zip patcher loads only when someone actually exports.
+      const { downloadRfc } = await import("@/lib/rfc/fillRfc");
+      const report = await downloadRfc(project, result, proposal, { hardwareAllowance });
+      // Price or scope divergences the workbook cannot resolve itself — the
+      // file still downloads, but nobody should read it without seeing these.
+      if (report.warnings.length > 0 || report.refused.length > 0) {
+        alert(
+          ["The RFC calculator downloaded, with notes:", ...report.warnings, ...report.refused.map((r) => `Not written — ${r}`)].join("\n\n• "),
+        );
+      }
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setRfcBusy(false);
     }
   }
 
@@ -152,6 +184,14 @@ function Toolbar() {
         title={`Download the CEO's EVSE Project Intake ${INTAKE_TEMPLATE.version} filled from this project — the estimator's figures in its override register`}
       >
         {intakeBusy ? "Filling…" : `⬇ Intake ${INTAKE_TEMPLATE.version}`}
+      </button>
+      <button
+        onClick={exportRfc}
+        disabled={rfcBusy}
+        className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+        title="Download the RFC / MSRP calculator workbook filled from this project — the equipment line items, the Revenue tab's inputs and the Costs Internal table"
+      >
+        {rfcBusy ? "Filling…" : "⬇ Download RFC"}
       </button>
       <button
         onClick={shareLink}
@@ -347,6 +387,7 @@ function AppShell() {
             {intakeTab === "deal" && <DealIntakeTab />}
             {intakeTab === "overrides" && <OverridesTab />}
             {intakeTab === "model" && <BusinessModelTab />}
+            {intakeTab === "proposal" && <GenerateProposalTab />}
             {intakeTab === "handoff" && <HandoffSection />}
           </>
         ) : (

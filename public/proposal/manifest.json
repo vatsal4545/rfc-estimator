@@ -1,0 +1,28 @@
+{
+  "source": "../Proposals",
+  "files": [
+    "ev_proposal_agent/__init__.py",
+    "ev_proposal_agent/aggregate.py",
+    "ev_proposal_agent/baseline.py",
+    "ev_proposal_agent/buildinfo.py",
+    "ev_proposal_agent/charts.py",
+    "ev_proposal_agent/engine.py",
+    "ev_proposal_agent/errors.py",
+    "ev_proposal_agent/extract.py",
+    "ev_proposal_agent/findings.py",
+    "ev_proposal_agent/narrative.py",
+    "ev_proposal_agent/paths.py",
+    "ev_proposal_agent/render.py",
+    "ev_proposal_agent/resolve.py",
+    "ev_proposal_agent/sections.py",
+    "ev_proposal_agent/validate.py",
+    "tools/__init__.py",
+    "tools/docx_edit.py",
+    "config/field_map.yaml",
+    "templates/proposal_template.docx",
+    "templates/assets/charger_level2.png",
+    "templates/assets/charger_level3.png",
+    "templates/assets/cover_default.jpeg"
+  ],
+  "hash": "6cd89ede42d513bfd92f0baac8a3c9b12f64279dab262073b01750b46b980d28"
+}

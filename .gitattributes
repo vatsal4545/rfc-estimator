@@ -1,0 +1,20 @@
+# The vendored proposal agent is a byte-for-byte copy of Proposals/, and
+# lib/proposalDoc/__tests__/vendored.test.ts hashes it to prove that. Line-ending
+# normalisation would rewrite those bytes on checkout and break the comparison —
+# and leave the browser running Python no pytest suite has seen in that form.
+# Treat the whole vendored tree as opaque.
+public/proposal/** -text
+
+# ...and the same for the source it mirrors. With core.autocrlf on, git would
+# hand out CRLF copies of these on checkout while the mirror stayed LF, so the
+# two would no longer be byte-identical and the comparison would fail on any
+# fresh clone. It also protects the binaries in here that git does not
+# recognise as such -- the reference PDF among them.
+Proposals/** -text
+
+# The shipped workbooks and the Word template are binary; say so explicitly so
+# no future core.autocrlf setting can corrupt them.
+*.xlsx binary
+*.xlsm binary
+*.docx binary
+*.pdf binary

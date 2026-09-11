@@ -1,0 +1,1063 @@
+# =============================================================================
+# field_map.yaml  -  TARGET: RFC_MSRP_Calculator_Simple_v16.xlsx
+#
+# Verified cell by cell against the real workbooks on 2026-08-07. Corrections
+# applied since the first draft are marked [FIX n] and explained in CLAUDE.md.
+#
+# Resolution order for every field:
+#   1. defined name, if `name:` is given (workbook scope, then every sheet scope)
+#   2. label search in `anchor.label_col`, read `anchor.value_col` on that row
+#   3. `cell:` as a last resort
+#   4. otherwise raise FieldNotFound; never emit a blank
+#
+# Label normalisation: lowercase, collapse whitespace, '&' -> 'and',
+# strip trailing ':' and '.', startswith match. This is load-bearing - real
+# labels carry trailing spaces ('Carbon Credits ', 'Chargers ', 'ADA ') and
+# suffixes ('Project Management (@$358/hour)').
+# =============================================================================
+
+meta:
+  target_workbook: RFC_MSRP_Calculator_Simple_v16.xlsx
+
+  # Fallback when a fingerprint variant does not name its own list.
+  # [FIX 1] 'Historical Data' is NOT in v16 as shipped. It is pasted in by the
+  # operator when the site has history. Absent -> has_history = False and the
+  # registry suppresses S3 / S3A / S3B, the S5 comparison table and chart 1.
+  required_sheets: [INPUT SHEET, Proposal, Internal Summary, Financial Worksheet,
+                    DLL Schedule, Cashflow, Updated Chargers Revenue Calcul]
+  optional_sheets:
+    Historical Data:
+      enables: [section_3, section_3a, section_3b, chart_historical_revenue,
+                s5_baseline_comparison]
+      flag: has_history
+      note: >
+        Self-contained: 109 formulas, zero cross-sheet references. Ports into
+        v16 cleanly and reads identically under either engine.
+
+  # CHASSIS = the row layout of Financial Worksheet / Internal Summary / INPUT
+  # SHEET / DLL / Cashflow. This is a SEPARATE axis from the revenue engine
+  # (see section A). Production files are a v16 chassis carrying the legacy
+  # `Updated Chargers Revenue Calcul` sheet plus `Historical Data` and
+  # `10 Year Projection Comparison`. Do not assume the two axes agree.
+  #
+  # Tried in order; the first chassis whose probes all pass wins, and it decides
+  # which ROW MAP applies. A future v17 gets its own entry here rather than a
+  # pile of special cases in the code.
+  fingerprints:
+    v16:
+      probes:
+        - {sheet: Financial Worksheet, cell: A44, equals: "Remaining Balance after Discount"}
+        - {sheet: Financial Worksheet, cell: A9,  equals: "View Period"}
+        - {sheet: INPUT SHEET,         cell: O7,  equals: "L3 Type 1 (DCFC)"}
+      required_sheets: [INPUT SHEET, Proposal, Internal Summary, Financial Worksheet,
+                        DLL Schedule, Cashflow, Updated Chargers Revenue Calcul]
+    v15_no_itc:
+      note: >
+        A hybrid: the legacy cost block and cashflow rows, the v16 INPUT SHEET
+        and EVOLV block, and NO ITC row in the Financial Worksheet summary at
+        all - A5 is EVSE Revenues where both other chassis have an ITC label,
+        which alone separates it from each of them.
+
+        It carries EITHER engine. Historical_Marriott_Bakersfield is this
+        chassis with the legacy engine; Rip & Replace_MarriotbakersfieldL2 is
+        the same chassis with the scenario grid, no Historical Data and no
+        10 Year Projection Comparison. Neither of those sheets may be required.
+
+        The carbon grid is NOT at a fixed address on this chassis - it is L4:R9
+        on one specimen and L5:R10 on the other - so it is anchored on its own
+        "CC Rate ($/kW/yr)" label instead of probed here.
+      probes:
+        - {sheet: Financial Worksheet, cell: A5,  equals: "EVSE Revenues"}
+        - {sheet: Financial Worksheet, cell: A43, equals: "Remaining Balance after Discount"}
+        - {sheet: INPUT SHEET,         cell: O7,  equals: "L3 Type 1 (DCFC)"}
+      required_sheets: [INPUT SHEET, Proposal, Internal Summary, Financial Worksheet,
+                        DLL Schedule, Cashflow, Updated Chargers Revenue Calcul]
+    legacy_food4less:
+      note: >
+        The older chassis that produced the reference proposal: the cost block
+        sits one row higher (Grand Total B42, Remaining B43), the cashflow
+        header is row 3, there is no B9/B10 horizon toggle, the EVOLV block is
+        one row lower and there is no service-plan block at all. Supported so
+        the reference-fidelity acceptance test can run end to end; not an input
+        operators are expected to drop.
+      probes:
+        - {sheet: Financial Worksheet, cell: A43, equals: "Remaining Balance after Discount"}
+        - {sheet: Financial Worksheet, cell: A42, equals: "Grand Total"}
+        - {sheet: INPUT SHEET,         cell: O7,  equals: "Level 3 (DCFC)"}
+      required_sheets: [INPUT SHEET, Proposal, Internal Summary, Financial Worksheet,
+                        DLL Schedule, Cashflow, Updated Chargers Revenue Calcul,
+                        Historical Data, 10 Year Projection Comparison]
+
+  # [FIX 12] 'INPUT SHEET'!M21 carries a U+FFFD replacement character. Strip
+  # non-printable and replacement characters from any text read out of the
+  # client-info block before it reaches the document.
+  sanitise_text: true
+
+  formats:
+    currency0: "${:,.0f}"
+    currency2: "${:,.2f}"
+    currency3: "${:,.3f}"
+    currency4: "${:,.4f}"
+    percent0: "{:.0%}"
+    percent1: "{:.1%}"
+    percent2: "{:.2%}"
+    number1: "{:,.1f}"
+    number2: "{:,.2f}"
+    number3: "{:,.3f}"
+    number4: "{:,.4f}"
+    integer: "{:,.0f}"
+    date_long: "%B %-d, %Y"
+
+# =============================================================================
+# A. ENGINE DETECTION - do this before anything else
+#
+# TWO INDEPENDENT AXES. Do not conflate them:
+#
+#   CHASSIS (meta.fingerprints)  row layout of FW / IS / INPUT SHEET / DLL / CF
+#   ENGINE  (this section)       which revenue model the Updated sheet holds
+#
+# The real production workbook is a **v16 chassis carrying the legacy engine**:
+# Financial Worksheet has the v16 cost block (B16-B44) and the B9/B10 horizon
+# toggle, while `Updated Chargers Revenue Calcul` is the baseline-vs-projected
+# sheet (B/C historical, D/E projected, F:H idle fees) with `Historical Data`
+# and `10 Year Projection Comparison` pasted in beside it.
+#
+# In that combination the 10-year sheet is CORRECTLY wired - its formulas point
+# at the legacy Updated addresses and the legacy Updated sheet is what is there.
+# It is only mis-wired, and only refused, when engine == scenario_grid.
+#
+# Two incompatible revenue models share the sheet name
+# 'Updated Chargers Revenue Calcul' AND the same cell addresses:
+#
+#   scenario_grid  (v16)      B3 == "Standard-Low"
+#     INPUT SHEET N..T (7 rating tiers) -> Low/Med/High grid -> FW / Cashflow
+#
+#   baseline_vs_projected     B3 startswith "HISTORICAL ACTUAL"
+#     Historical Data -> hist/proj columns B,C,D,E + idle fees -> 10YPC -> FW
+#
+# Under the scenario grid, `Updated!B19` is "Total Profit per Year"; under the
+# other engine the same cell is "Net Profit per Month". Nothing errors - you
+# just get a different number. So: detect, never assume.
+# =============================================================================
+engine:
+  probe: {sheet: Updated Chargers Revenue Calcul, cell: B3}
+  values:
+    "Standard-Low":       scenario_grid
+    "Standard-Medium":    scenario_grid
+    "Standard-High":      scenario_grid
+    "HISTORICAL ACTUAL":  baseline_vs_projected     # startswith match
+  on_unknown: >
+    abort with 'Unrecognised revenue model on the Updated Chargers Revenue
+    Calcul tab. Cell B3 holds "{value}". This file is not a supported
+    calculator version.'
+
+  ten_year_projection_sheet:
+    status: DO_NOT_READ_UNDER_SCENARIO_GRID
+    reason: >
+      Every formula on '10 Year Projection Comparison' is bound to the
+      baseline_vs_projected addresses - B9 reads Updated!B6, B11 reads
+      Updated!B19, D11 reads Updated!G12 (idle-fee profit), C19 reads
+      Updated!$C$24. Under the scenario grid those cells hold stall counts,
+      annual profits and charger ratings instead. The sheet will populate with
+      wrong numbers and no error.
+    action: >
+      If engine == scenario_grid and the sheet is present, emit an ERROR-level
+      QA finding naming it, mark the sheet unreadable, and source the ten-year
+      figures from `derived_ten_year`. Only read it directly when
+      engine == baseline_vs_projected.
+
+# =============================================================================
+# B. DOCUMENT CONTROLS
+# =============================================================================
+document_controls:
+
+  horizon:
+    token: projection_years
+    sheet: Financial Worksheet
+    cell: B10                       # =IF(B9="10 Year",10,5)
+    toggle_cell: B9                 # literal string, "5 Year" / "10 Year"
+    legacy: {value: 10, note: "legacy has no toggle; the model is fixed 10-year"}
+    effect: >
+      Every "10-Year" heading, caption and stat card becomes
+      "{projection_years}-Year". Cashflow tables always occupy rows 5-15; rows
+      past (5 + projection_years) cache as None (Excel "") and must be dropped -
+      treat them as blank, not as a missing formula.
+
+  scenario:                         # scenario_grid engine only
+    token: revenue_scenario
+    detect: >
+      Read the FORMULA of 'Financial Worksheet'!I6 (load with data_only=False).
+      It points at 'Updated Chargers Revenue Calcul'. J24 -> Standard-Low,
+      P24 -> Standard-Medium, Q24 -> Standard-High. v16 ships wired to J24.
+      Use that scenario for every figure. Do not expose a scenario picker - the
+      cashflow tables are wired to one scenario and a picker would make
+      Section 5 contradict Section 7A.
+    column_sets:
+      Standard-Low:    {l2: B, l3: [C, D, E, F, G, H], totals_col: J}
+      Standard-Medium: {l2: I, l3: [J, K, L, M, N, O], totals_col: P}
+      Standard-High:   {l2: P, l3: [Q, R, S, T, U, V], totals_col: Q}
+    # [FIX 8] Standard-High's totals_col Q is ALSO the first L3 tier column of
+    # the High block. They do not clash because tier data lives on rows 5-21 and
+    # totals on rows 24-26 - but never resolve one by scanning the other's rows.
+    totals_rows_are: [24, 25, 26]
+    tier_data_rows_are: [5, 21]
+    l3_tier_kw: [60, 120, 160, 180, 240, 360]
+    # Header row 23 is skewed (J23='Low', P23='Medium', Q23='High' while the
+    # Medium block spans I:O). Never map scenarios from header text.
+    do_not_map_scenarios_from: "Updated Chargers Revenue Calcul!row 23"
+
+  itc:
+    token: roi_itc
+    sheet: Financial Worksheet
+    cell: B5
+    default_behaviour: OMIT
+    rule: >
+      ITC is excluded from Net Revenues by design - 'Financial Worksheet'!B7 is
+      =B3+(B4+B6). Match that: suppress the "Federal ITC (30%)" row in the
+      Section 7 ROI table and the ITC stat card whenever B5 == 0, the expected
+      case in v16.
+    if_nonzero: >
+      B5 is hand-entered. If someone fills it in, 'Financial Worksheet'!E6 still
+      adds it to Year 1 of the consolidated cashflow, so Section 7A's final
+      cumulative will exceed Section 7's Net Revenues by exactly that amount.
+      Emit a WARNING naming both figures; do not adjust either.
+    legacy_note: >
+      Legacy A5 reads 'Federal ITC (30%)' and B5 is =ABS(B3)*0.3 (non-zero), and
+      legacy B7 is =B3+(B4+B5+B6) - it DOES include ITC. Different formula, not
+      a different policy.
+
+# =============================================================================
+# C. SITE INFO  ('INPUT SHEET' block M16:O37; labels in M, values in merged N:O)
+#
+# [FIX 11] N17:N21 ship EMPTY in v16 - only the column M labels exist. These are
+# prefills for the operator form, never required.
+# =============================================================================
+site_info:
+  sheet: INPUT SHEET
+  fields:
+    - {token: site_address,  label: "Address",        cell: N17, required: false}
+    - {token: rsm_name,      label: "RSM",            cell: N18, required: false}
+    - {token: client_info,   label: "Client Info",    cell: N19, required: false}
+    - {token: utility_name,  label: "Utility",        cell: N20, required: false}
+    - {token: scope_of_work, label: "Scope  of Work", cell: N21, required: false}
+  parse:
+    - {token: job_number, rule: "regex ^([A-Za-z]-?\\d+)\\s+(.*)$ on client_info -> group 1"}
+    - {token: site_name,  rule: "same regex -> group 2; else client_info verbatim"}
+
+operator_inputs:
+  - {token: client_contact_name, prompt: Client contact full name}
+  - {token: client_title,        prompt: Client title, default: Owner}
+  - {token: site_name,           prefill: site_info.site_name}
+  - {token: site_address,        prefill: site_info.site_address}
+  - {token: prepared_by_name,    prompt: Prepared by}
+  - {token: property_type,       default: Retail}
+  - {token: primary_users,       default: Customers and public use}
+  - {token: proposal_date,       default: today}
+  - {token: proposal_version,    default: "V1.0"}
+  - {token: validity_days,       default: 30}
+  - {token: site_location_narrative, prompt: "Section 6 - 2-4 sentences on location and traffic drivers"}
+  - {token: construction_weeks,  default: "3 to 4"}
+  - {token: downtime_assumption, default: 0.03, format: percent0,
+     prompt: "Modelled new-equipment downtime (Section 4A; reference used 3%)"}
+  # existing-equipment facts, needed to rebuild Section 3B (see G2 below).
+  # Only prompted when has_history is true.
+  - {token: existing_ports_l2,        prompt: "Existing Level 2 ports on site", requires: has_history}
+  - {token: existing_ports_l3,        prompt: "Existing Level 3 ports on site", requires: has_history}
+  - {token: existing_nameplate_l2_kw, prompt: "Existing L2 nameplate kW per port", default: 7.2, requires: has_history}
+  - {token: existing_nameplate_l3_kw, prompt: "Existing L3 nameplate kW per port", default: 50, requires: has_history}
+
+# =============================================================================
+# D. COST STACK  -> S1, S7, S9      ('Financial Worksheet' rows 16-44)
+#    Every B cell links to 'Internal Summary'!D<n> = customer price after discount.
+# =============================================================================
+costs:
+  sheet: Financial Worksheet
+  anchor: {label_col: A, value_col: B}
+  crosscheck: {sheet: Internal Summary, label_col: A, value_col: D}
+  fields:
+    - {token: cost_equipment_invoice,   label: "Equipment Purchase Invoice",                        cell: B16, format: currency2, role: subtotal}
+    - {token: cost_charger_hardware,    label: "Charger Hardware",                                  cell: B17, format: currency2, parent: cost_equipment_invoice}
+    - {token: cost_service_warranty,    label: "Parts Warranty",                                    cell: B18, format: currency2, parent: cost_equipment_invoice}
+    - {token: cost_evolv_commissioning, label: "EVOLV & Commissioning Subtotal",                    cell: B19, format: currency2, parent: cost_equipment_invoice}
+    - {token: cost_service_list_price,  label: "5 Year Service Agreement",                          cell: B20, format: currency2, emit: false}
+    - {token: cost_sales_tax_chargers,  label: "Sales Tax on Chargers",                             cell: B21, format: currency2, parent: cost_equipment_invoice}
+    - {token: cost_design_invoice,      label: "Design Invoice",                                    cell: B22, format: currency2, role: subtotal}
+    - {token: cost_autocad,             label: "AutoCad Design Services",                           cell: B23, format: currency2, parent: cost_design_invoice}
+    - {token: cost_ee_design,           label: "Electrical Engineering Design",                     cell: B24, format: currency2, parent: cost_design_invoice}
+    - {token: cost_project_mgmt,        label: "Project Management",                                cell: B25, format: currency2, parent: cost_design_invoice}
+    - {token: cost_plan_check_permit,   label: "Plan Check and Permit Fees",                        cell: B26, format: currency2, parent: cost_design_invoice}
+    - {token: cost_electrical_subtotal, label: "Electrical Supply & Construction Management Costs", cell: B27, format: currency2, role: subtotal}
+    - {token: cost_wires_conduits,      label: "Wires, Conduits and Peripherals",                   cell: B28, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_switchgear,          label: "Main Distribution Switchgear",                      cell: B29, format: currency2, parent: cost_electrical_subtotal, always_show: true}
+    - {token: cost_subpanels,           label: "Electrical Sub-Panels, Transformers, Breakers",     cell: B30, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_striping_bollards,   label: "Striping, Bollards, Signage",                       cell: B31, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_asphalt,             label: "Asphalt and Paving",                                cell: B32, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_concrete,            label: "Concrete Improvements",                             cell: B33, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_ada,                 label: "ADA",                                               cell: B34, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_dump_waste,          label: "Dump/ Waste",                                       cell: B35, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_permits,             label: "Permits",                                           cell: B36, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_utility,             label: "Utility",                                           cell: B37, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_construction_equip,  label: "Construction Equipment",                            cell: B38, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_construction_pm,     label: "Construction PM",                                   cell: B39, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_materials,           label: "Materials",                                         cell: B40, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_sales_tax_equipment, label: "Sales Tax on equipment",                            cell: B41, format: currency2, parent: cost_electrical_subtotal}
+    - {token: cost_labor,               label: "Labor",                                             cell: B42, format: currency2, role: top_level}
+    - {token: cost_grand_total,         label: "Grand Total",                                       cell: B43, format: currency2, role: grand_total}
+    - {token: cost_after_discount,      label: "Remaining Balance after Discount",                  cell: B44, format: currency2}
+
+  # [FIX 2] The stack is HIERARCHICAL. Summing the emitted rows double-counts.
+  hierarchy:
+    cost_equipment_invoice:   [cost_charger_hardware, cost_service_warranty,
+                               cost_evolv_commissioning, cost_sales_tax_chargers]
+    cost_design_invoice:      [cost_autocad, cost_ee_design, cost_project_mgmt,
+                               cost_plan_check_permit]
+    cost_electrical_subtotal: [cost_wires_conduits, cost_switchgear, cost_subpanels,
+                               cost_striping_bollards, cost_asphalt, cost_concrete,
+                               cost_ada, cost_dump_waste, cost_permits, cost_utility,
+                               cost_construction_equip, cost_construction_pm,
+                               cost_materials, cost_sales_tax_equipment]
+    # NOT cost_grand_total. Every component row above is 'Internal Summary'
+    # column D - the CUSTOMER price, after discount - and column D's own total
+    # is D30 = SUM(D3,D8,D13,D28) = cost_after_discount. cost_grand_total is
+    # D29 = (B28+B13+B8+B3), which sums column B, the LIST price. The two
+    # coincide at 0% discount, which is why rooting the check at the grand total
+    # passed on every zero-discount workbook and failed on every discounted one.
+    cost_after_discount:      [cost_equipment_invoice, cost_design_invoice,
+                               cost_electrical_subtotal, cost_labor]
+  hierarchy_source: "Internal Summary!D30 = SUM(D3,D8,D13,D28)"
+  hierarchy_source: "Internal Summary!D29 = B3 + B8 + B13 + B28"
+
+  service_agreement_note: >
+    B18 = 'Internal Summary'!D5 (customer price after discount).
+    B20 = 'Internal Summary'!B5 (list price before discount). Print B18 under
+    the heading "5 Year Service Agreement & Warranty". Warn when they differ.
+  rendering_rule: >
+    Suppress zero rows except those flagged always_show (Main Distribution
+    Switchgear, which the reference prints at $0.00). Config flag
+    `show_zero_rows`, default false.
+
+# =============================================================================
+# E. ROI SUMMARY  -> S1, S7
+# =============================================================================
+roi:
+  sheet: Financial Worksheet
+  anchor: {label_col: A, value_col: B}
+  fields:
+    - {token: roi_total_costs_upfront, label: "Total Costs Upfront", cell: B3, format: currency2}
+    - {token: roi_carbon_credits,      label: "Carbon Credits",      cell: B4, format: currency2}
+    - {token: roi_itc,                 label: "ITC",                 cell: B5, format: currency2, emit_if: "!= 0",
+       display_label: "Federal ITC (30%)"}
+    - {token: roi_evse_revenues,       label: "EVSE Revenues",       cell: B6, format: currency2}
+    - {token: roi_net_revenues,        label: "Net Revenues",        cell: B7, format: currency2}
+  note: "roi_net_revenues excludes ITC by design in v16. See document_controls.itc."
+
+# =============================================================================
+# F. CASHFLOW TABLES  -> S7A, S7B
+# =============================================================================
+tables:
+  - token: consolidated_cashflow
+    sheet: Financial Worksheet
+    header_probe: {col: D, row: 4, text: "Year"}
+    data_rows: {start: 5, end: 15}
+    stop_when: "col D is '' or None"
+    columns: [{name: year, col: D, format: integer},
+              {name: annual, col: E, format: currency0},
+              {name: cumulative, col: F, format: currency0}]
+    derived:
+      - {token: breakeven_year,   rule: "first row with year >= 1 and cumulative >= 0, else None"}
+      - {token: final_cumulative, rule: "cumulative of last row", format: currency0}
+
+  - token: charger_cashflow
+    sheet: Financial Worksheet
+    header_probe: {col: H, row: 4, text: "Year"}
+    data_rows: {start: 5, end: 15}
+    stop_when: "col H is '' or None"
+    columns: [{name: year, col: H, format: integer},
+              {name: annual, col: I, format: currency0},
+              {name: cumulative, col: J, format: currency0}]
+    derived:
+      - {token: year1_charger_profit, rule: "row where year == 1 -> annual", format: currency0}
+      - {token: growth_rate, value: 0.125, format: percent1,
+         note: "hardcoded 1.125 in the I7:I15 formulas; printed in the S4 assumptions table"}
+
+# =============================================================================
+# G. HISTORICAL DATA  -> S3 stat cards, S3A table, S3B (recomputed), chart 1
+#
+#    Fully self-contained: 109 formulas, zero references to any other sheet.
+#    Reads the same under either engine. Optional - see meta.optional_sheets.
+# =============================================================================
+full_history:
+  sheet: Historical Data
+  anchor: {label_col: I, value_cols: {l2: J, l3: K}}
+  rows:
+    - {token: months_in_window,      label: "Months in window",                        cell: J4,  format: integer}
+    - {token: days_in_window,        label: "Days in window",                          cell: J5,  format: integer}
+    - {token: total_revenue,         label: "Total revenue",                           cell: J6,  format: currency2}
+    - {token: total_kwh,             label: "Total kWh",                               cell: J7,  format: number1}
+    - {token: avg_revenue_month,     label: "Avg revenue per month",                   cell: J8,  format: currency2}
+    - {token: avg_kwh_month,         label: "Avg kWh per month",                       cell: J9,  format: number1}
+    - {token: avg_kwh_day,           label: "Avg kWh per day",                         cell: J10, format: number2}
+    - {token: effective_rate,        label: "Effective retail rate",                   cell: J11, format: currency3}
+    - {token: avg_stalls_used_day,   label: "Avg stalls used per day",                 cell: J12, format: number3}
+    - {token: avg_charging_hours,    label: "Avg charging hours per active stall",     cell: J13, format: number3}
+    - {token: avg_delivered_kw,      label: "Avg delivered power while charging",      cell: J14, format: number2}
+    - {token: total_sessions,        label: "Total sessions",                          cell: J16, format: integer}
+    - {token: sessions_per_day,      label: "Sessions per day",                        cell: J17, format: number2}
+    - {token: avg_kwh_session,       label: "Avg kWh per session",                     cell: J18, format: number2}
+    - {token: median_kwh_session,    label: "Median kWh per session",                  cell: J19, format: number2}
+    - {token: failed_session_share,  label: "Sessions delivering <1 kWh",              cell: J20, format: percent1}
+    - {token: avg_charge_minutes,    label: "Avg charging time per session",           cell: J21, format: number2}
+    - {token: unproductive_share,    label: "Est. unproductive station-days",          cell: J26, format: percent0}
+    - {token: avg_stalls_in_service, label: "Avg stalls in service per day",           cell: J30, format: number2}
+    - {token: occupancy_in_service,  label: "Stall occupancy among IN-SERVICE stalls", cell: J31, format: percent1}
+  extras:
+    - {token: soc_start_end_l3,    label: "Avg SOC start",                  cell: K22, format: text}
+    - {token: all_l3_busy_share,   label: "All 3 L3 stalls busy at once",   cell: K23, format: percent1}
+    - {token: any_l3_busy_share,   label: "1 L3 stall busy",                cell: K24, format: percent1}
+    - {token: idle_fees_collected, label: "Idle/inactivity fees collected", cell: K25, format: currency0}
+    - {token: dead_stations_l2,    label: "Stations effectively dead",      cell: J27, format: text}
+    - {token: dead_stations_l3,    label: "Stations effectively dead",      cell: K27, format: text}
+    - {token: zero_session_days_l2, label: "Days with zero sessions",       cell: J28, format: integer}
+    - {token: outage_lost_revenue, label: "outage - lost revenue",          cell: K29, format: currency0}
+
+  monthly_series:
+    range: A4:G43
+    header_row: 3
+    columns: {month: A, l2_rev: B, l3_rev: C, total_rev: D, l2_kwh: E, l3_kwh: F, total_kwh: G}
+    # [FIX 3] "Last month with meaningful revenue" is WRONG - the trailing
+    # partial 2026-07 carries $1,040 and picking it shifts the window by one.
+    # The window is recorded in the J4/J5 FORMULAS. Parse them.
+    window:
+      strategy: parse_formula
+      rows_from: {cell: J4, pattern: "ROWS\\(A(\\d+):A(\\d+)\\)"}
+      dates_from: {cell: J5, pattern: "DATE\\((\\d+),(\\d+),(\\d+)\\)-DATE\\((\\d+),(\\d+),(\\d+)\\)"}
+      fallback: >
+        If the formulas do not parse, take the longest contiguous run of months
+        of length months_in_window that excludes leading zero-revenue stubs.
+        Never derive the window from row 44 - B44:G44 sums ALL 40 rows including
+        the stubs and the partial, so D44 ($93,453.35) overstates the window
+        total ($92,358.23).
+    derived:
+      - {token: history_window_label, rule: "'{first:%b %Y} to {last:%b %Y}'"}
+      - {token: hist_total_revenue,   rule: "sum(total_rev) over window", format: currency0}
+      - {token: hist_l3_revenue,      rule: "sum(l3_rev) over window",    format: currency0}
+      - {token: dcfc_revenue_share,   rule: "sum(l3_rev)/sum(total_rev)", format: percent0}
+
+# -----------------------------------------------------------------------------
+# G2. SECTION 3B - recompute in Python, do not read it off a sheet.
+#     Under baseline_vs_projected these values sit in Updated!B5:C27. Under the
+#     scenario grid that block holds something else entirely. The formulas below
+#     are transcribed verbatim from the Food4Less workbook and verified to
+#     reproduce its Section 3B exactly, so both engines give an identical 3B.
+#     Run once per level: L2 reads Historical Data col J, L3 reads col K.
+# -----------------------------------------------------------------------------
+historical_baseline_recompute:
+  requires: has_history
+  inputs: {ports: operator_inputs.existing_ports_<level>,
+           nameplate_kw: operator_inputs.existing_nameplate_<level>_kw,
+           derate: "INPUT SHEET!N11",
+           max_hours: 12}
+  # [FIX 13] The utility rate is NOT a constant. It is hand-entered per workbook
+  # in the Updated sheet: 0.40 on Food4Less and Showcase Liquor, 0.2584 on
+  # Marriott Bakersfield. Hardcoding 0.40 there gave hist_profit_yearly
+  # $10,979.55 against the workbook's own $16,446.75 (Updated!B20+C20), so
+  # Section 3B would have contradicted Section 5 inside the same document.
+  # Found by LABEL, not by row: the row is 18 under the legacy engine and 17
+  # under the scenario grid (legacy has an extra 'Avg Delivered Power' row 13),
+  # but both put L2 in column B and the first L3 column in C.
+  utility_rate:
+    default: 0.40
+    sheet: Updated Chargers Revenue Calcul
+    label: "EV Utility Rate average per kWHr"
+    label_col: A
+    value_cols: {l2: B, l3: C}
+    sane_range: [0.01, 5.0]
+  formulas:
+    stall_occupancy:      "HD.avg_stalls_used_day / ports"                      # =HD!J12/B6
+    stalls_used_per_day:  "ports * stall_occupancy"                             # =B6*B8
+    charging_hourly_pct:  "HD.avg_charging_hours / max_hours"                   # =HD!J13/B7
+    hours_per_stall_day:  "charging_hourly_pct * max_hours"                     # =B10*B7
+    charger_rating_kw:    "nameplate_kw * derate"                               # =7.2*N11 / =50*N11
+    avg_delivered_pct:    "HD.avg_delivered_kw / charger_rating_kw"             # =HD!J14/B12
+    retail_rate:          "HD.effective_rate"                                   # =HD!J11
+    revenue_per_day:      "retail_rate * charger_rating_kw * avg_delivered_pct * stalls_used_per_day * hours_per_stall_day"
+    revenue_per_30day:    "revenue_per_day * 30"
+    kwh_per_day:          "stalls_used_per_day * hours_per_stall_day * charger_rating_kw * avg_delivered_pct"
+    net_profit_month:     "revenue_per_30day - (kwh_per_day * utility_rate * 30)"
+    profit_per_year:      "net_profit_month * 12"
+    out_of_service_share: "HD.unproductive_share (J26 for L2, K26 for L3)"
+  totals:
+    hist_profit_yearly: "L2.profit_per_year + L3.profit_per_year"
+    hist_profit_3yr:    "hist_profit_yearly * 3"
+    hist_profit_5yr:    "hist_profit_yearly * 5"
+    hist_gross_yearly:  "(L2.revenue_per_30day + L3.revenue_per_30day) * 12"
+  validation: >
+    (L2.revenue_per_day + L3.revenue_per_day) * HD.days_in_window should land
+    within 1% of HD.total_revenue(L2) + HD.total_revenue(L3). That is the
+    reconciliation the specimen does in Updated!B22 vs C22 (both $92,358.23).
+  port_invariance_note: >
+    IMPORTANT: ports and nameplate_kw CANCEL OUT of the profit chain.
+      stalls_used_per_day    = ports * (J12 / ports)   = J12
+      rating * delivered_pct = rating * (J14 / rating) = J14
+    so revenue_per_day = J11 * J14 * J12 * J13, pure Historical Data. A wrong
+    port count yields identical revenue and profit; only the displayed stall
+    counts, occupancy % and charger rating move. The reconciliation above is
+    therefore an algebraic identity and CANNOT detect a bad port count - it
+    detects an internally inconsistent Historical Data sheet. Port counts are
+    checked against the station-count note in Historical Data!I15 instead.
+  expected_for_food4less:                       # regression fixture
+    inputs: {ports: {l2: 5, l3: 5}, nameplate_kw: {l2: 7.2, l3: 50}}
+    l2: {stall_occupancy: 0.1532, charger_rating_kw: 7.056, profit_per_year: 269.4976901}
+    l3: {stall_occupancy: 0.4304, charger_rating_kw: 49.0,  profit_per_year: 12848.61904}
+    totals: {hist_profit_yearly: 13118.11673, hist_gross_yearly: 31219.68338}
+
+# -----------------------------------------------------------------------------
+# G3. TEN-YEAR COMPARISON - derive, don't read (under scenario_grid)
+# -----------------------------------------------------------------------------
+derived_ten_year:
+  hist_annual_profit:    "historical_baseline_recompute.totals.hist_profit_yearly"
+  proj_year1:            "charger_cashflow year 1 annual"
+  horizon_evse_total:    "roi_evse_revenues"
+  horizon_total_benefit: "roi_evse_revenues + roi_carbon_credits"     # ITC omitted by default
+  uplift_vs_historical:  "proj_year1 / hist_annual_profit - 1"
+  baseline_over_horizon: "hist_annual_profit * projection_years"
+  benefit_delta:         "horizon_total_benefit - baseline_over_horizon"
+  year_by_year_table:    "charger_cashflow (already year-by-year on the Financial Worksheet)"
+  requires_history: [hist_annual_profit, uplift_vs_historical,
+                     baseline_over_horizon, benefit_delta]
+
+# =============================================================================
+# H. PROJECTED OPERATING MODEL  -> S5
+# =============================================================================
+operating_model:
+  sheet: Updated Chargers Revenue Calcul
+  anchor: {label_col: A}
+  scenario_grid:
+    rows:
+      - {token: chargers,            label: "Chargers",                                row: 5,  format: integer,  agg: sum}
+      - {token: stall_qty,           label: "EV Stall Quantity",                       row: 6,  format: integer,  agg: sum}
+      - {token: max_hours,           label: "Max hours of operation of parking",       row: 7,  format: integer,  agg: first_active}
+      - {token: stall_occupancy,     label: "Assumed Stall Occupancy %",               row: 8,  format: percent1, agg: weighted_by_ports}
+      - {token: stalls_used_per_day, label: "Number of stalls used per day",           row: 9,  format: number2,  agg: sum}
+      - {token: charging_hourly_pct, label: "Assumed Charging Hourly %",               row: 10, format: percent1, agg: weighted_by_ports}
+      - {token: hours_per_stall_day, label: "Number of hours usage per stall per day", row: 11, format: number2,  agg: weighted_by_ports}
+      - {token: charger_rating_kw,   label: "Actual Charger Rating",                   row: 12, format: number2,  agg: weighted_by_chargers}
+      - {token: retail_rate,         label: "Retail Revenue per kWHr",                 row: 13, format: currency3, agg: weighted_by_kwh}
+      - {token: revenue_per_day,     label: "Total Revenue per day",                   row: 14, format: currency2, agg: sum}
+      - {token: revenue_per_30day,   label: "Per 30 day Cycle",                        row: 15, format: currency2, agg: sum}
+      - {token: kwh_per_day,         label: "Total kWhr dispensed per day",            row: 16, format: number1,  agg: sum}
+      - {token: utility_rate,        label: "EV Utility Rate average per kWHr",        row: 17, format: currency2, agg: first_active}
+      - {token: net_profit_month,    label: "Net Profit per Month",                    row: 18, format: currency2, agg: sum}
+      - {token: profit_per_year,     label: "Total Profit per Year",                   row: 19, format: currency2, agg: sum}
+    totals: {scenario_cols: {Standard-Low: J, Standard-Medium: P, Standard-High: Q},
+             rows: {profit_yearly: 24, profit_3yr: 25, profit_5yr: 26}}
+    aggregation:
+      active_tier: "an L3 tier counts only if row 5 (Chargers) > 0"
+      l3_label_rule: "one tier -> 'Level 3 (60 kW)'; several -> 'Level 3 (2 x 120 kW + 1 x 60 kW)'"
+      suppress_l2_column_if: "L2 chargers == 0"
+    rows_absent_vs_reference:
+      # Present in the Food4Less S5 table, no scenario-grid equivalent. Deleted
+      # from the template.
+      - {row: "Avg Delivered Power (% of rating)",
+         action: delete,
+         reason: "the grid's 'Actual Charger Rating' is already nameplate x derate"}
+      - {row: "Estimated share of station time out of service",
+         action: operator_input,
+         token: downtime_assumption,
+         reason: "no source; the reference used 3%"}
+  baseline_vs_projected:
+    columns: {hist_l2: B, hist_l3: C, proj_l2: D, proj_l3: E}
+    # [FIX 10] row 23 is the header; the totals are rows 24-27.
+    rows: "same labels, rows 5-21 (note the extra row 13 'Avg Delivered Power')"
+    totals_rows: {header: 23, profit_yearly: 24, profit_3yr: 25, profit_5yr: 26, gross_yearly: 27}
+    idle_fee_block: F4:H19
+
+# =============================================================================
+# I. EQUIPMENT  -> S1, S6, S6A
+# =============================================================================
+equipment:
+  sheet: INPUT SHEET
+  line_items:
+    start_row: 8
+    end_row: 37
+    stop_when: "col C is blank"
+    columns: {item_no: C, category: D, sku: E, description: F, msrp: G,
+              discount_pct: H, qty: I, msrp_total: J, line_total: K}
+    grand_total: {msrp: J38, after_discount: K38}
+    categories: "_L2, _L2_Accessories, _kW30/60/120/160/180/240/360, _CTX_Warranty, _CTX_Service_Plans, _V2G, _Buy_America, _Distributed_System"
+    note: "col H (discount) ships blank while K computes J-(H*J). Coerce None -> 0."
+  summary_block:
+    label_col: M
+    columns: {l2: N, l3_60: O, l3_120: P, l3_160: Q, l3_180: R, l3_240: S, l3_360: T}
+    rows:
+      - {token: n_chargers, label: "# Chargers",            row: 8,  format: integer}
+      - {token: n_ports,    label: "EV Stall Qty",          row: 9,  format: integer}
+      - {token: rating_kw,  label: "Charger Rating (kW)",   row: 10, format: number2}
+      - {token: derate,     label: "Rating de-rate factor", row: 11, format: number2}
+  derived:
+    - {token: total_ports,       rule: "sum(n_ports across N..T)"}
+    - {token: n_ports_l2,        rule: "N9"}
+    - {token: n_ports_l3,        rule: "sum(O9..T9)"}
+    - {token: modeled_rating_l2, rule: "N10 * N11"}
+    - {token: modeled_rating_l3, rule: "charger-weighted mean of rating*derate over active tiers"}
+    - {token: l2_sku,            rule: "first '_L2' line item -> sku"}
+    - {token: dcfc_mix_sentence, rule: "join active tiers as '{qty} x {kw} kW'"}
+
+# =============================================================================
+# J. EVOLV  -> S10        (v16 rows 3-5; legacy rows 4-6 - see `legacy` below)
+# =============================================================================
+evolv:
+  sheet: Internal Summary
+  fields:
+    - {token: evolv_ports,          label: "Monthly Network Cloud Services Fees", value_col: G, cell: G3, format: integer}
+    - {token: evolv_fee_per_port,   label: "Monthly Network Cloud Services Fees", value_col: H, cell: H3, format: currency2}
+    - {token: evolv_annual_cost,    label: "Monthly Network Cloud Services Fees", value_col: I, cell: I3, format: currency0}
+    - {token: evolv_contract_years, label: "# of years",                          value_col: G, cell: G4, format: integer}
+    - {token: evolv_customer_total, label: "EVOLV & Commissioning Subtotal",      value_col: D, cell: D6, format: currency0}
+
+# =============================================================================
+# K. SERVICE / WARRANTY  -> S12 stat cards   ('Internal Summary' F9:I14)
+#    This block EXISTS ONLY IN v16. Legacy Internal Summary F8:I16 is empty.
+# =============================================================================
+service_plan:
+  sheet: Internal Summary
+  engine_only: scenario_grid
+  fields:
+    - {token: svc_inwarranty_years, label: "In warranty Service Plan", value_col: G, cell: G11, format: integer}
+    - {token: svc_inwarranty_cost,  label: "In warranty Service Plan", value_col: H, cell: H11, format: currency2}
+    - {token: svc_extended_years,   label: "Warranty + Service Plan",  value_col: G, cell: G12, format: integer}
+    - {token: svc_extended_cost,    label: "Warranty + Service Plan",  value_col: H, cell: H12, format: currency2}
+    - {token: svc_contract_years,   label: "Length Of Contract",       value_col: G, cell: G13, format: integer}
+    - {token: svc_total,            label: "Total",                    value_col: I, cell: I14, format: currency0}
+  derived:
+    - {token: standard_parts_warranty_years, value: 2}
+
+# =============================================================================
+# L. CARBON CREDITS  -> S13     ('Financial Worksheet' D42:J47)
+# =============================================================================
+carbon:
+  sheet: Financial Worksheet
+  fields:
+    - {token: cc_total,           cell: B4,       format: currency0, same_as: roi_carbon_credits}
+    - {token: cc_rate_per_kw,     cell: E42,      format: number4}
+    - {token: cc_tier_ratings,    range: E43:J43, format: integer}
+    - {token: cc_tier_qty,        range: E44:J44, format: integer}
+    - {token: cc_tier_mult,       range: E45:J45, format: currency0}
+    - {token: cc_l2_kwh_month,    cell: E47,      format: number1}
+    # Printed as "$0.0045" in the Section 13 KPI strip, so formatted as money.
+    - {token: cc_l2_rate,         cell: F47,      format: currency4}
+    - {token: cc_l2_credit_month, cell: G47,      format: currency2}
+  formula_for_prose: >
+    cc_total = projection_years * SUMPRODUCT(cc_tier_qty, cc_tier_mult)
+               + cc_l2_credit_month * l2_ports * projection_years * 12
+    E43/E44 start at 'INPUT SHEET'!O, so the L2 column is deliberately excluded
+    from the SUMPRODUCT; L2 is the separate G47 term. Section 13's paragraph
+    quotes "$8,600 per year for the 100 kW class" - replace with the active
+    (qty > 0) rating/multiplier pairs.
+  rendering_rule: "Suppress the L2 consumption sentence when l2_ports == 0."
+
+# =============================================================================
+# M. FINANCING  -> S1, S14, S17
+#
+# [FIX 4] These defined names are SHEET-SCOPED on 'DLL Schedule'.
+# wb.defined_names['Loan_Amount'] raises KeyError. Look them up on
+# wb['DLL Schedule'].defined_names. Only cumCashCats / cumCashVals are
+# workbook-scoped.
+# =============================================================================
+financing:
+  sheet: DLL Schedule
+  defined_name_scope: sheet
+  fields:
+    - {token: loan_amount,          name: Loan_Amount,               cell: D5,  format: currency2}
+    - {token: loan_rate,            name: Interest_Rate,             cell: D6,  format: percent2}
+    - {token: loan_years,           name: Loan_Years,                cell: D7,  format: integer}
+    - {token: loan_pmts_per_year,   name: Num_Pmt_Per_Year,          cell: D8,  format: integer}
+    - {token: loan_start_date,      name: Loan_Start,                cell: D9,  format: date_long}
+    - {token: loan_extra_pmts,      name: Scheduled_Extra_Payments,  cell: D10, format: currency2}
+    - {token: loan_monthly_payment, name: Scheduled_Monthly_Payment, cell: J5,  format: currency2}
+    - {token: loan_total_interest,  name: Total_Interest,            cell: J9,  format: currency2}
+    - {token: loan_num_payments,    label: "Scheduled number of payments", anchor: {label_col: I, value_col: J}, cell: J6, format: integer}
+    - {token: loan_actual_payments, label: "Actual number of payments",    anchor: {label_col: I, value_col: J}, cell: J7, format: integer}
+    - {token: loan_early_payments,  label: "Total early payments",         anchor: {label_col: I, value_col: J}, cell: J8, format: currency2}
+  amortization: {name: Data, header_row: 16, start_row: 18,
+                 columns: {n: A, date: B, begin: C, sched: D, extra: E, total: F,
+                           principal: G, interest: H, end: I, cum_interest: J},
+                 stop_when: "col A blank"}
+  derived:
+    - {token: loan_term_months,    rule: "loan_years * loan_pmts_per_year"}
+    - {token: loan_first_pmt_date, rule: "first amortization row date"}
+    - {token: loan_payoff_date,    rule: "last amortization row date"}
+  guard: >
+    loan_amount == 0 -> the DLL summary cells return "". Set has_financing=false
+    and suppress S17, S17A-D and the S14 financing cards.
+
+# =============================================================================
+# N. MONTHLY FINANCING CASHFLOW  -> S17A prose, S17B/C/D tables
+# =============================================================================
+monthly_cashflow:
+  sheet: Cashflow
+  totals: [{token: cf_total_loan_payments, cell: F1, format: currency2},
+           {token: cf_total_carbon,        cell: G1, format: currency2},
+           {token: cf_total_evse_profit,   cell: H1, format: currency2}]
+  table:
+    range: E3:I62
+    columns: {month: E, loan_payment: F, carbon_credits: G, evse_profit: H, net: I}
+    format: currency2
+    split_for_proposal: [[1, 25], [26, 50], [51, 60]]
+  derived:
+    # I1 is EMPTY - there is no cached total for the net column. Sum in Python.
+    - {token: cf_net_total,      rule: "sum(net)", format: currency0}
+    - {token: cf_carbon_monthly, rule: "G3", format: currency2}
+    - {token: cf_evse_by_year,   rule: "distinct evse_profit values in month order", format: currency2}
+    - {token: cf_net_first,      rule: "net at month 1", format: currency0}
+    - {token: cf_net_last,       rule: "net at month 60", format: currency0}
+  horizon_defect: >
+    G3:G62 is ='Financial Worksheet'!$B$4/(5*12) - the 5 is hardcoded. At the
+    10-Year setting B4 doubles while the divisor does not, so monthly carbon
+    revenue doubles and these tables overstate income by 2x. Emit an ERROR and
+    block generation when projection_years == 10 and loan_amount > 0.
+
+# =============================================================================
+# O. STAT CARDS
+# =============================================================================
+stat_cards:
+  section_3:
+    requires: has_history
+    cards:
+      - {token: months_in_window,     label: "HISTORY REVIEWED", sub: "{history_window_label}"}
+      - {token: hist_total_revenue,   label: "HISTORICAL REVENUE", sub: "Level 2 + Level 3 actual"}
+      - {token: dcfc_revenue_share,   label: "DC FAST REVENUE SHARE", sub: "{hist_l3_revenue} of total"}
+      - {token: outage_lost_revenue,  label: "ESTIMATED OUTAGE LOSS", sub: "{outage_window_label}"}
+  section_5:
+    cards:
+      - {token: year1_charger_profit,  label: "YEAR 1 OPERATING PROFIT"}
+      - {token: hist_profit_yearly,    label: "HISTORICAL ANNUAL PROFIT", requires: has_history}
+      - {token: horizon_evse_total,    label: "{projection_years}-YEAR CHARGING REVENUE"}
+      - {token: horizon_total_benefit, label: "{projection_years}-YEAR TOTAL BENEFIT"}
+  section_12:
+    cards:
+      - {token: standard_parts_warranty_years, label: "STANDARD PARTS WARRANTY"}
+      - {token: svc_contract_years,    label: "MODELED SERVICE TERM"}
+      - {token: cost_service_warranty, label: "SERVICE / WARRANTY ALLOWANCE"}
+      - {token: cost_labor,            label: "LABOR ALLOWANCE"}
+  section_13:
+    cards:
+      - {token: cc_total, label: "MODELED {projection_years}-YEAR CREDITS"}
+  section_14:
+    requires: has_financing
+    cards:
+      - {token: loan_amount,          label: FINANCED AMOUNT}
+      - {token: loan_rate,            label: INTEREST RATE}
+      - {token: loan_term_months,     label: TERM}
+      - {token: loan_monthly_payment, label: MONTHLY PAYMENT, sub: "Total interest {loan_total_interest}"}
+
+# =============================================================================
+# P. CHARTS
+# =============================================================================
+charts:
+  - token: chart_historical_revenue
+    requires: has_history
+    caption: "Historical monthly charging revenue, {history_window_label}"
+    display_size_in: [6.65, 2.66]
+    type: line
+    data: full_history.monthly_series
+    series: [{col: total_rev, label: Total revenue},
+             {col: l3_rev, label: Level 3 revenue},
+             {col: l2_rev, label: Level 2 revenue}]
+    annotations: "shade runs where l3_rev falls >80% below the trailing 3-month mean; label with the month range"
+    style: {colors: ["#12355B", "#1CA3EC", "#8C98A4"], ylabel: "Monthly revenue ($)", figsize: [13, 5], dpi: 150}
+  - token: chart_annual_operating_profit
+    caption: "Modeled annual operating profit, Years 1 through {projection_years}"
+    display_size_in: [6.55, 2.75]
+    type: line_filled
+    data: "charger_cashflow, year >= 1, column annual"
+    note: "the axis label drops 'plus idle fees' - v16 has no idle model"
+    style: {color: "#12355B", fill: "#E3F2F8", marker: o, xlabel: Year,
+            ylabel: "Annual operating profit ($)", figsize: [13, 5.5], dpi: 150}
+  - token: chart_cumulative_cashflow
+    title: "{projection_years} Year Cumulative Cashflow"
+    caption: "Modeled cumulative project cashflow"
+    display_size_in: [5.85, 3.25]
+    type: bar
+    # [FIX 5] These are OFFSET FORMULAS, not static ranges. openpyxl cannot
+    # evaluate them. Parse the arguments and resolve the height against B10:
+    #   cumCashCats = OFFSET('Financial Worksheet'!$D$5,0,0,'FW'!$B$10+1,1)
+    #   cumCashVals = OFFSET('Financial Worksheet'!$F$5,0,0,'FW'!$B$10+1,1)
+    # -> D5:D{5+B10} and F5:F{5+B10}. Legacy has NEITHER name; fall back to the
+    # consolidated_cashflow table directly.
+    data: {defined_names: [cumCashCats, cumCashVals], kind: offset_formula,
+           fallback: "consolidated_cashflow year / cumulative columns"}
+    style: {color: "#C0504D", xlabel: Year, ylabel: "Cumulative $", figsize: [9, 5], dpi: 150}
+
+# =============================================================================
+# Q. VALIDATION GATE
+# =============================================================================
+# =============================================================================
+# S. INFRASTRUCTURE BREAKDOWN  -> S8/S9
+#
+# Reprints the electrical cost stack with an explanation column. This USED to be
+# a hardcoded dict of six tokens in render.py, which silently dropped eight of
+# the fourteen children of `cost_electrical_subtotal`. On Best Western that hid
+# $107,152.52 of real cost - 56% of the electrical scope - including $68,970 of
+# switchgear and $20,933 of ADA work, while the "Other / miscellaneous" row
+# printed a hardcoded "$0 or project-specific".
+#
+# `other` is the RESIDUAL (subtotal minus the named rows), never a sum of the
+# leftovers. That is what makes the table foot to Internal Summary!D13 even on a
+# chassis that grows a child row nobody here knows about yet.
+# =============================================================================
+infrastructure:
+  # Still the anchor for the residual and for `_check_infrastructure_foots`;
+  # the total is NOT printed - the named rows plus `other` already add up to it,
+  # so a total row restated the column above it.
+  subtotal_token: cost_electrical_subtotal
+  named_rows:
+    - {token: cost_wires_conduits,     description: "Conductors, conduit and associated electrical materials"}
+    - {token: cost_switchgear,         description: "Main distribution switchgear and service equipment"}
+    - {token: cost_subpanels,          description: "Distribution and protection equipment"}
+    - {token: cost_striping_bollards,  description: "Parking and equipment-protection improvements"}
+    - {token: cost_concrete,           description: "Pads, repairs or associated concrete work"}
+    - {token: cost_ada,                description: "ADA access, path of travel and accessible-stall work"}
+    - {token: cost_dump_waste,         description: "Removal and disposal allowance"}
+    - {token: cost_construction_equip, description: "Equipment and mobilization allowance"}
+  other:
+    token: cost_electrical_other
+    label: "Other / miscellaneous"
+    description: "Paving, permits, utility coordination, construction management and additional materials"
+
+validations:
+  error:
+    - "fingerprint checks pass"
+    - "all meta.required_sheets present"
+    - "engine is recognised"
+    - "engine == scenario_grid and '10 Year Projection Comparison' present -> mis-wired sheet, refuse to read it"
+    - "abs(roi_total_costs_upfront) == cost_after_discount (tol $0.01)"
+    - "has_financing -> loan_amount == cost_after_discount (tol $0.01)"
+    # [FIX 2] hierarchical, not a flat sum of emitted rows
+    - "each cost subtotal equals the sum of its children per costs.hierarchy (tol $1)"
+    - "cost_grand_total == cost_equipment_invoice + cost_design_invoice + cost_electrical_subtotal + cost_labor (tol $1)"
+    - "consolidated_cashflow[0].cumulative == -cost_after_discount (tol $1)"
+    - "cumulative[n] == cumulative[n-1] + annual[n] (tol $1)"
+    - "len(consolidated_cashflow) == projection_years + 1"
+    - "roi_evse_revenues == sum(charger_cashflow annual, year >= 1) (tol $1)"
+    - "total_ports == evolv_ports"
+    - "evolv_annual_cost == evolv_ports * evolv_fee_per_port * 12 (tol $0.05)"
+    - "projection_years == 10 and loan_amount > 0 -> BLOCK (monthly_cashflow.horizon_defect)"
+    # [FIX 7] emit:false fields are excluded - legacy FW!B19 is a live #ERROR!
+    - "no EMITTED token is None, '', or a string starting with '#'"
+  warning:
+    - "roi_itc != 0 -> ITC excluded from Net Revenues by design; S7A cumulative will exceed it by that amount"
+    - "cost_service_warranty != cost_service_list_price -> discount applied; B18 used"
+    - "revenue_scenario != Standard-Low -> model was rewired"
+    - "breakeven_year is None -> no break-even within the horizon"
+    - "historical_baseline_recompute reconciliation off by >1% -> Historical Data is internally inconsistent (NOT a port-count check; see port_invariance_note)"
+    - "existing_ports_l2/l3 disagree with Historical Data!I15 station-count note -> occupancy % will be wrong even though profit is unaffected"
+    - "has_financing -> loan_monthly_payment * loan_num_payments != cf_total_loan_payments (tol $1)"
+    - "site_info fields empty -> operator must supply client name / address"
+  info:
+    - "section suppressed and the document renumbered"
+  post_render:
+    - "no '{{', '{%', '#REF!', '#VALUE!', '#ERROR!' or literal 'None' in document.xml, any header, or any footer"
+    - "no 'Food4Less', 'Jerome', 'Jenkins', 'Manthey', 'Stockton', '95206', 'Alexander Luckett' anywhere, including docProps"
+
+# =============================================================================
+# R. PER-CHASSIS OVERRIDES  -  keyed on meta.fingerprints, v16 is the base map
+#
+# [FIX 6] The reference-fidelity acceptance test runs the full pipeline against
+# the Food4Less workbook, so the legacy layout needs a real map, not a note.
+# Every entry here REPLACES the same key above when that CHASSIS is detected.
+#
+# CHASSIS, not engine. The section header used to say "legacy engine" while
+# every consumer keyed off the row layout; production files are a v16 chassis
+# carrying the legacy engine, so following the old comment would have applied
+# legacy row offsets to the normal production input.
+#
+# v16 deliberately has NO entry here. It is the base map. An entry for it would
+# mean the base map above is wrong.
+#
+# YAML anchors, not an `inherits:` mechanism: v15_no_itc genuinely has the
+# legacy cost rows AND the v16 EVOLV rows at the same time, so inheriting
+# "legacy" wholesale would drag the wrong half along. Share what is shared,
+# spell out what is not.
+# =============================================================================
+chassis:
+  legacy_food4less:
+    horizon: {fixed: 10}              # no B9/B10 toggle
+
+    costs:
+      # the whole block sits one row higher than v16
+      fields_override: &legacy_cost_rows
+        cost_equipment_invoice:   B15
+        cost_charger_hardware:    B16
+        cost_service_warranty:    B17
+        cost_evolv_commissioning: B18
+        cost_service_list_price:  B19  # LIVE #ERROR! (='Internal Summary'!#REF!) - emit:false
+        cost_sales_tax_chargers:  B20
+        cost_design_invoice:      B21
+        cost_autocad:             B22
+        cost_ee_design:           B23
+        cost_project_mgmt:        B24
+        cost_plan_check_permit:   B25
+        cost_electrical_subtotal: B26
+        cost_wires_conduits:      B27
+        cost_switchgear:          B28
+        cost_subpanels:           B29
+        cost_striping_bollards:   B30
+        cost_asphalt:             B31
+        cost_concrete:            B32
+        cost_ada:                 B33
+        cost_dump_waste:          B34
+        cost_permits:             B35
+        cost_utility:             B36
+        cost_construction_equip:  B37
+        cost_construction_pm:     B38
+        cost_materials:           B39
+        cost_sales_tax_equipment: B40
+        cost_labor:               B41
+        cost_grand_total:         B42
+        cost_after_discount:      B43
+
+    roi:
+      itc_included_in_net: true       # legacy B7 = B3+(B4+B5+B6)
+      itc_display_label: "Federal ITC (30%)"
+      itc_formula: "=ABS(B3)*0.3"
+
+    tables: &legacy_cashflow_rows
+      consolidated_cashflow: {header_row: 3, data_rows: {start: 4, end: 14}}
+      charger_cashflow:      {header_row: 3, data_rows: {start: 4, end: 14}}
+
+    tables_known_defect: >
+      FW!E9 uses (B4/5) where every other year uses (B4/10), giving Year 5 a
+      double carbon slug. Because we read cached values this reproduces the
+      reference exactly. Do not correct it.
+
+    evolv:                            # one row LOWER than v16
+      evolv_ports:          {cell: G4}
+      evolv_fee_per_port:   {cell: H4}
+      evolv_annual_cost:    {cell: I4}
+      evolv_contract_years: {cell: G5}
+      evolv_customer_total: {cell: D6}
+
+    service_plan:
+      present: false
+      note: >
+        Legacy 'Internal Summary'!F8:I16 is empty - there is no service-plan
+        block. Section 12's MODELED SERVICE TERM comes from IS!G5 (# of years
+        for contract) and STANDARD PARTS WARRANTY is the constant 2.
+      svc_contract_years: {cell: G5}
+
+    carbon:
+      # Not a grid at all: the tier quantities and rates are hardcoded inside
+      # the B4 formula, so there is one tier and it is read from scalars.
+      style: single_tier
+      formula: "=(10*2*8600)+(10*1*4300)+(K46*'Updated Chargers Revenue Calcul'!D6*10*12)"
+      fields_override:
+        cc_l3_rating:       I43
+        cc_l3_mult:         J43
+        cc_l2_kwh_month:    I46
+        cc_l2_rate:         J46
+        cc_l2_credit_month: K46
+
+    # -- documentation only; nothing below is read by the code --------------
+    operating_model: "use operating_model.baseline_vs_projected (cols D/E for projected)"
+
+    charts:
+      chart_cumulative_cashflow:
+        data: "FW!D4:D14 / FW!F4:F14 - cumCashCats and cumCashVals DO NOT EXIST here"
+
+    ten_year_projection:
+      not_read: >
+        Kept as a record of where these figures used to come from.
+        `_extract_derived_ten_year` computes all of them from the Financial
+        Worksheet instead, on every chassis and every engine.
+      sheet: 10 Year Projection Comparison
+      fields:
+        - {token: hist_annual_profit,   cell: A5,  format: currency0}
+        - {token: proj_year1_incl_idle, cell: C5,  format: currency0}
+        - {token: proj_horizon_total,   cell: E5,  format: currency0}
+        - {token: uplift_vs_historical, cell: G5,  format: percent1}
+        - {token: year1_total_incl_itc, cell: E19, format: currency0}
+        - {token: baseline_total,       cell: B29, format: currency0}
+        - {token: annual_growth_rate,   cell: H45, format: percent1}
+        - {token: idle_stall_hours,     cell: G20, format: integer}
+      known_defect: >
+        C19 adds 'Financial Worksheet'!B5 (the ITC) into a REVENUE column,
+        inflating Year 1 from $25,416 to $104,199. This is what makes the
+        "10-Year Total (30% ITC Included)" headline read $564,696.
+
+  # ---------------------------------------------------------------------------
+  v15_no_itc:
+    note: >
+      A hybrid, and the reason `is_legacy_chassis` had to stop deciding things.
+      The cost block and the cashflow tables are exactly legacy_food4less; the
+      INPUT SHEET, the EVOLV block and the carbon grid's STRUCTURE are v16. Two
+      things are unique to it: the Financial Worksheet summary block has NO ITC
+      row at all (A5 is EVSE Revenues, A6 is Net Revenues = B3+(B4+B5)), and the
+      six-tier carbon grid has moved from D42:J47 to L4:R9.
+      Specimen: Historical_Marriott_Bakersfield.xlsx.
+    horizon: {fixed: 10}              # no B9/B10 toggle, as on legacy
+
+    costs:
+      fields_override: *legacy_cost_rows
+
+    tables: *legacy_cashflow_rows
+
+    # The charger-cashflow block sits a row higher than v16's, so the cell that
+    # points at the wired scenario moves with it: I5 here, I6 on v16. Read the
+    # wrong one and you get `=I5*1.125`, no reference to the Updated tab at all,
+    # and a silent fallback to Standard-Low that may not be what is wired.
+    scenario_pointer: {cell: I5}
+
+    roi:
+      # There is no ITC ROW. Not "an ITC row that reads zero" - absent. Without
+      # this, resolve() tries the label 'ITC', misses, falls through to the
+      # fixed cell B5, and reads EVSE Revenues: $416,761 printed as a Federal
+      # ITC line, with nothing raised.
+      absent: [roi_itc]
+      # Addressed explicitly rather than by label, because the labels here sit
+      # one row up from every other chassis and a label search that misses is
+      # exactly what goes wrong above.
+      fields_override:
+        roi_total_costs_upfront: B3
+        roi_carbon_credits:      B4
+        roi_evse_revenues:       B5
+        roi_net_revenues:        B6
+      note: "B6 = B3+(B4+B5); there is no ITC term to include or exclude."
+
+    # evolv: DELIBERATELY ABSENT - this chassis has the v16 G3/H3/I3/G4 block,
+    # so the base map is already right. Adding the legacy override here reads
+    # evolv_ports out of G4, the '# of years' cell, and quotes 5 ports for a
+    # 14-port site.
+
+    service_plan:
+      present: false
+      note: >
+        No F9:I14 block, as on legacy - but the EVOLV block above it is the v16
+        one, so the contract length is at G4, not legacy's G5.
+      svc_contract_years: {cell: G4}
+
+    carbon:
+      style: six_tier                 # v16 structure, but it MOVES
+      # Not a fixed address. The block is at L4:R9 on Historical_Marriott and
+      # L5:R10 on Rip & Replace_MarriotbakersfieldL2 - same shape, one row
+      # apart, for no structural reason. Fixed addresses read the neighbouring
+      # row on whichever file they were not written for, and a carbon grid read
+      # one row out yields ratings where quantities belong: plausible numbers,
+      # wrong proposal. So the block is found by its own label and everything
+      # else is an offset from there. The offsets below are identical on both.
+      anchor:
+        sheet: Financial Worksheet
+        label_col: L
+        label: "CC Rate ($/kW/yr)"
+        offsets:
+          cc_rate_per_kw:     {row: 0, col: M}
+          cc_tier_ratings:    {row: 1, cols: [M, R]}
+          cc_tier_qty:        {row: 2, cols: [M, R]}
+          cc_tier_mult:       {row: 3, cols: [M, R]}
+          cc_l2_kwh_month:    {row: 5, col: M}
+          cc_l2_rate:         {row: 5, col: N}
+          cc_l2_credit_month: {row: 5, col: O}
+      verified: >
+        FW!B4 = (10*SUMPRODUCT(<qty>,<mult>)) + (<l2 credit>*'Updated'!<l2 stall
+        qty>*10*12) on both specimens - the v16 carbon formula exactly, same
+        terms, same meaning, moving addresses.

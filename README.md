@@ -30,6 +30,35 @@ Peripherals, Financials, Results).
   a standalone intake + estimate workbook that runs entirely on Excel formulas
   (no app needed) and is calibrated against this engine at generation time.
 
+### Every formula cell carries its computed value
+
+A formula cell in .xlsx stores two things: the formula (`<f>`) and its last
+computed result (`<v>`). Excel recalculates on open and never misses the
+cached value, so a workbook written without one looks perfect to a human —
+and reads as blanks and zeroes to openpyxl, pandas, SheetJS and anything
+downstream, because those read the cached value and nothing else. Stale
+cached values are worse still: the file looks fully populated and the numbers
+are from before the inputs existed.
+
+So every workbook this app writes is recalculated before it is handed over
+(`lib/recalc/`), and each formula keeps its formula *and* gains its result.
+The workbook stays live — change an input in Excel and the model still
+responds — and it reads correctly everywhere else. `fullCalcOnLoad` is still
+set, but it is belt and braces: it moves Excel and nothing else.
+
+`lib/recalc/` is a small Excel evaluator — parser, value model with Excel's
+coercions, ~60 worksheet functions, implicit intersection, shared formulas
+and defined names. It is held to Excel itself: the RFC/MSRP template was last
+saved by Excel, so `excelOracle.test.ts` recalculates all 8,385 of its
+formula cells and requires every one to match the value Excel computed.
+
+Checking an export by hand:
+
+```
+npx -y tsx scripts/make-rfc-export.ts out.xlsx
+python scripts/verify-cached-values.py out.xlsx
+```
+
 ## Commercial layer (Commercial tab)
 
 The estimator stops at **Total Cost**. The Commercial tab (`lib/proposal/`) turns
@@ -228,6 +257,8 @@ benchmarks) are generated from the template with `npm run refdata`.
 | `npm run template` | Regenerate the standalone Excel template          |
 | `npm run refdata`  | Regenerate `lib/ref/` from the CEO intake template (`templates/source/`) |
 | `npx tsx scripts/replay.ts` | Replay the source RFC_V18 workbooks      |
+| `npx tsx scripts/make-rfc-export.ts out.xlsx` | Write a filled RFC/MSRP calculator for inspection |
+| `python scripts/verify-cached-values.py out.xlsx` | Check every formula cell carries a value that agrees with its inputs |
 
 ## Engine layout
 
@@ -254,6 +285,11 @@ benchmarks) are generated from the template with `npm run refdata`.
   mapping, a filled 2.9.0 fixture under `__fixtures__/`); `lib/existing.ts`,
   `lib/interconnection.ts`, `lib/overrides.ts` — the replacement-site scope,
   the Rule 29 block and the override register.
+- `lib/recalc/` — the formula engine that gives every exported formula cell
+  its computed value: `parse.ts` (tokenizer + parser), `values.ts` (Excel's
+  value model and coercions), `functions.ts` (the worksheet functions),
+  `evaluate.ts` (evaluation, implicit intersection, cycles), `grid.ts`
+  (workbook → cells), `verify.ts` (audit a finished file).
 - `scripts/make-template.ts` — the standalone template generator.
 
 Tests replay two real projects (VN Village L-11101, Boatman I-271839) and must
