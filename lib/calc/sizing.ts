@@ -137,7 +137,12 @@ export function computeTakeoffRow(
   // (DCFC and feeders — a 2nd run halves amps per set, so smaller wire and
   // less voltage drop). L2 runs are one circuit per port: more runs never
   // split the load there, they'd just be extra circuits.
-  const parallelCapable = lt.runsAreParallel || lt.category !== "L2";
+  // L2 runs are one circuit per port, so the AUTOMATIC sizing never splits
+  // them. But a number typed into Runs/u is an explicit request for parallel
+  // conductors, and honouring it is the only way that field means anything on
+  // an L2 row — it used to be silently ignored there.
+  const runsOverridden = input.runsPerUnitOverride !== undefined && input.runsPerUnitOverride > 0;
+  const parallelCapable = lt.runsAreParallel || lt.category !== "L2" || runsOverridden;
   const parallelDivisor = parallelCapable ? runsPerUnit : 1;
 
   // OCPD left at 0 on the LoadType means auto-size: next standard breaker at
@@ -177,6 +182,11 @@ export function computeTakeoffRow(
     : 0;
 
   const maxIdx = Math.max(idxAmp, idxVD, idxDesignMin);
+  // NEC 310.10(H): conductors may be paralleled only at 1/0 AWG and larger.
+  // Split a 40A L2 port four ways and each set lands far below that. The row is
+  // still sized and priced — saying what a scope costs is the job — but it says
+  // so, because the drawing set will not pass plan check as drawn.
+  const idx1_0 = WIRE_TABLE.findIndex((w) => w.size === "1/0 AWG") + 1;
   // Overflow: the load needs more than the largest cataloged conductor —
   // refuse to size (and price) rather than quietly using 1000 kcmil.
   const exceedsTable = idxAmp > 25 || idxVD > 25;
@@ -243,6 +253,13 @@ export function computeTakeoffRow(
     flag = `No price for ${conduitSize} conduit`;
   } else if (exceedsTable) {
     flag = "Exceeds conductor table - use parallel runs";
+  } else if (
+    parallelCapable &&
+    runsPerUnit > 1 &&
+    selectedWire !== "" &&
+    WIRE_TABLE.findIndex((w) => w.size === selectedWire) + 1 < idx1_0
+  ) {
+    flag = `${selectedWire} cannot be paralleled - NEC 310.10(H) allows parallel sets at 1/0 AWG and larger only`;
   } else if (idxVD > idxAmp) {
     // The wire was upsized to hold voltage sag under the Setup limit, not for
     // current. On parallel-capable runs an extra run splits the amps and can

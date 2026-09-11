@@ -324,7 +324,7 @@ export function TakeoffTab() {
                     className={`${inputCls} w-16`}
                     value={row.runsPerUnitOverride ?? ""}
                     placeholder={String(row.resolvedRunsPerUnit)}
-                    title="Parallel conductor sets per unit — blank = auto. On DCFC/feeder runs an extra set splits the amps, letting each set use smaller wire (helps when voltage drop governs)."
+                    title="Parallel conductor sets per unit — blank = auto. An extra set splits the amps, letting each set use smaller wire (helps when voltage drop governs). On L2 rows only an explicit number here splits them; NEC 310.10(H) allows parallel sets at 1/0 AWG and larger only."
                     onChange={(e) =>
                       update(row.id, {
                         runsPerUnitOverride: e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
@@ -416,7 +416,9 @@ export function TakeoffTab() {
         limit (Setup tab) picked a fatter wire than the current alone needs — compliant, just pricier. On DCFC and
         feeder runs, typing a bigger number in <span className="font-medium">Runs/u</span> splits the amps across
         parallel sets so each can use smaller wire; compare the row total both ways and keep the cheaper one. On L2
-        runs each port is its own circuit, so extra runs don’t help — the upsized wire is the cost of the distance.
+        rows each port is its own circuit, so the automatic sizing never splits them — but typing a number in
+        Runs/u asks for parallel conductors explicitly and does split the amps. Watch for the NEC 310.10(H) flag:
+        parallel sets are only permitted at 1/0 AWG and larger, which L2 branch conductors rarely reach.
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
