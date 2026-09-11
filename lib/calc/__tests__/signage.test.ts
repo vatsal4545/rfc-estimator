@@ -37,8 +37,10 @@ describe("signage and striping follow the RFC_V18 rules", () => {
     expect(line(r, "Sign posts").qty).toBe(5 + 3);
   });
 
-  it("strips at (L2 x 2 + DC) / 10", () => {
-    expect(line(build(12, 16), "Striping").qty).toBeCloseTo(4.4, 5);
+  it("strips in ten-stall units, counting plugs", () => {
+    // 16 single-port L2 + 12 single-cable DC = 28 stalls. The RFC's
+    // (L2 x 2 + DC) / 10 would read 4.4 here by assuming every L2 is dual.
+    expect(line(build(12, 16), "Striping").qty).toBeCloseTo(2.8, 5);
   });
 
   it("takes a quoted rate for every signage line", () => {
@@ -105,5 +107,44 @@ describe("a typed quantity overrides the derived one", () => {
     const r = build(6, 5, { signQtyOverride: undefined });
     expect(line(r, "Signs").qty).toBe(11);
     expect(line(r, "Signs").auto).toBe(true);
+  });
+});
+
+// Striping paints STALLS, and a charger serves as many stalls as it has plugs.
+// The RFC's formula reads (L2 x 2 + DC), which assumes every L2 is dual-port —
+// true of the job it was written for and wrong for a site of singles, where it
+// billed twice the striping actually needed.
+const stripingQty = (lines: { loadTypeId: string; count: number }[]) => {
+  const p = buildQuickProject(
+    { ...defaultQuickInput(), terrain: "flat", lines },
+    defaultProject(),
+    "stripe",
+  );
+  return computeEstimate(p).peripherals.lines.signage.find((s) => s.name === "Striping")!.qty;
+};
+
+describe("striping counts stalls, not chargers", () => {
+  it("gives a single-port L2 one stall, not two", () => {
+    expect(stripingQty([{ loadTypeId: "L2 Single 40A", count: 8 }])).toBeCloseTo(0.8, 5);
+  });
+
+  it("gives a dual-port L2 two stalls", () => {
+    expect(stripingQty([{ loadTypeId: "L2 Dual 40A", count: 4 }])).toBeCloseTo(0.8, 5);
+  });
+
+  it("counts a single-cable DC cabinet as one stall", () => {
+    expect(stripingQty([{ loadTypeId: "DCFC 200kW", count: 6 }])).toBeCloseTo(0.6, 5);
+  });
+
+  it("counts a dual-cable DC cabinet as two", () => {
+    expect(stripingQty([{ loadTypeId: "DCFC 200kW Dual", count: 6 }])).toBeCloseTo(1.2, 5);
+  });
+
+  it("adds the streams on a mixed site", () => {
+    // 5 single L2 (5 stalls) + 4 single-cable DC (4) = 9 stalls
+    expect(stripingQty([
+      { loadTypeId: "L2 Single 40A", count: 5 },
+      { loadTypeId: "DCFC 200kW", count: 4 },
+    ])).toBeCloseTo(0.9, 5);
   });
 });
