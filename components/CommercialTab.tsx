@@ -13,7 +13,7 @@ import {
 } from "@/lib/proposal/types";
 import { computeEquipmentSchedule, reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, theadCls } from "./ui";
 
 // Commercial — the CEO's price layer (EVSE Project Intake 2.9.0 terms and the
 // Best Western Business_Model), computed from the estimator's cost result.
@@ -25,7 +25,7 @@ const thNum = `${th} text-right`;
 const td = "px-3 py-1.5";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 const subtotalCls = "bg-zinc-50 font-medium dark:bg-zinc-900";
 
 const GROUPS: { key: BuildupGroup; label: string }[] = [
@@ -227,7 +227,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Line</th>
                 <th className={th}>Class</th>
@@ -310,7 +310,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Service line</th>
                 <th className={th}>Who provides</th>
@@ -395,7 +395,7 @@ export function CommercialTab() {
       >
         <div className={wrapCls}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Component</th>
                 <th className={thNum}>Price</th>

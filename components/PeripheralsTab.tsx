@@ -8,7 +8,7 @@ import { money, num } from "@/lib/format";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, theadCls } from "./ui";
 
 const GEAR_ITEMS = Array.from(new Set(GEAR_CATALOG.map((g) => g.item)));
 
@@ -99,9 +99,9 @@ export function PeripheralsTab() {
                 Switch to manual gear
               </button>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                     <th className="px-3 py-2">Item</th>
                     <th className="px-3 py-2">Size</th>
@@ -163,9 +163,9 @@ export function PeripheralsTab() {
             Switch to auto gear (re-sizes &amp; re-prices from the Panel schedule)
           </button>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Size</th>
@@ -406,9 +406,9 @@ export function PeripheralsTab() {
       </Section>
 
       <Section title="D. Construction equipment rental" subtitle="One formula on every row: Qty x Rate x Duration + delivery (delivery only charged if Qty > 0).">
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Qty</th>

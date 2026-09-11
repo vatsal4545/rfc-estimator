@@ -5,7 +5,7 @@ import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
 
 // Business model — the downstream model the CEO builds from the intake (the
 // Best Western workbook's Utility_Rates, Revenue, Carbon, Financing, Cashflow
@@ -17,7 +17,7 @@ const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 const totalCls = "bg-zinc-50 font-medium dark:bg-zinc-900";
 const noteCls = "text-xs text-zinc-500";
 
@@ -400,7 +400,7 @@ export function TariffSection() {
 
         <div className={`${wrapCls} mt-5`}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Year</th>
                 <th className={thNum}>kWh</th>
@@ -516,7 +516,7 @@ export function RevenueSection() {
         </Grid>
         <div className={`${wrapCls} mt-4`}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Year</th>
                 <th className={thNum}>Ramp</th>
@@ -620,7 +620,7 @@ export function CarbonSection() {
           />
           <div className={wrapCls}>
             <table className={tableCls}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Year</th>
                   <th className={thNum}>Capacity credit</th>
@@ -708,7 +708,7 @@ export function FinancingSection() {
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Amortisation schedule ({financing.schedule.length} payments)</summary>
               <div className="max-h-80 overflow-auto">
                 <table className={tableCls}>
-                  <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
+                  <thead className={theadCls}>
                     <tr>
                       <th className={th}>#</th>
                       <th className={thNum}>Opening</th>
@@ -751,7 +751,7 @@ export function CashflowSection() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className={wrapCls}>
             <table className={tableCls}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Year</th>
                   <th className={thNum}>Charging profit</th>
@@ -793,7 +793,7 @@ export function CashflowSection() {
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Position by payment period — loan payment against carbon and charging</summary>
                 <div className="max-h-80 overflow-auto">
                   <table className={tableCls}>
-                    <thead className="sticky top-0 bg-zinc-50 dark:bg-zinc-900">
+                    <thead className={theadCls}>
                       <tr>
                         <th className={th}>Period</th>
                         <th className={thNum}>Loan payment</th>
@@ -886,7 +886,7 @@ export function DealSection() {
 
         <div className={`${wrapCls} mt-5`}>
           <table className={tableCls}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Year</th>
                 <th className={thNum}>Charging profit (base)</th>
@@ -924,7 +924,7 @@ export function DealSection() {
         <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className={wrapCls}>
             <table className={tableCls}>
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Outcome</th>
                   <th className={thNum}>Client</th>

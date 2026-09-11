@@ -5,7 +5,7 @@ import type { GearOverrides, Material } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
 import { SLD } from "./SLD";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, theadCls } from "./ui";
 
 export function PanelScheduleTab() {
   const { project, setProject, result } = useProject();
@@ -99,9 +99,9 @@ export function PanelScheduleTab() {
               </Field>
             </Grid>
             {chainRows.length > 0 && (
-              <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+              <div className="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
                 <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-                  <thead className="bg-zinc-50 dark:bg-zinc-900">
+                  <thead className={theadCls}>
                     <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                       <th className="px-3 py-2">Segment</th>
                       <th className="px-3 py-2 text-right">Load (A)</th>
@@ -144,9 +144,9 @@ export function PanelScheduleTab() {
         subtitle="One line per takeoff row. Every EVSE load is continuous, so each breaker is at least 125% of the circuit's input current (NEC 625.41/625.42)."
       >
         {hasBranches ? (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                   <th className="px-3 py-2">Location</th>
                   <th className="px-3 py-2">Load type</th>
@@ -245,9 +245,9 @@ export function PanelScheduleTab() {
         title="Suggested gear"
         subtitle="Derived from the buses above, on catalog sizes so it prices automatically. Apply replaces the gear list on the Peripherals tab."
       >
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Size</th>

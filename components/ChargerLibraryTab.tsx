@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Category, LoadType, Material } from "@/lib/calc/types";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, theadCls } from "./ui";
 
 const BLANK: Omit<LoadType, "id"> = {
   category: "L2",
@@ -42,9 +42,9 @@ export function ChargerLibraryTab() {
         title="Charger & feeder library"
         subtitle="Every model available on the Takeoff dropdown. Add a charger once and reuse it on every future project."
       >
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">Category</th>

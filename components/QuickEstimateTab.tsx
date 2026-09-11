@@ -20,7 +20,7 @@ import { rebuildProject } from "@/lib/intake/rebuild";
 import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { useRebuild } from "./intake/useRebuild";
-import { Field, Pill, Section, inputCls, selectCls } from "./ui";
+import { Field, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
 
 const SERVICE_TOGGLES: {
   key: keyof Pick<
@@ -545,9 +545,9 @@ function BuildSummary() {
           title="Equipment schedule"
           subtitle={`Price book ${schedule.terms.basis === "price-book" ? "terms" : "list prices"}: ${schedule.terms.contractYears}-year contract · EVOLV $${schedule.terms.evolvPerPortMonth.toFixed(2)}/port/month · warranty beyond the included years plus in-warranty service every contract year. Terms live on the Commercial tab.`}
         >
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   {["Item", "Qty", "List $/unit", "List total", "Ports", "Service class", "Ext. warranty", "Service", "EVOLV"].map((h, i) => (
                     <th key={h} className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-500 ${i > 0 ? "text-right" : "text-left"}`}>

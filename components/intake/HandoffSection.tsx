@@ -1,5 +1,6 @@
 "use client";
 
+import { theadCls } from "../ui";
 import { useMemo, useState } from "react";
 import { money, num } from "@/lib/format";
 import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
@@ -120,9 +121,9 @@ export function HandoffSection() {
         {plan.overrides.length === 0 ? (
           <div className="text-sm text-zinc-500">Nothing to carry — the CEO&apos;s engine will price the job from the intake&apos;s own derivation.</div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-              <thead className="bg-zinc-50 dark:bg-zinc-900">
+              <thead className={theadCls}>
                 <tr>
                   <th className={th}>Row</th>
                   <th className={th}>Override</th>

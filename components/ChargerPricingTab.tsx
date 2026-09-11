@@ -4,7 +4,7 @@ import { HARDWARE_ALLOWANCE, HARDWARE_ALLOWANCE_BASIS } from "@/lib/calc/autopla
 import { DEFAULT_LOAD_TYPES } from "@/lib/calc/tables";
 import { money } from "@/lib/format";
 import { useProject } from "./ProjectContext";
-import { Section, inputCls } from "./ui";
+import { Section, inputCls, theadCls } from "./ui";
 
 // One page for what every charger model COSTS — global, not per-project:
 // change a price here and every auto-priced project picks it up (open
@@ -29,9 +29,9 @@ export function ChargerPricingTab() {
             estimate — switch it back to auto on the Financials tab to follow the catalog.
           </div>
         )}
-        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2">Model</th>
                 <th className="px-3 py-2">Category</th>

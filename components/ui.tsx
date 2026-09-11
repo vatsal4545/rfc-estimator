@@ -78,3 +78,26 @@ export function FlagBadge({ flag }: { flag: string }) {
     </span>
   );
 }
+
+/**
+ * Wrapper for a data table whose header should stay put while you scroll it.
+ *
+ * The height cap is what makes the freeze possible: `position: sticky` resolves
+ * against the nearest scrolling ancestor, and these wrappers already set
+ * `overflow-x` for wide tables — which forces `overflow-y: auto` too. Without a
+ * height the box never scrolls vertically, the page does, and a sticky header
+ * inside it has nothing to stick to. Capping the height moves the vertical
+ * scroll into the box, where the header can hold its position — Excel's freeze
+ * panes, in the place the rows actually move. Short tables never reach the cap
+ * and look exactly as they did.
+ */
+export const tableWrapCls =
+  "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+
+/**
+ * The header row of such a table. Opaque, because the body scrolls underneath
+ * it, and carrying its bottom rule as an inset shadow — a border on a sticky
+ * header scrolls away with the cell it belongs to.
+ */
+export const theadCls =
+  "sticky top-0 z-10 bg-zinc-50 shadow-[inset_0_-1px_0_#e4e4e7] dark:bg-zinc-900 dark:shadow-[inset_0_-1px_0_#27272a]";

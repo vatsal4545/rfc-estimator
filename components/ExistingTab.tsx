@@ -20,7 +20,7 @@ import { modelInputsOf } from "@/lib/proposal/defaults";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
 import { computeSiteCapacity } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls } from "./ui";
+import { Field, Grid, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
 
 // Existing site — the CEO intake's Existing tab (1B · rip and replace). On a
 // greenfield site leave it alone. On a replacement site it decides the
@@ -33,7 +33,7 @@ const thNum = `${th} text-right`;
 const td = "px-2 py-1";
 const tdNum = "px-2 py-1 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 const noteCls = "text-xs text-zinc-500";
 const small = `${inputCls} w-24 py-1`;
 const kwh = (n: number) => num(n, 0);
@@ -137,7 +137,7 @@ export function ExistingTab() {
           >
             <div className={wrapCls}>
               <table className={tableCls}>
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr>
                     <th className={th}>Element</th>
                     <th className={th}>Decision</th>
@@ -178,7 +178,7 @@ export function ExistingTab() {
           <Section title="C · Existing equipment being removed" subtitle="One row per existing cabinet or unit. Drives the demolition scope below and the port comparison in section F.">
             <div className={wrapCls}>
               <table className={tableCls}>
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr>
                     <th className={th}>Make and model</th>
                     <th className={thNum}>Rating kW</th>
@@ -300,7 +300,7 @@ export function ExistingTab() {
           >
             <div className={wrapCls}>
               <table className={tableCls}>
-                <thead className="bg-zinc-50 dark:bg-zinc-900">
+                <thead className={theadCls}>
                   <tr>
                     <th className={th}>Month</th>
                     <th className={thNum}>kWh dispensed</th>
@@ -377,7 +377,7 @@ export function ExistingTab() {
               <div>
                 <div className={wrapCls}>
                   <table className={tableCls}>
-                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                    <thead className={theadCls}>
                       <tr>
                         <th className={th}>Connector</th>
                         <th className={th}>On the existing</th>
@@ -416,7 +416,7 @@ export function ExistingTab() {
               <div>
                 <div className={wrapCls}>
                   <table className={tableCls}>
-                    <thead className="bg-zinc-50 dark:bg-zinc-900">
+                    <thead className={theadCls}>
                       <tr>
                         <th className={th}>Uplift</th>
                         <th className={thNum}>Theoretical</th>

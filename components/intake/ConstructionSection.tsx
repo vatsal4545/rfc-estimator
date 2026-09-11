@@ -1,5 +1,6 @@
 "use client";
 
+import { theadCls } from "../ui";
 import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
@@ -21,7 +22,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
-const wrap = "overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 const readonlyCls = "rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900";
 
@@ -161,7 +162,7 @@ export function ConstructionSection() {
         </div>
         <div className={wrap}>
           <table className={table}>
-            <thead className="bg-zinc-50 dark:bg-zinc-900">
+            <thead className={theadCls}>
               <tr>
                 <th className={th}>Rental</th>
                 <th className={thNum}>Qty</th>
