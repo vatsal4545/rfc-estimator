@@ -1,6 +1,6 @@
 "use client";
 
-import { money, num, pct } from "@/lib/format";
+import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import {
   CONNECTOR_KEYS,
   CONNECTOR_LABELS,
@@ -396,7 +396,7 @@ export function ExistingTab() {
                             <input type="checkbox" className="h-4 w-4" checked={x.connectors[k].onNew} onChange={(e) => update({ connectors: { ...x.connectors, [k]: { ...x.connectors[k], onNew: e.target.checked } } })} />
                           </td>
                           <td className={tdNum}>
-                            <input type="number" step="0.01" className={small} value={x.connectors[k].fleetShare} onChange={(e) => update({ connectors: { ...x.connectors, [k]: { ...x.connectors[k], fleetShare: Number(e.target.value) } } })} />
+                            <input type="number" step="1" className={small} value={fractionToPct(x.connectors[k].fleetShare)} onChange={(e) => update({ connectors: { ...x.connectors, [k]: { ...x.connectors[k], fleetShare: pctToFraction(Number(e.target.value)) } } })} />
                           </td>
                         </tr>
                       ))}

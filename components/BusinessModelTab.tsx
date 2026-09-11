@@ -1,6 +1,6 @@
 "use client";
 
-import { money, num, pct } from "@/lib/format";
+import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
@@ -45,6 +45,45 @@ function NumField({
   return (
     <Field label={label} hint={hint}>
       <input type="number" step={step ?? "any"} min={min} className={inputCls} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </Field>
+  );
+}
+
+/**
+ * A percentage typed the way people say it — "20" for 20%, with the sign in the
+ * box so there is no doubt. The value stays a fraction in the project, so saved
+ * projects, the engine, the exports and the template never see the display form.
+ */
+function PctField({
+  label,
+  hint,
+  value,
+  step,
+  min,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  step?: string;
+  min?: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="relative">
+        <input
+          type="number"
+          step={step ?? "1"}
+          min={min}
+          className={`${inputCls} pr-7`}
+          value={fractionToPct(value)}
+          onChange={(e) => onChange(pctToFraction(Number(e.target.value)))}
+        />
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+          %
+        </span>
+      </div>
     </Field>
   );
 }
@@ -208,14 +247,14 @@ export function UsageSection() {
         subtitle="Utilisation expressed as stall-hours, then energy. The taper is applied before any money is counted. Every one of these will be challenged by the customer — set them where you can defend them. Hours and days come from the Intake tab."
       >
         <Grid cols={4}>
-          <NumField label="Stall occupancy" hint="Share of stalls used per day (intake 20%)" step="0.01" value={inputs.revenue.stallOccupancy} onChange={(v) => setRevenue({ stallOccupancy: v })} />
-          <NumField label="Charging hours per occupied stall" hint="Share of open hours (25%)" step="0.01" value={inputs.revenue.chargingHoursShare} onChange={(v) => setRevenue({ chargingHoursShare: v })} />
-          <NumField label="Nameplate de-rate" hint="Cabinet output vs label (0.98)" step="0.01" value={inputs.revenue.deratingFactor} onChange={(v) => setRevenue({ deratingFactor: v })} />
-          <NumField label="Charging-curve taper" hint="Average delivered power vs port rating (0.70)" step="0.01" value={inputs.revenue.taperFactor} onChange={(v) => setRevenue({ taperFactor: v })} />
-          <NumField label="Year 1 share of steady state" hint="Greenfield sites take time to fill (50%)" step="0.05" value={inputs.revenue.rampYear1} onChange={(v) => setRevenue({ rampYear1: v })} />
-          <NumField label="Year 2 share" step="0.05" value={inputs.revenue.rampYear2} onChange={(v) => setRevenue({ rampYear2: v })} />
-          <NumField label="Year 3 share" step="0.05" value={inputs.revenue.rampYear3} onChange={(v) => setRevenue({ rampYear3: v })} />
-          <NumField label="Annual growth after ramp" hint="Justify as a level, not a rate (6%)" step="0.01" value={inputs.revenue.growthAfterRamp} onChange={(v) => setRevenue({ growthAfterRamp: v })} />
+          <PctField label="Stall occupancy" hint="Share of stalls used per day (intake 20%)" step="1" value={inputs.revenue.stallOccupancy} onChange={(v) => setRevenue({ stallOccupancy: v })} />
+          <PctField label="Charging hours per occupied stall" hint="Share of open hours (25%)" step="1" value={inputs.revenue.chargingHoursShare} onChange={(v) => setRevenue({ chargingHoursShare: v })} />
+          <PctField label="Nameplate de-rate" hint="Cabinet output vs label (98%)" step="1" value={inputs.revenue.deratingFactor} onChange={(v) => setRevenue({ deratingFactor: v })} />
+          <PctField label="Charging-curve taper" hint="Average delivered power vs port rating (70%)" step="1" value={inputs.revenue.taperFactor} onChange={(v) => setRevenue({ taperFactor: v })} />
+          <PctField label="Year 1 share of steady state" hint="Greenfield sites take time to fill (50%)" step="5" value={inputs.revenue.rampYear1} onChange={(v) => setRevenue({ rampYear1: v })} />
+          <PctField label="Year 2 share" step="5" value={inputs.revenue.rampYear2} onChange={(v) => setRevenue({ rampYear2: v })} />
+          <PctField label="Year 3 share" step="5" value={inputs.revenue.rampYear3} onChange={(v) => setRevenue({ rampYear3: v })} />
+          <PctField label="Annual growth after ramp" hint="Justify as a level, not a rate (6%)" step="1" value={inputs.revenue.growthAfterRamp} onChange={(v) => setRevenue({ growthAfterRamp: v })} />
         </Grid>
         <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
@@ -323,9 +362,9 @@ export function TariffSection() {
             </label>
             {inputs.tariff.touShares !== null && (
               <Grid cols={3}>
-                <NumField label="Peak share" step="0.05" value={inputs.tariff.touShares.peak} onChange={(v) => setShare("peak", v)} />
-                <NumField label="Off-peak share" step="0.05" value={inputs.tariff.touShares.offPeak} onChange={(v) => setShare("offPeak", v)} />
-                <NumField label="Super off-peak share" step="0.05" value={inputs.tariff.touShares.superOffPeak} onChange={(v) => setShare("superOffPeak", v)} />
+                <PctField label="Peak share" step="5" value={inputs.tariff.touShares.peak} onChange={(v) => setShare("peak", v)} />
+                <PctField label="Off-peak share" step="5" value={inputs.tariff.touShares.offPeak} onChange={(v) => setShare("offPeak", v)} />
+                <PctField label="Super off-peak share" step="5" value={inputs.tariff.touShares.superOffPeak} onChange={(v) => setShare("superOffPeak", v)} />
               </Grid>
             )}
             <div className="mt-3">
@@ -349,7 +388,7 @@ export function TariffSection() {
               </Field>
               <NumField label="Manual subscribed kW" hint="Used by the manual policy" value={inputs.tariff.manualSubscribedKw} onChange={(v) => setTariff({ manualSubscribedKw: v })} />
               <NumField label="Peak-to-average concurrency factor" hint="Ratio of peak simultaneous draw to the daily average (4)" step="0.5" value={inputs.tariff.peakToAverageFactor} onChange={(v) => setTariff({ peakToAverageFactor: v })} />
-              <NumField label="Safety margin on subscribed kW" hint="Headroom before overage bites (20%)" step="0.05" value={inputs.tariff.safetyMarginPct} onChange={(v) => setTariff({ safetyMarginPct: v })} />
+              <PctField label="Safety margin on subscribed kW" hint="Headroom before overage bites (20%)" step="5" value={inputs.tariff.safetyMarginPct} onChange={(v) => setTariff({ safetyMarginPct: v })} />
               <NumField label="Demand charge bills from year" hint="SCE facilities-related demand charges resume 1 Jan 2030" min={1} step="1" value={inputs.tariff.demandChargeFromYear} onChange={(v) => setTariff({ demandChargeFromYear: v })} />
               <label className="flex items-center gap-2 self-end pb-2 text-sm text-zinc-700 dark:text-zinc-300">
                 <input type="checkbox" className="h-4 w-4" checked={inputs.tariff.sizeDemandOnFullRating} onChange={(e) => setTariff({ sizeDemandOnFullRating: e.target.checked })} />
@@ -469,7 +508,7 @@ export function RevenueSection() {
       >
         <Grid cols={3}>
           <NumField label="Retail price to driver ($/kWh)" hint="Intake: $0.65" step="0.01" value={inputs.revenue.retailPerKwh} onChange={(v) => setRevenue({ retailPerKwh: v })} />
-          <NumField label="Card processing fee (share of gross)" hint="3%" step="0.005" value={inputs.revenue.cardFeePct} onChange={(v) => setRevenue({ cardFeePct: v })} />
+          <PctField label="Card processing fee (share of gross)" hint="3%" step="0.1" value={inputs.revenue.cardFeePct} onChange={(v) => setRevenue({ cardFeePct: v })} />
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-zinc-700 dark:text-zinc-300">
             <input type="checkbox" className="h-4 w-4" checked={inputs.revenue.idleFeeRevenue} onChange={(e) => setRevenue({ idleFeeRevenue: e.target.checked })} />
             Idle fee revenue contracted (not counted — disclosure only)
@@ -553,7 +592,7 @@ export function CarbonSection() {
           <TextField label="Application filed?" hint="Yes / No — with date" value={inputs.carbon.applicationFiled} onChange={(v) => setCarbon({ applicationFiled: v })} />
           <TextField label="Registered aggregator" value={inputs.carbon.aggregator} onChange={(v) => setCarbon({ aggregator: v })} />
           <NumField label="FCI credit rate ($/kW/yr)" hint="Confirm with the aggregator in writing ($71.6667)" step="0.0001" value={inputs.carbon.fciRatePerKwYear} onChange={(v) => setCarbon({ fciRatePerKwYear: v })} />
-          <NumField label="Aggregator share of credit value" hint="5%" step="0.01" value={inputs.carbon.aggregatorSharePct} onChange={(v) => setCarbon({ aggregatorSharePct: v })} />
+          <PctField label="Aggregator share of credit value" hint="5%" step="1" value={inputs.carbon.aggregatorSharePct} onChange={(v) => setCarbon({ aggregatorSharePct: v })} />
           <NumField label="Crediting period (years)" min={0} step="1" value={inputs.carbon.creditingYears} onChange={(v) => setCarbon({ creditingYears: v })} />
           <NumField label="Cap multiple of net capex" hint="FCI revenue stops at this multiple (1.5×)" step="0.1" value={inputs.carbon.capMultiple} onChange={(v) => setCarbon({ capMultiple: v })} />
           <NumField label="L2 consumption credit ($/kWh)" hint="$0.0045 on L2 energy; 0 excludes it" step="0.0005" value={inputs.carbon.l2CreditPerKwh} onChange={(v) => setCarbon({ l2CreditPerKwh: v })} />
@@ -637,7 +676,7 @@ export function FinancingSection() {
             Financing offered
           </label>
           <TextField label="Lender" value={inputs.financing.lender} onChange={(v) => setFinancing({ lender: v })} />
-          <NumField label="Annual interest rate" hint="Intake: 8.39%" step="0.0001" value={inputs.financing.annualRate} onChange={(v) => setFinancing({ annualRate: v })} />
+          <PctField label="Annual interest rate" hint="Intake: 8.39%" step="0.01" value={inputs.financing.annualRate} onChange={(v) => setFinancing({ annualRate: v })} />
           <NumField label="Term (years)" min={0} step="1" value={inputs.financing.termYears} onChange={(v) => setFinancing({ termYears: v })} />
           <NumField label="Payments per year" min={1} step="1" value={inputs.financing.paymentsPerYear} onChange={(v) => setFinancing({ paymentsPerYear: v })} />
           <NumField label="Down payment ($)" value={inputs.financing.downPayment} onChange={(v) => setFinancing({ downPayment: v })} />
@@ -651,7 +690,7 @@ export function FinancingSection() {
             </select>
           </Field>
           <NumField label="Model horizon (years)" hint="Use 10 — the carbon credit runs ten years" min={1} step="1" value={inputs.financing.horizonYears} onChange={(v) => setFinancing({ horizonYears: v })} />
-          <NumField label="Discount rate for NPV" hint="Default: the financing rate" step="0.0001" value={inputs.financing.discountRate} onChange={(v) => setFinancing({ discountRate: v })} />
+          <PctField label="Discount rate for NPV" hint="Default: the financing rate" step="0.01" value={inputs.financing.discountRate} onChange={(v) => setFinancing({ discountRate: v })} />
         </Grid>
         <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <KV
@@ -798,8 +837,8 @@ export function DealSection() {
       >
         <Grid cols={4}>
           <TextField label="Structure name" hint="So a reader knows which structure this is" value={inputs.deal.name} onChange={(v) => setDeal({ name: v })} />
-          <NumField label="Our share of the net carbon credit" hint="0 = client keeps all of it" step="0.05" value={inputs.deal.carbonSharePct} onChange={(v) => setDeal({ carbonSharePct: v })} />
-          <NumField label="Our share of charging revenue" step="0.05" value={inputs.deal.revenueSharePct} onChange={(v) => setDeal({ revenueSharePct: v })} />
+          <PctField label="Our share of the net carbon credit" hint="0 = client keeps all of it" step="5" value={inputs.deal.carbonSharePct} onChange={(v) => setDeal({ carbonSharePct: v })} />
+          <PctField label="Our share of charging revenue" step="5" value={inputs.deal.revenueSharePct} onChange={(v) => setDeal({ revenueSharePct: v })} />
           <Field label="Revenue share is taken on" hint="On gross we get paid before the site covers its energy cost">
             <select className={selectCls} value={inputs.deal.revenueShareBasis} onChange={(e) => setDeal({ revenueShareBasis: e.target.value as "profit" | "gross" })}>
               <option value="profit">Net charging profit</option>
@@ -807,9 +846,9 @@ export function DealSection() {
             </select>
           </Field>
           <NumField label="Share runs for (years)" hint="Cannot exceed the model horizon" min={0} step="1" value={inputs.deal.shareYears} onChange={(v) => setDeal({ shareYears: v })} />
-          <NumField label="Extra discount on charger hardware" hint="On top of the discount already in the base price" step="0.01" value={inputs.deal.extraDiscountHardwarePct} onChange={(v) => setDeal({ extraDiscountHardwarePct: v })} />
-          <NumField label="Extra discount on electrical and construction" step="0.01" value={inputs.deal.extraDiscountConstructionPct} onChange={(v) => setDeal({ extraDiscountConstructionPct: v })} />
-          <NumField label="Extra discount on service, warranty and network" step="0.01" value={inputs.deal.extraDiscountServicePct} onChange={(v) => setDeal({ extraDiscountServicePct: v })} />
+          <PctField label="Extra discount on charger hardware" hint="On top of the discount already in the base price" step="1" value={inputs.deal.extraDiscountHardwarePct} onChange={(v) => setDeal({ extraDiscountHardwarePct: v })} />
+          <PctField label="Extra discount on electrical and construction" step="1" value={inputs.deal.extraDiscountConstructionPct} onChange={(v) => setDeal({ extraDiscountConstructionPct: v })} />
+          <PctField label="Extra discount on service, warranty and network" step="1" value={inputs.deal.extraDiscountServicePct} onChange={(v) => setDeal({ extraDiscountServicePct: v })} />
           <NumField label="Direct capital contribution ($)" hint="Cash or hardware we fund outright" value={inputs.deal.capitalContribution} onChange={(v) => setDeal({ capitalContribution: v })} />
           <NumField label="Minimum acceptable client NPV ($)" hint="Below this the structure is not worth offering" value={inputs.deal.minClientNpv} onChange={(v) => setDeal({ minClientNpv: v })} />
           <NumField label="Minimum return on our capital (×)" hint="Multiple of what we contribute" step="0.5" value={inputs.deal.minReturnMultiple} onChange={(v) => setDeal({ minReturnMultiple: v })} />
