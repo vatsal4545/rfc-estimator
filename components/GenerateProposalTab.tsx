@@ -18,6 +18,13 @@ import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls } from "./ui";
 import { fetchRfcTemplate, fillRfcWorkbook, type RfcFillReport } from "../lib/rfc/fillRfc";
 import {
+  coerce,
+  initialValue,
+  labelFor,
+  projectPrefills,
+  widgetFor,
+} from "../lib/proposalDoc/form";
+import {
   downloadDocx,
   generateProposal,
   inspectWorkbook,
@@ -37,64 +44,6 @@ interface Workbook {
   label: string;
   /** Warnings from our own fill, on the estimator path — dropped lines and the like. */
   fillReport?: RfcFillReport;
-}
-
-/**
- * The widget for a declared input. field_map.yaml does not say, because the
- * desktop GUI infers it from the default and the format; do the same rather
- * than keeping a second list in sync.
- */
-type Widget = "text" | "textarea" | "date" | "integer" | "number" | "percent";
-
-function widgetFor(spec: OperatorInputSpec): Widget {
-  if (spec.token === "proposal_date") return "date";
-  if (spec.token === "site_location_narrative") return "textarea";
-  if (spec.format?.startsWith("percent")) return "percent";
-  if (spec.token.endsWith("_kw")) return "number";
-  if (typeof spec.default === "number") return Number.isInteger(spec.default) ? "integer" : "number";
-  if (spec.token.startsWith("existing_ports")) return "integer";
-  return "text";
-}
-
-/** Title-case the token when field_map gives no prompt. */
-function labelFor(spec: OperatorInputSpec): string {
-  if (spec.prompt) return spec.prompt;
-  return spec.token
-    .replace(/_/g, " ")
-    .replace(/\bl2\b/gi, "L2")
-    .replace(/\bl3\b/gi, "L3")
-    .replace(/\bkw\b/gi, "kW")
-    .replace(/^./, (c) => c.toUpperCase());
-}
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** What goes in the box before the user types. Workbook prefill beats the declared default. */
-function initialValue(spec: OperatorInputSpec, raw: Record<string, unknown>): string {
-  const prefill = raw[spec.token];
-  if (prefill !== undefined && prefill !== null && prefill !== "") {
-    return widgetFor(spec) === "percent" ? String(Number(prefill) * 100) : String(prefill);
-  }
-  if (spec.default === "today") return todayIso();
-  if (spec.default === undefined) return "";
-  return widgetFor(spec) === "percent" ? String(Number(spec.default) * 100) : String(spec.default);
-}
-
-/** Form strings back to what the Python side expects. */
-function coerce(spec: OperatorInputSpec, value: string): unknown {
-  const widget = widgetFor(spec);
-  if (value.trim() === "") return undefined;
-  if (widget === "percent") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n / 100 : undefined;
-  }
-  if (widget === "integer" || widget === "number") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : undefined;
-  }
-  return value;
 }
 
 /**
@@ -171,8 +120,12 @@ export default function GenerateProposalTab() {
 
   const detection = inspection?.detection;
 
+  /** 1 · Project, in the proposal's own vocabulary. */
+  const fromProject = useMemo(() => projectPrefills(project), [project]);
+
   /** Load a workbook: inspect it, then build the form from what it says. */
-  const loadWorkbook = useCallback(async (next: Workbook) => {
+  const loadWorkbook = useCallback(
+    async (next: Workbook) => {
     setError(null);
     setOutcome(null);
     setInspection(null);
@@ -197,7 +150,7 @@ export default function GenerateProposalTab() {
         for (const spec of declared) {
           seeded[spec.token] = current[spec.token]?.trim()
             ? current[spec.token]
-            : initialValue(spec, report.raw);
+            : initialValue(spec, report.raw, fromProject);
         }
         return seeded;
       });
@@ -207,7 +160,9 @@ export default function GenerateProposalTab() {
       setBusy(null);
       setStage(null);
     }
-  }, []);
+    },
+    [fromProject],
+  );
 
   /** The estimator path: the same bytes ⬇ Download RFC would produce. */
   const prepareFromEstimator = useCallback(async () => {
@@ -222,7 +177,7 @@ export default function GenerateProposalTab() {
       });
       await loadWorkbook({
         bytes,
-        label: `${project.quick?.clientName || "This project"} — filled from the current estimator settings`,
+        label: `${project.setup.clientName || "This project"} — filled from the current estimator settings`,
         fillReport: report,
       });
     } catch (err) {
@@ -251,6 +206,20 @@ export default function GenerateProposalTab() {
     setOutcome(null);
     setError(null);
   }, []);
+
+  /**
+   * Pull 1 · Project's details in again, overwriting whatever is in the boxes.
+   * Needed because the form is seeded once when the workbook loads, and the
+   * intake is often filled in after someone has already opened this tab.
+   */
+  const refillFromProject = useCallback(() => {
+    if (!specs || !inspection) return;
+    setValues(() => {
+      const seeded: Record<string, string> = {};
+      for (const spec of specs) seeded[spec.token] = initialValue(spec, inspection.raw, fromProject);
+      return seeded;
+    });
+  }, [specs, inspection, fromProject]);
 
   const visibleSpecs = useMemo(() => {
     if (!specs) return [];
@@ -446,8 +415,21 @@ export default function GenerateProposalTab() {
 
           <Section
             title="3 · Proposal details"
-            subtitle="What the workbook cannot know. Blanks are left out of the document rather than guessed."
+            subtitle="Prefilled from 1 · Project where it knows the answer. Blanks are left out of the document rather than guessed."
           >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <p className="text-zinc-500 dark:text-zinc-400">
+                Contact, title, site name and address come from{" "}
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">1 · Project</span>.
+              </p>
+              <button
+                type="button"
+                onClick={refillFromProject}
+                className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                Refill from 1 · Project
+              </button>
+            </div>
             <Grid cols={2}>
               {visibleSpecs
                 .filter((spec) => widgetFor(spec) !== "textarea")
