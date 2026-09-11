@@ -9,7 +9,7 @@ import { computeProposal } from "@/lib/proposal";
 import { defaultRevenue } from "@/lib/proposal/defaults";
 import { hardwareListTotal } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Pill, Section, inputCls, theadCls } from "./ui";
+import { Pill, Section, inputCls, tableWrapCls, theadCls } from "./ui";
 
 // Overrides — the intake's register. "Type a number only when you know better
 // than the engine — a quote, a fee schedule, a field measurement. Leave a row
@@ -119,7 +119,7 @@ export function OverridesTab() {
         {groups.map((g) => (
           <div key={g.title} className="mb-6">
             <div className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">{g.title}</div>
-            <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
                 <thead className={theadCls}>
                   <tr>

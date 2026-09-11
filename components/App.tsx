@@ -19,6 +19,7 @@ import { QuickEstimateTab } from "./QuickEstimateTab";
 import { ResultsTab } from "./ResultsTab";
 import { SetupTab } from "./SetupTab";
 import { TakeoffTab } from "./TakeoffTab";
+import { downloadSeg, ghostBtn } from "./ui";
 import { ConstructionSection } from "./intake/ConstructionSection";
 import { ElectricalSection } from "./intake/ElectricalSection";
 import { EquipmentSection } from "./intake/EquipmentSection";
@@ -79,6 +80,55 @@ const ESTIMATOR_TABS = [
   { key: "overrides", label: "Overrides" },
 ] as const;
 type TabKey = (typeof ESTIMATOR_TABS)[number]["key"];
+
+/**
+ * The actions you reach for occasionally. Keeping Export, Import and New
+ * project as permanent buttons put seven controls in the header, which pushed
+ * the row to two lines and made the totals compete with file management.
+ */
+function OverflowMenu({ children }: { children: (close: () => void) => React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={ghostBtn}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="More actions"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-40 mt-1 min-w-44 overflow-hidden rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export const menuItem =
+  "block w-full px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800";
 
 function Toolbar() {
   const { project, newProject, importProject, result, proposal, hardwareAllowance } = useProject();
@@ -169,42 +219,41 @@ function Toolbar() {
 
   return (
     <div className="flex items-center gap-2">
-      <button
-        onClick={exportExcel}
-        disabled={excelBusy}
-        className="rounded-md bg-green-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-50"
-        title="Download the full estimate as a formula-driven Excel workbook"
-      >
-        {excelBusy ? "Building…" : "⬇ Excel"}
-      </button>
-      <button
-        onClick={exportIntake}
-        disabled={intakeBusy}
-        className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
-        title={`Download the CEO's EVSE Project Intake ${INTAKE_TEMPLATE.version} filled from this project — the estimator's figures in its override register`}
-      >
-        {intakeBusy ? "Filling…" : `⬇ Intake ${INTAKE_TEMPLATE.version}`}
-      </button>
-      <button
-        onClick={exportRfc}
-        disabled={rfcBusy}
-        className="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-        title="Download the RFC / MSRP calculator workbook filled from this project — the equipment line items, the Revenue tab's inputs and the Costs Internal table"
-      >
-        {rfcBusy ? "Filling…" : "⬇ Download RFC"}
-      </button>
+      {/* One control, three destinations — the question is which file, not
+          whether to export, so these share a fill instead of competing. */}
+      <div className="flex items-center divide-x divide-emerald-900/40 overflow-hidden rounded-md">
+        <button
+          onClick={exportExcel}
+          disabled={excelBusy}
+          className={downloadSeg}
+          title="Download the full estimate as a formula-driven Excel workbook"
+        >
+          {excelBusy ? "Building…" : "⬇ Excel"}
+        </button>
+        <button
+          onClick={exportIntake}
+          disabled={intakeBusy}
+          className={downloadSeg}
+          title={`Download the CEO's EVSE Project Intake ${INTAKE_TEMPLATE.version} filled from this project — the estimator's figures in its override register`}
+        >
+          {intakeBusy ? "Filling…" : `Intake ${INTAKE_TEMPLATE.version}`}
+        </button>
+        <button
+          onClick={exportRfc}
+          disabled={rfcBusy}
+          className={downloadSeg}
+          title="Download the RFC / MSRP calculator workbook filled from this project — the equipment line items, the Revenue tab's inputs and the Costs Internal table"
+        >
+          {rfcBusy ? "Filling…" : "RFC"}
+        </button>
+      </div>
+      <div className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
       <button
         onClick={shareLink}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        className={ghostBtn}
         title="Copy a link that opens this project (as an editable copy) for anyone you send it to"
       >
         {shared ? "✓ Link copied" : "Share"}
-      </button>
-      <button onClick={exportJSON} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-        Export
-      </button>
-      <button onClick={() => fileRef.current?.click()} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-        Import
       </button>
       <input
         ref={fileRef}
@@ -213,13 +262,26 @@ function Toolbar() {
         className="hidden"
         onChange={(e) => e.target.files?.[0] && importJSON(e.target.files[0])}
       />
-      <button
-        onClick={newProject}
-        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-        title="Start a fresh project — the current one stays in the sidebar library"
-      >
-        New project
-      </button>
+      <OverflowMenu>
+        {(close) => (
+          <>
+            <button className={menuItem} onClick={() => { close(); exportJSON(); }}>
+              Export project (.json)
+            </button>
+            <button className={menuItem} onClick={() => { close(); fileRef.current?.click(); }}>
+              Import project…
+            </button>
+            <div className="my-1 h-px bg-zinc-200 dark:bg-zinc-800" />
+            <button
+              className={menuItem}
+              onClick={() => { close(); newProject(); }}
+              title="Start a fresh project — the current one stays in the sidebar library"
+            >
+              New project
+            </button>
+          </>
+        )}
+      </OverflowMenu>
     </div>
   );
 }
@@ -227,15 +289,15 @@ function Toolbar() {
 function TotalBadge() {
   const { result, proposal } = useProject();
   return (
-    <div className="flex items-center gap-5 text-right">
+    <div className="flex items-center gap-6 text-right">
       <div>
-        <div className="text-xs text-zinc-500">Total Cost</div>
-        <div className="text-lg font-bold text-zinc-900 dark:text-zinc-50">{money(result.costs.totalCost)}</div>
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">Total cost</div>
+        <div className="text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{money(result.costs.totalCost)}</div>
       </div>
       {proposal && (
         <div title="Customer price from the Commercial tab — markups, discounts and pass-through fees on top of Total Cost">
-          <div className="text-xs text-zinc-500">Customer price</div>
-          <div className="text-lg font-bold text-blue-700 dark:text-blue-300">{money(proposal.costBuildup.customerPrice)}</div>
+          <div className="text-[11px] uppercase tracking-wider text-zinc-500">Customer price</div>
+          <div className="text-xl font-semibold tabular-nums text-blue-700 dark:text-blue-300">{money(proposal.costBuildup.customerPrice)}</div>
         </div>
       )}
     </div>
@@ -262,7 +324,7 @@ function IntakeTabBar({ tab, setTab }: { tab: IntakeTabKey; setTab: (k: IntakeTa
     return <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${cls}`} />;
   };
   return (
-    <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 pb-2">
+    <nav className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
       {INTAKE_TABS.map((t) => (
         <button
           key={t.key}
@@ -326,8 +388,8 @@ function AppShell() {
     <div className="flex min-h-screen bg-zinc-100 dark:bg-zinc-950">
       <ProjectSidebar open={sidebarOpen} />
       <div className="min-w-0 flex-1">
-      <header className="sticky top-0 z-10 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-6 gap-y-3 px-6 py-3">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen((o) => !o)}
@@ -336,18 +398,18 @@ function AppShell() {
             >
               ☰
             </button>
-            <div>
-              <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">RFC Estimator</h1>
-              <p className="text-xs text-zinc-500">
-                {mode === "intake" ? `EVSE Project Intake ${INTAKE_TEMPLATE.version} — filled from the estimate, business model automated` : "EV charging infrastructure cost estimating, automated"}
-              </p>
-            </div>
-            <div className="ml-3 flex items-center gap-0.5 rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-700" role="tablist" aria-label="Workflow">
+            <h1
+              className="whitespace-nowrap text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+              title={mode === "intake" ? `EVSE Project Intake ${INTAKE_TEMPLATE.version} — filled from the estimate, business model automated` : "EV charging infrastructure cost estimating, automated"}
+            >
+              RFC Estimator
+            </h1>
+            <div className="flex items-center gap-0.5 rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-700" role="tablist" aria-label="Workflow">
               {modeBtn("intake", "Intake", "The CEO's intake, tab for tab — fill it here and the estimate and business model follow")}
               {modeBtn("estimator", "Estimator", "The engineering detail: takeoff, panel schedule, materials, peripherals, costs")}
             </div>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-x-6 gap-y-3">
             <TotalBadge />
             <Toolbar />
           </div>
@@ -355,7 +417,7 @@ function AppShell() {
         {mode === "intake" ? (
           <IntakeTabBar tab={intakeTab} setTab={setIntakeTab} />
         ) : (
-          <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 pb-2">
+          <nav className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
             {ESTIMATOR_TABS.map((t) => (
               <button
                 key={t.key}
@@ -373,7 +435,7 @@ function AppShell() {
         )}
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-[1600px] px-6 py-6">
         {mode === "intake" ? (
           <>
             {intakeTab === "project" && <ProjectSections />}

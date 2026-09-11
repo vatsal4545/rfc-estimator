@@ -7,7 +7,7 @@ import { fractionToPct, money, pctToFraction } from "@/lib/format";
 import { newId } from "@/lib/id";
 import { reconcileServiceTerms } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, theadCls } from "./ui";
+import { Field, Grid, Section, inputCls, tableWrapCls, theadCls } from "./ui";
 
 export function FinancialsTab() {
   const { project, setProject, hardwareAllowance, result } = useProject();
@@ -112,7 +112,7 @@ export function FinancialsTab() {
             </button>
           </div>
           {breakdown.itemized ? (
-            <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
                 <thead className={theadCls}>
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">

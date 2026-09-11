@@ -20,7 +20,7 @@ import { modelInputsOf } from "@/lib/proposal/defaults";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
 import { computeSiteCapacity } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
+import { Field, Grid, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 // Existing site — the CEO intake's Existing tab (1B · rip and replace). On a
 // greenfield site leave it alone. On a replacement site it decides the
@@ -33,7 +33,7 @@ const thNum = `${th} text-right`;
 const td = "px-2 py-1";
 const tdNum = "px-2 py-1 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = tableWrapCls;
 const noteCls = "text-xs text-zinc-500";
 const small = `${inputCls} w-24 py-1`;
 const kwh = (n: number) => num(n, 0);

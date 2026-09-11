@@ -20,7 +20,7 @@ import { rebuildProject } from "@/lib/intake/rebuild";
 import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, loadTypeIdForSku } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { useRebuild } from "./intake/useRebuild";
-import { Field, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
+import { Field, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 const SERVICE_TOGGLES: {
   key: keyof Pick<
@@ -545,7 +545,7 @@ function BuildSummary() {
           title="Equipment schedule"
           subtitle={`Price book ${schedule.terms.basis === "price-book" ? "terms" : "list prices"}: ${schedule.terms.contractYears}-year contract · EVOLV $${schedule.terms.evolvPerPortMonth.toFixed(2)}/port/month · warranty beyond the included years plus in-warranty service every contract year. Terms live on the Commercial tab.`}
         >
-          <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <div className={tableWrapCls}>
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
               <thead className={theadCls}>
                 <tr>

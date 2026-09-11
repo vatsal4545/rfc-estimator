@@ -5,7 +5,7 @@ import { CONDUIT_TABLE, WIRE_TABLE } from "@/lib/calc/tables";
 import type { MaterialRates } from "@/lib/calc/types";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
-import { Section, inputCls, theadCls } from "./ui";
+import { Section, inputCls, tableWrapCls, theadCls } from "./ui";
 
 // Conductor and conduit $/ft — the vendor list the engine prices every run
 // with, editable per project when a materials quote says otherwise. Blank
@@ -15,7 +15,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1 whitespace-nowrap";
 const tdNum = "px-3 py-1 text-right tabular-nums whitespace-nowrap";
-const wrap = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = tableWrapCls;
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 
 export function MaterialRatesSection({ compact = false }: { compact?: boolean }) {

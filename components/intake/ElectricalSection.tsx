@@ -1,6 +1,6 @@
 "use client";
 
-import { theadCls } from "../ui";
+import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
@@ -21,7 +21,7 @@ const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text
 const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
-const wrap = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrap = tableWrapCls;
 const table = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
 
 /** A number the estimator derives from the utility's rule: type to pin it, “→ auto” to hand it back. */

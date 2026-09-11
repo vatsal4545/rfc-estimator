@@ -12,7 +12,7 @@ import type { IntakeInput } from "@/lib/proposal/types";
 import { RATE_LIBRARY } from "@/lib/ref/rateLibrary";
 import { RATE_SCHEDULE_PICKER, UTILITIES } from "@/lib/ref/utilities";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
+import { Field, Grid, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 // Intake — the CEO intake's Project tab: who the client is, what the site is,
 // which utility serves it and on which tariff, and the proposal's metadata —
@@ -428,7 +428,7 @@ export function InterconnectionSection() {
         <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
             <div className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">What the customer bears</div>
-            <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
                 <thead className={theadCls}>
                   <tr>

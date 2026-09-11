@@ -92,7 +92,7 @@ export function FlagBadge({ flag }: { flag: string }) {
  * and look exactly as they did.
  */
 export const tableWrapCls =
-  "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+  "data-table max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 
 /**
  * The header row of such a table. Opaque, because the body scrolls underneath
@@ -101,3 +101,20 @@ export const tableWrapCls =
  */
 export const theadCls =
   "sticky top-0 z-10 bg-zinc-50 shadow-[inset_0_-1px_0_#e4e4e7] dark:bg-zinc-900 dark:shadow-[inset_0_-1px_0_#27272a]";
+// NOTE: the app header is z-30 on purpose. This header sticks inside its own
+// scroll box, so when the page scrolls the box travels up behind the app
+// chrome — and with equal z-index the later element in the DOM won, painting
+// the column labels straight over the tab bar.
+
+
+/** A quiet secondary action. Bordered, no fill — it should not compete. */
+export const ghostBtn =
+  "rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
+
+/**
+ * One segment of the download control. The three exports are one decision —
+ * which file — not three competing calls to action, so they share a single
+ * fill and sit in one bordered group rather than shouting side by side.
+ */
+export const downloadSeg =
+  "bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-800 disabled:opacity-50";

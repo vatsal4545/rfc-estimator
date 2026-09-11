@@ -8,7 +8,7 @@ import { money, num } from "@/lib/format";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Section, inputCls, selectCls, theadCls } from "./ui";
+import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 const GEAR_ITEMS = Array.from(new Set(GEAR_CATALOG.map((g) => g.item)));
 
@@ -106,7 +106,7 @@ export function PeripheralsTab() {
                 Switch to manual gear
               </button>
             </div>
-            <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+            <div className={tableWrapCls}>
               <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
                 <thead className={theadCls}>
                   <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -170,7 +170,7 @@ export function PeripheralsTab() {
             Switch to auto gear (re-sizes &amp; re-prices from the Panel schedule)
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
             <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -450,7 +450,7 @@ export function PeripheralsTab() {
             </span>
           )}
         </div>
-        <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div className={tableWrapCls}>
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
             <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -510,7 +510,7 @@ export function PeripheralsTab() {
                       onChange={(e) => updateEquip(idx, { rate: Number(e.target.value) })}
                     />
                   </td>
-                  <td className="px-3 py-2 text-zinc-500">{item.rateBasis}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-zinc-500">{item.rateBasis}</td>
                   <td className="px-3 py-2">
                     <input
                       type="number"

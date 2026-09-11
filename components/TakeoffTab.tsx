@@ -8,7 +8,7 @@ import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
 import { newId } from "@/lib/id";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
-import { FlagBadge, inputCls, selectCls, theadCls } from "./ui";
+import { FlagBadge, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 function QuickGenerate({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const { project, setProject } = useProject();
@@ -249,7 +249,7 @@ export function TakeoffTab() {
 
       <QuickGenerate open={qgOpen} setOpen={setQgOpen} />
 
-      <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className={tableWrapCls}>
         <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
           <thead className={theadCls}>
             <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">

@@ -5,7 +5,7 @@ import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls, theadCls } from "./ui";
+import { Field, Grid, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 // Business model — the downstream model the CEO builds from the intake (the
 // Best Western workbook's Utility_Rates, Revenue, Carbon, Financing, Cashflow
@@ -17,7 +17,7 @@ const thNum = `${th} text-right`;
 const td = "px-3 py-1.5 whitespace-nowrap";
 const tdNum = "px-3 py-1.5 text-right tabular-nums whitespace-nowrap";
 const tableCls = "min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800";
-const wrapCls = "max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+const wrapCls = tableWrapCls;
 const totalCls = "bg-zinc-50 font-medium dark:bg-zinc-900";
 const noteCls = "text-xs text-zinc-500";
 
