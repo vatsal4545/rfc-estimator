@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.1.0 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.2.0 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -7,16 +7,16 @@
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.1.0",
+  version: "3.2.0",
   /**
-   * Version!B8. Note it did NOT change between 2.9.0 and 3.1.0 even though 53
-   * cells did, so it identifies the template family rather than its contents —
-   * the version string is what actually gates a fill.
+   * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
+   * changed cells, and moved at 3.2.0 — so it is not a reliable content digest.
+   * The version string is what actually gates a fill.
    */
-  contentHash: "4aecae7d4b5f25a9",
-  file: "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx",
+  contentHash: "b0140566d4234d54",
+  file: "EVSE_Project_Intake_TEMPLATE_3.2.0.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.2.0.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -57,6 +57,17 @@ export const PROJECT_CELLS = {
 } as const;
 
 /** Equipment rows 7–18: one price-book line each. Columns D–H, K, M are the sheet's own lookups. */
+/**
+ * Equipment tab singles. l2SupplyVoltage is new at 3.2.0: the voltage the
+ * Level 2 units are actually fed at, which the sheet derates 240 V-rated units
+ * to in its AC-input column. The estimator already models L2 at 208 V, so it
+ * writes the project's own service voltage rather than leaving the sheet to
+ * guess and flag ENTER IT.
+ */
+export const EQUIPMENT_SINGLES = {
+  l2SupplyVoltage: "B30",
+} as const;
+
 export const EQUIPMENT_TABLE = {
   firstRow: 7,
   lastRow: 18,
@@ -239,6 +250,12 @@ export const REVENUE_CELLS = {
    * The estimator has no tariff escalation, so the template's 0 stands.
    */
   tariffEscalation: "B56",
+  /**
+   * New at 3.2.0. The Level 2 stream runs on its own physics now — the sheet
+   * looks up a state benchmark (BM_L2_KWH) and this overrides it per site.
+   * The estimator has no Level 2 energy model, so the benchmark stands.
+   */
+  l2KwhPerPortDayOverride: "B110",
   historyMonths: "B25",
   historyKwhPerDay: "B26",
   historyRevenuePerYear: "B27",
@@ -278,6 +295,11 @@ export const CARBON_CELLS = {
   fciRate: "B10",
   creditingYears: "B11",
   l2CreditPerKwh: "B17",
+  /**
+   * Derived since template 3.2.0 — the sheet computes it from the Revenue
+   * tab's Level 2 stream. Kept for the importer, which still reads it; the
+   * filler must not write it.
+   */
   l2KwhPerDay: "B18",
   capMultiple: "B21",
   grants: "B22",

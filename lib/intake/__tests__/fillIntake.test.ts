@@ -18,7 +18,7 @@ import { projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 import { patchWorkbook } from "../xlsxWrite";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.2.0.xlsx");
 
 /** Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, manual tariff, a deal structure, two register entries. */
 function bwProject(): Project {
@@ -118,7 +118,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("writes without a refusal and reports what it did", () => {
     expect(report.refused).toEqual([]);
-    expect(report.templateVersion).toBe("3.1.0");
+    expect(report.templateVersion).toBe("3.2.0");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
     expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Version"]);
@@ -132,7 +132,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Version", "B12")).toBe("Test CPM");
     expect(wb.get("Version", "B13")).toBe("BW-TEST-001");
     expect(wb.get("Version", "B14")).toMatch(/^Second issue after the site walk\. Filled by the RFC Estimator on 2026-09-02 for Best Western Hawthorne/);
-    expect(wb.get("Version", "B4")).toBe("3.1.0"); // untouched
+    expect(wb.get("Version", "B4")).toBe("3.2.0"); // untouched
     expect(wb.get("Project", "B5")).toBe("Best Western Hawthorne");
     expect(wb.get("Project", "B6")).toBe("Mohammad Noorali");
     expect(wb.get("Project", "B12")).toBe("Best Western Hawthorne");
@@ -337,8 +337,8 @@ describe("filling the CEO's intake from a project", async () => {
   });
 
   it("refuses a template the cell map was not written for", async () => {
-    const doctored = await patchWorkbook(template, [{ sheet: "Version", ref: "B4", value: "3.2.0" }]);
-    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.1\.0/);
+    const doctored = await patchWorkbook(template, [{ sheet: "Version", ref: "B4", value: "3.3.0" }]);
+    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.2\.0/);
     expect(() => verifyIntakeTemplate({ sheetNames: [], has: () => false, get: () => null, formula: () => undefined, cells: () => new Map() })).toThrow();
   });
 
@@ -359,7 +359,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(conduitToIntake('1-1/4"')).toBe('(1 1/4")');
     expect(conduitToIntake('3"')).toBe('(3") ');
     expect(conduitToIntake('2-1/2"')).toBe('(2 1/2")');
-    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.1.0-rev-b.xlsx");
+    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.2.0-rev-b.xlsx");
     const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(true);

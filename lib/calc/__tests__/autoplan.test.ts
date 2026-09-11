@@ -167,7 +167,13 @@ describe("buildQuickProject", () => {
     // Listed ratings read straight off PriceBook!D; unlisted ones interpolate.
     expect(HARDWARE_ALLOWANCE["DCFC 360kW Dual"]).toBe(99000); // TP5-360-480-2-300
     expect(HARDWARE_ALLOWANCE["DCFC 240kW"]).toBe(80000); // TP5-240-480-2-300
-    expect(HARDWARE_ALLOWANCE["DCFC 120kW Dual"]).toBe(54000); // TP5-120-480-1
+    // A "Dual" that is a CTX Gen3 AiO takes the AiO list, not TP5's: the model
+    // is that product, and pricing it as the cheaper family understated a
+    // 160 kW dual by $11,200 a unit until somebody picked the SKU by hand.
+    expect(HARDWARE_ALLOWANCE["DCFC 120kW Dual"]).toBe(59400); // CTX-AiO-120-x-350
+    expect(HARDWARE_ALLOWANCE["DCFC 160kW Dual"]).toBe(68200); // CTX-AiO-160-x-350
+    expect(HARDWARE_ALLOWANCE["DCFC 240kW Dual"]).toBe(88000); // CTX-AiO-240-x-300
+    expect(HARDWARE_ALLOWANCE["DCFC 120kW"]).toBe(54000); // the single stays TP5-120
     expect(HARDWARE_ALLOWANCE["L2 Dual 40A"]).toBe(1952.5); // CTX-C40-240-2
     expect(HARDWARE_ALLOWANCE["L2 Single 40A"]).toBe(1402.5); // CTX-C48-240-1
     // 200 kW sits a third of the way from TP5-180 ($62k) to TP5-240 ($80k).

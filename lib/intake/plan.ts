@@ -28,6 +28,7 @@ import {
   DEAL_CELLS,
   DISTRIBUTION_TABLE,
   ELECTRICAL_CELLS,
+  EQUIPMENT_SINGLES,
   EQUIPMENT_TABLE,
   EXISTING_CAPTURE_ROWS,
   EXISTING_CELLS,
@@ -41,8 +42,8 @@ import {
   L2_CIRCUIT_TABLE,
   OVERRIDE_COLS,
   PROJECT_CELLS,
-  RENTAL_TABLE,
   RENTAL_ROW_NAMES,
+  RENTAL_TABLE,
   REVENUE_CELLS,
   SCOPE_ROWS,
   SERVICE_FEEDER_ROW,
@@ -299,6 +300,12 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   if (totalCabinets === 0) for (const e of dispenserExtras) equipmentRow(findSku(e.sku)?.capacity ?? INTAKE_TEXT.capacityDistributed, e.sku, e.count);
   for (const e of accessoryExtras) equipmentRow(findSku(e.sku)?.capacity ?? INTAKE_TEXT.capacityAccessory, e.sku, e.count);
   put("Equipment", EQUIPMENT_TABLE.scopeSentence, s.scopeOfWork);
+  // New at template 3.2.0: the voltage the Level 2 units are actually fed at.
+  // The sheet derates 240 V-rated units to it in the AC-input column and flags
+  // ENTER IT when the service is below 240 V and this is blank. The estimator
+  // models every L2 load type at 208 V, so it can answer rather than be asked.
+  const firstL2 = result.rows.find((r) => r.category === "L2" && !r.synthetic);
+  if (firstL2) put("Equipment", EQUIPMENT_SINGLES.l2SupplyVoltage, firstL2.volts);
   const lineNoFor = (loadTypeId: string): number | undefined => {
     const hit = lineRows.find((r) => r.loadTypeId === loadTypeId);
     return hit ? hit.rowNo - EQUIPMENT_TABLE.firstRow + 1 : undefined;
@@ -536,8 +543,16 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     put("Carbon", CARBON_CELLS.fciRate, m.carbon.fciRatePerKwYear);
     put("Carbon", CARBON_CELLS.creditingYears, m.carbon.creditingYears);
     put("Carbon", CARBON_CELLS.l2CreditPerKwh, m.carbon.l2CreditPerKwh);
+    // Carbon B18 "Site-total L2 kWh per day" was an input through 3.1.0 and is
+    // derived at 3.2.0 — the sheet computes it from the Revenue tab's new
+    // Level 2 stream. Writing it now would be refused, and rightly: the
+    // workbook's own figure is the one its credit rows are built on.
     const l2KwhPerDay = proposal?.model.usage.l2.kwhPerDay ?? 0;
-    if (l2KwhPerDay > 0) put("Carbon", CARBON_CELLS.l2KwhPerDay, Math.round(l2KwhPerDay * 10) / 10);
+    if (l2KwhPerDay > 0) {
+      leftBlank.push(
+        `Carbon B18 site-total Level 2 kWh per day — the template derives this from its own Level 2 stream at 3.2.0. The estimator's figure (${Math.round(l2KwhPerDay * 10) / 10} kWh/day) is not written; compare the two if the credit looks wrong.`,
+      );
+    }
     put("Carbon", CARBON_CELLS.capMultiple, m.carbon.capMultiple);
     put("Carbon", CARBON_CELLS.grants, m.carbon.grantsAwarded);
     put("Carbon", CARBON_CELLS.federalItc, m.carbon.federalItc);
