@@ -439,6 +439,12 @@ export interface EquipmentRentalItem {
   rateBasis: string;
   durationValue: number;
   delivery: number;
+  /**
+   * Out of scope: priced at zero but kept with its quantity and rate intact, so
+   * it costs nothing to put back. Distinct from qty 0 — that loses the number,
+   * and it cannot silence the auto-quantity fencing line at all.
+   */
+  excluded?: boolean;
 }
 
 export interface EquipmentResult {

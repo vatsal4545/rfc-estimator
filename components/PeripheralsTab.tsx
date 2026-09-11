@@ -55,6 +55,12 @@ export function PeripheralsTab() {
     }));
   }
 
+  // "No equipment on this job" in one click, and back again. Excluding keeps
+  // every quantity and rate, so the decision is reversible.
+  function setAllEquipExcluded(excluded: boolean) {
+    setProject((proj) => ({ ...proj, equipment: proj.equipment.map((e) => ({ ...e, excluded })) }));
+  }
+
   function addEquip() {
     setProject((proj) => ({
       ...proj,
@@ -405,11 +411,31 @@ export function PeripheralsTab() {
         </Grid>
       </Section>
 
-      <Section title="D. Construction equipment rental" subtitle="One formula on every row: Qty x Rate x Duration + delivery (delivery only charged if Qty > 0).">
+      <Section title="D. Construction equipment rental" subtitle="One formula on every row: Qty x Rate x Duration + delivery (delivery only charged if Qty > 0). Clear a row's Incl. box to take it out of the estimate without losing what you typed.">
+        <div className="mb-2 flex items-center gap-3 text-sm">
+          <button
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            onClick={() => setAllEquipExcluded(true)}
+          >
+            Exclude all
+          </button>
+          <button
+            className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            onClick={() => setAllEquipExcluded(false)}
+          >
+            Include all
+          </button>
+          {result.equipment.items.some((i) => i.excluded) && (
+            <span className="text-xs text-zinc-500">
+              {result.equipment.items.filter((i) => i.excluded).length} of {result.equipment.items.length} excluded
+            </span>
+          )}
+        </div>
         <div className="max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
           <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
             <thead className={theadCls}>
               <tr className="text-left text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <th className="px-3 py-2" title="Untick to leave this line out of the estimate">Incl.</th>
                 <th className="px-3 py-2">Item</th>
                 <th className="px-3 py-2">Qty</th>
                 <th className="px-3 py-2">Rate</th>
@@ -422,7 +448,16 @@ export function PeripheralsTab() {
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {result.equipment.items.map((item, idx) => (
-                <tr key={idx}>
+                <tr key={idx} className={item.excluded ? "opacity-45" : undefined}>
+                  <td className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-blue-600"
+                      checked={!item.excluded}
+                      title={item.excluded ? "Excluded — priced at zero" : "Included in the estimate"}
+                      onChange={(e) => updateEquip(idx, { excluded: !e.target.checked })}
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     {item.name === AUTO_QTY_ITEM ? (
                       item.name
@@ -484,7 +519,7 @@ export function PeripheralsTab() {
             </tbody>
             <tfoot className="bg-zinc-50 dark:bg-zinc-900">
               <tr className="font-medium">
-                <td colSpan={6} className="px-3 py-2 text-right">
+                <td colSpan={7} className="px-3 py-2 text-right">
                   Equipment subtotal
                 </td>
                 <td className="px-3 py-2 text-right">{money(result.equipment.subtotal)}</td>

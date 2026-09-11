@@ -20,7 +20,11 @@ export function computeEquipment(
   const autoFencingQty = fencedFt > 0 ? fencedFt * 2 + 60 : 0;
   const withTotals = items.map((item) => {
     const qty = item.name === AUTO_QTY_ITEM ? autoFencingQty : item.qty;
-    return { ...item, qty, total: qty * item.rate * item.durationValue + (qty > 0 ? item.delivery : 0) };
+    // An excluded line still reports its quantity — the row has to stay
+    // readable, and putting it back should cost nothing but a click — but it
+    // contributes no money, delivery included.
+    const total = item.excluded ? 0 : qty * item.rate * item.durationValue + (qty > 0 ? item.delivery : 0);
+    return { ...item, qty, total };
   });
   const subtotal = withTotals.reduce((s, i) => s + i.total, 0);
   return { items: withTotals, subtotal };
