@@ -397,10 +397,13 @@ export function PeripheralsTab() {
                       {key ? (
                         <input
                           type="number"
-                          step="0.01"
-                          className={`${inputCls} w-24 text-right`}
+                          // A dollar rate, so the arrows move a dollar. At 0.01
+                          // a click nudged a $1,500 striping rate to $1,500.01.
+                          step="1"
+                          className={`${inputCls} rate-input w-24 text-right`}
                           value={p[key] ?? s.unitCost}
                           onChange={(e) => updateP(key, Number(e.target.value))}
+                          aria-label={`${s.name} unit cost`}
                         />
                       ) : (
                         money(s.unitCost)

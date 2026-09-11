@@ -121,6 +121,19 @@ body {
   }
 }
 
+/* An input among read-only figures has to look like one.
+   The rule above hides borders so a grid of inputs reads calmly — right for a
+   takeoff, wrong for a table of computed figures with one editable rate per
+   row, where the input is the exception and was indistinguishable from text. */
+.data-table input.rate-input {
+  border-color: rgb(212 212 216); /* zinc-300 */
+  background-color: var(--background);
+}
+
+.data-table input.rate-input:hover {
+  border-color: rgb(161 161 170); /* zinc-400 */
+}
+
 /* One row at a time, on a table too wide to track by eye. */
 .data-table tbody tr:hover {
   background-color: rgb(244 244 245); /* zinc-100 */
@@ -153,5 +166,13 @@ body {
 
   .data-table tbody tr:hover {
     background-color: rgb(24 24 27); /* zinc-900 */
+  }
+
+  .data-table input.rate-input {
+    border-color: rgb(63 63 70); /* zinc-700 */
+  }
+
+  .data-table input.rate-input:hover {
+    border-color: rgb(82 82 91); /* zinc-600 */
   }
 }
