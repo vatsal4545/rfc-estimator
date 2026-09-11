@@ -3,7 +3,7 @@
 replacement-site scenario and save it as the importer's test fixture:
 
     python3 scripts/make-intake-sample.py
-    → lib/intake/__fixtures__/intake-sample-3.1.0.xlsx
+    → lib/intake/__fixtures__/intake-sample-3.2.0.xlsx
 
 Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, replacing a
 failing 2018 installation with twelve months of metered history, a Rule 29
@@ -16,8 +16,8 @@ import os
 import openpyxl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx")
-OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.1.0.xlsx")
+SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.2.0.xlsx")
+OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.2.0.xlsx")
 
 wb = openpyxl.load_workbook(SRC)
 

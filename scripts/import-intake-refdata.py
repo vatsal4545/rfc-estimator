@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = (
     sys.argv[1]
     if len(sys.argv) > 1
-    else os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.1.0.xlsx")
+    else os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.2.0.xlsx")
 )
 OUT = os.path.join(ROOT, "lib", "ref")
 
@@ -349,7 +349,9 @@ def read_utilities():
 
 def read_refdata():
     ws = wb["RefData"]
-    bm = find_header(ws, "MARKET BENCHMARKS", 100, 250)
+    # Two benchmark tables share the "MARKET BENCHMARKS" prefix since template
+    # 3.2.0, so each is matched on its full heading rather than the prefix.
+    bm = find_header(ws, "MARKET BENCHMARKS \u2014 DC", 100, 250)
     benchmarks = []
     for r in range(bm + 3, bm + 40):
         state = text(ws, f"A{r}")
@@ -363,6 +365,27 @@ def read_refdata():
             }
         )
     source = text(ws, f"A{bm + 1}")
+
+    # Level 2 market table, new at template 3.2.0 (named ranges BM_L2_STATE /
+    # BM_L2_KWH / BM_L2_PRICE). A Level 2 port is not a slow DC port: the sheet
+    # projects it on energy per port per day rather than on time-based port
+    # utilisation, so this is its own table with its own units.
+    l2_hdr = find_header(ws, "MARKET BENCHMARKS \u2014 Level 2", 100, 260)
+    l2_benchmarks = []
+    for r in range(l2_hdr + 3, l2_hdr + 40):
+        state = text(ws, f"A{r}")
+        if not state:
+            break
+        l2_benchmarks.append(
+            {
+                "state": state,
+                "kwhPerPortDay": clean(num(ws, f"B{r}")),
+                "priceToDriverPerKwh": clean(num(ws, f"C{r}")),
+                "basis": text(ws, f"D{r}"),
+            }
+        )
+    l2_source = text(ws, f"A{l2_hdr + 1}")
+
     gear_hdr = find_header(ws, "480V SWITCHGEAR", 5, 60)
     gear = []
     for r in range(gear_hdr + 2, gear_hdr + 60):
@@ -370,7 +393,7 @@ def read_refdata():
         if not item or cost is None:
             break
         gear.append({"item": item, "size": size, "cost": clean(cost)})
-    return benchmarks, source, gear
+    return benchmarks, source, l2_benchmarks, l2_source, gear
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +426,7 @@ def main():
     skus, capacities, service_rates, architecture = read_price_book()
     rates = read_rate_library()
     utilities, picker = read_utilities()
-    benchmarks, bm_source, gear = read_refdata()
+    benchmarks, bm_source, l2_benchmarks, l2_source, gear = read_refdata()
     os.makedirs(OUT, exist_ok=True)
 
     meta_ts = "export const REFDATA_META = " + json.dumps(meta, indent=2) + " as const;\n"
@@ -556,6 +579,25 @@ export const MARKET_BENCHMARKS: MarketBenchmark[] = [
 {rows(benchmarks)}
 ];
 
+export const L2_BENCHMARK_SOURCE = {json.dumps(l2_source, ensure_ascii=False)};
+
+/**
+ * Level 2 by state. A Level 2 port is not a slow DC port — it delivers a
+ * roughly constant few kW for as long as the car is parked — so the sheet
+ * projects this stream on energy per port per day, not on the time-based port
+ * utilisation the DC table carries. New at template 3.2.0.
+ */
+export interface L2Benchmark {{
+  state: string;
+  kwhPerPortDay: number | null;
+  priceToDriverPerKwh: number | null;
+  basis: string;
+}}
+
+export const L2_BENCHMARKS: L2Benchmark[] = [
+{rows(l2_benchmarks)}
+];
+
 /** The intake's 480V switchgear and breaker cost table — same source as the estimator's GEAR_CATALOG. */
 export const INTAKE_GEAR_480V: {{ item: string; size: string; cost: number }}[] = [
 {rows(gear)}
@@ -566,7 +608,8 @@ export const INTAKE_GEAR_480V: {{ item: string; size: string; cost: number }}[] 
     print(
         f"refdata from {meta['sourceFile']} (template {meta['templateVersion']}, hash {meta['contentHash']}): "
         f"{len(skus)} SKUs, {len(service_rates)} service classes, {len(architecture)} architecture rows, "
-        f"{len(rates)} rate schedules, {len(utilities)} utilities, {len(benchmarks)} benchmarks, {len(gear)} gear prices"
+        f"{len(rates)} rate schedules, {len(utilities)} utilities, {len(benchmarks)} DC benchmarks, "
+        f"{len(l2_benchmarks)} L2 benchmarks, {len(gear)} gear prices"
     )
 
 

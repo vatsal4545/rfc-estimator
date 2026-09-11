@@ -264,7 +264,7 @@ describe("Excel export — intake blocks for a replacement site with overrides",
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { importIntakeFile } = await import("../../intake/importIntake");
-  const fixture = join(__dirname, "..", "..", "intake", "__fixtures__", "intake-sample-3.1.0.xlsx");
+  const fixture = join(__dirname, "..", "..", "intake", "__fixtures__", "intake-sample-3.2.0.xlsx");
   const imported = await importIntakeFile(readFileSync(fixture), { ...defaultProject(), commercial: defaultCommercial() });
   const project = { ...imported.project, commercial: { ...imported.project.commercial!, lineExtensionContribution: 12000 } };
   const result = computeEstimate(project);

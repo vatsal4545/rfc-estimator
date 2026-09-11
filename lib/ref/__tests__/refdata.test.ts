@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HARDWARE_ALLOWANCE } from "../../calc/autoplan";
 import { GEAR_CATALOG } from "../../calc/tables";
-import { INTAKE_GEAR_480V, MARKET_BENCHMARKS } from "../benchmarks";
+import { INTAKE_GEAR_480V, L2_BENCHMARKS, MARKET_BENCHMARKS } from "../benchmarks";
 import { ARCHITECTURE, CAPACITIES, PRICE_BOOK, REFDATA_META, SERVICE_RATES, findSku } from "../priceBook";
 import { RATE_LIBRARY } from "../rateLibrary";
 import { RATE_SCHEDULE_PICKER, UTILITIES } from "../utilities";
@@ -13,9 +13,9 @@ import { RATE_SCHEDULE_PICKER, UTILITIES } from "../utilities";
 
 describe("reference data — provenance", () => {
   it("records the template it came from", () => {
-    expect(REFDATA_META.templateVersion).toBe("3.1.0");
-    expect(REFDATA_META.contentHash).toBe("4aecae7d4b5f25a9");
-    expect(REFDATA_META.released).toBe("2026-09-03");
+    expect(REFDATA_META.templateVersion).toBe("3.2.0");
+    expect(REFDATA_META.contentHash).toBe("b0140566d4234d54");
+    expect(REFDATA_META.released).toBe("2026-09-04");
   });
 });
 
@@ -137,6 +137,23 @@ describe("rate library, utilities, benchmarks, gear", () => {
     expect(ca.portUtilisation).toBe(0.231);
     expect(ca.priceToDriverPerKwh).toBe(0.606);
     expect(MARKET_BENCHMARKS.find((b) => b.state === "United States (average)")!.portUtilisation).toBe(0.1576);
+  });
+
+  // New at template 3.2.0. A Level 2 port is not a slow DC port, so the sheet
+  // gave it its own table in its own units — energy per port per day, not the
+  // time-based port utilisation the DC table carries. Two tables now share the
+  // "MARKET BENCHMARKS" prefix, which is why the importer matches full headings.
+  it("carries the Level 2 market table, read straight off RefData", () => {
+    expect(L2_BENCHMARKS).toHaveLength(2);
+    const us = L2_BENCHMARKS.find((b) => b.state === "United States (average)")!;
+    expect(us.kwhPerPortDay).toBe(6.98);
+    expect(us.priceToDriverPerKwh).toBe(0.31);
+    const ca = L2_BENCHMARKS.find((b) => b.state === "California")!;
+    expect(ca.kwhPerPortDay).toBe(6.98);
+    expect(ca.priceToDriverPerKwh).toBe(0.4);
+    // Different units from the DC table — a mix-up would be silent otherwise.
+    expect(MARKET_BENCHMARKS.every((b) => !("kwhPerPortDay" in b))).toBe(true);
+    expect(L2_BENCHMARKS.every((b) => !("portUtilisation" in b))).toBe(true);
   });
 
   it("uses the same 480V switchgear price table as the estimator's GEAR_CATALOG", () => {
