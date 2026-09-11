@@ -131,14 +131,6 @@ export interface Setup {
   conduitType: ConduitMaterial;
   continuousLoadFactor: number; // 1.25
   maxVoltageDropFraction: number; // 0.03
-  /**
-   * Stalls a DC cabinet is sited to serve. A dual-cable cabinet usually serves
-   * two bays, but is sometimes placed to serve one — both cables reaching the
-   * same stall, or the second left spare — and the hardware cannot tell you
-   * which. Blank follows the cable count. Drives the stall count that striping
-   * is measured against; Level 2 always follows its own plugs.
-   */
-  dcStallsPerCabinet?: 1 | 2;
   powerFactor: number; // 1.0
   wireUpsizeSteps: number; // 0
   conduitUpsizeSteps: number; // 0

@@ -7,7 +7,6 @@ import { money, num } from "@/lib/format";
 import { rebuildProject } from "@/lib/intake/rebuild";
 import { findSku } from "@/lib/ref/priceBook";
 import { CHARGER_SKUS, EXTRA_SKUS, computeEquipmentSchedule, computeSiteCapacity, loadTypeIdForSku } from "@/lib/skus";
-import { DEFAULT_LOAD_TYPES, portsForLoadType } from "@/lib/calc/tables";
 import { useProject } from "../ProjectContext";
 import { Pill, Section, inputCls, selectCls } from "../ui";
 import { useRebuild } from "./useRebuild";
@@ -35,14 +34,6 @@ const roleLabel: Record<string, string> = { all_in_one: "All-in-one", power_cabi
 
 export function EquipmentSection() {
   const { project, setProject, result, hardwareAllowance } = useProject();
-  // What each choice would give, so the picker states its own consequence.
-  const nDcfcUnits = result.rollups.nDCFC;
-  const dcStallsIfAuto = result.rows
-    .filter((r) => r.category === "DCFC")
-    .reduce((s, r) => {
-      const lt = project.loadTypes.find((l) => l.id === r.loadTypeId) ?? DEFAULT_LOAD_TYPES.find((l) => l.id === r.loadTypeId);
-      return s + r.units * (lt ? portsForLoadType(lt) : 1);
-    }, 0);
   const { auto, rebuild, pin, unpin, pinned } = useRebuild();
   const input: QuickEstimateInput = project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput();
   const schedule = computeEquipmentSchedule(project, hardwareAllowance);
@@ -217,35 +208,6 @@ export function EquipmentSection() {
             ))}
           </ul>
         )}
-
-        <div className="mt-5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-          <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300" htmlFor="dc-stalls">
-            Stalls each DC cabinet serves
-          </label>
-          <select
-            id="dc-stalls"
-            className={`${selectCls} mt-1 w-full sm:w-80`}
-            value={project.setup.dcStallsPerCabinet ?? ""}
-            onChange={(e) =>
-              setProject((p) => ({
-                ...p,
-                setup: {
-                  ...p.setup,
-                  dcStallsPerCabinet: e.target.value === "" ? undefined : (Number(e.target.value) as 1 | 2),
-                },
-              }))
-            }
-          >
-            <option value="">Follow the cable count — {num(dcStallsIfAuto)} stalls</option>
-            <option value="1">One stall per cabinet — {num(nDcfcUnits)} stalls</option>
-            <option value="2">Two stalls per cabinet — {num(nDcfcUnits * 2)} stalls</option>
-          </select>
-          <p className="mt-1 text-xs text-zinc-500">
-            A dual-cable cabinet usually serves two bays, but is sometimes sited to serve one — both cables reaching the
-            same stall, or the second left spare. The hardware cannot tell us which, so say it here. Drives the stall
-            count that striping is measured against; Level 2 always follows its own plugs.
-          </p>
-        </div>
 
         <div className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <Derived label="Charging units" value={num(chargingUnits)} hint="units a driver plugs into" />
