@@ -6,7 +6,7 @@ import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
 import type { EquipmentRentalItem } from "@/lib/calc/types";
-import { money, num, pct } from "@/lib/format";
+import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import type { StickyPath } from "@/lib/intake/rebuild";
 import { defaultCommercial } from "@/lib/proposal/defaults";
 import type { CommercialInput } from "@/lib/proposal/types";
@@ -39,13 +39,38 @@ function AutoPill({ typed }: { typed: boolean }) {
 }
 
 /** A number the estimator derives: type to pin it, “→ auto” to hand it back. */
-function PinnedNumber({ label, hint, path, value, step }: { label: string; hint?: string; path: StickyPath; value: number; step?: string }) {
+
+/** A bare whole-percent input for use inside a Field that already has its label. */
+function PctInput({ value, onChange, disabled }: { value: number; onChange: (v: number) => void; disabled?: boolean }) {
+  return (
+    <div className="relative">
+      <input
+        type="number"
+        step="1"
+        className={`${inputCls} w-full pr-7`}
+        value={fractionToPct(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(pctToFraction(Number(e.target.value)))}
+      />
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-zinc-400">%</span>
+    </div>
+  );
+}
+
+function PinnedNumber({ label, hint, path, value, step, percent }: { label: string; hint?: string; path: StickyPath; value: number; step?: string; percent?: boolean }) {
   const { pin, unpin, pinned } = useRebuild();
   const typed = pinned(path);
+  // percent: shown and typed in whole percents, stored as the fraction the
+  // engine and the pin machinery expect.
+  const shown = percent ? fractionToPct(value) : value;
+  const store = (v: number) => pin(path, percent ? pctToFraction(v) : v);
   return (
     <Field label={label} hint={hint}>
       <div className="flex items-center gap-2">
-        <input type="number" step={step ?? "any"} className={inputCls} value={value} onChange={(e) => pin(path, Number(e.target.value))} />
+        <div className="relative w-full">
+          <input type="number" step={step ?? "any"} className={`${inputCls} ${percent ? "pr-7" : ""} w-full`} value={shown} onChange={(e) => store(Number(e.target.value))} />
+          {percent && <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-zinc-400">%</span>}
+        </div>
         <AutoPill typed={typed} />
         {typed && (
           <button className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline" onClick={() => unpin(path)}>
@@ -95,13 +120,13 @@ export function ConstructionSection() {
           <Field label="Crew day rate ($)" hint={`Fully burdened — intake ${INTAKE_TEMPLATE.version}: $2,750`}>
             <input type="number" className={inputCls} value={f.laborDailyRate} onChange={(e) => setFinancial("laborDailyRate", Number(e.target.value))} />
           </Field>
-          <Field label="Contingency" hint="Every construction line; decimals (0.10 = 10%)">
-            <input type="number" step="0.01" className={inputCls} value={f.contingencyPct} onChange={(e) => setFinancial("contingencyPct", Number(e.target.value))} />
+          <Field label="Contingency" hint="Every construction line">
+            <PctInput value={f.contingencyPct} onChange={(v) => setFinancial("contingencyPct", v)} />
           </Field>
-          <Field label="Markup on labour" hint="Commercial terms — after contingency (intake: 0.20)">
-            <input type="number" step="0.01" className={inputCls} value={c?.markupLaborPct ?? 0.2} disabled={!c} onChange={(e) => setCommercial("markupLaborPct", Number(e.target.value))} />
+          <Field label="Markup on labour" hint={`Commercial terms — after contingency (intake ${INTAKE_TEMPLATE.version}: 20%)`}>
+            <PctInput value={c?.markupLaborPct ?? 0.2} disabled={!c} onChange={(v) => setCommercial("markupLaborPct", v)} />
           </Field>
-          <PinnedNumber label="Construction PM as % of labour" hint={`CEO basis 0.15 · currently ${money(costs.constructionPm)}`} path="financial.pmPctOfLabor" value={f.pmPctOfLabor ?? 0} step="0.01" />
+          <PinnedNumber label="Construction PM as % of labour" hint={`CEO basis 15% · currently ${money(costs.constructionPm)}`} path="financial.pmPctOfLabor" value={f.pmPctOfLabor ?? 0} step="1" percent />
           <Field label="Labour cost" hint={`${num(f.laborBusinessDays)} days × ${money(f.laborDailyRate)}${(f.applyContingencyToLabor ?? true) ? ` × ${1 + f.contingencyPct}` : ""}`}>
             <div className={readonlyCls}>{money(costs.labor)}</div>
           </Field>
@@ -214,7 +239,7 @@ export function ConstructionSection() {
       <Section title="Markups and pass-through fees" subtitle="Materials carry the materials markup; permits, utility fees and the interconnection design fee pass through at exactly cost — no contingency, markup or discount.">
         <Grid cols={4}>
           <Field label="Markup on materials" hint="Commercial terms — switchgear, conductor, conduit, site works, rentals (intake: 0.20)">
-            <input type="number" step="0.01" className={inputCls} value={c?.markupMaterialsPct ?? 0.2} disabled={!c} onChange={(e) => setCommercial("markupMaterialsPct", Number(e.target.value))} />
+            <PctInput value={c?.markupMaterialsPct ?? 0.2} disabled={!c} onChange={(v) => setCommercial("markupMaterialsPct", v)} />
           </Field>
           <PinnedNumber label="Permit issuance ($)" hint="AHJ permit fees; plan check is on the design block" path="peripherals.permitFeeTotal" value={per.permitFeeTotal} />
           <PinnedNumber label="Utility application / contract fees ($)" path="peripherals.utilityAppFee" value={per.utilityAppFee} />

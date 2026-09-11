@@ -1,5 +1,6 @@
 "use client";
 
+import { fractionToPct, pctToFraction } from "@/lib/format";
 export function Section({
   title,
   subtitle,
@@ -118,3 +119,48 @@ export const ghostBtn =
  */
 export const downloadSeg =
   "bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-800 disabled:opacity-50";
+
+
+/**
+ * A percentage typed the way people say it — "20" for 20%, with the sign in the
+ * box so there is no doubt, matching how the CEO's workbook asks for it.
+ *
+ * The value stays a FRACTION in the project, so saved projects, the engine, the
+ * exports and the intake fill never see the display form. There used to be two
+ * of these — one here in whole percents, one in CommercialTab still taking
+ * fractions — and a tab promising "enter whole percents" over inputs reading
+ * 0.07. One component now, so that cannot happen again.
+ */
+export function PctField({
+  label,
+  hint,
+  value,
+  step,
+  min,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  step?: string;
+  min?: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="relative">
+        <input
+          type="number"
+          step={step ?? "1"}
+          min={min}
+          className={`${inputCls} w-full pr-7`}
+          value={fractionToPct(value)}
+          onChange={(e) => onChange(pctToFraction(Number(e.target.value)))}
+        />
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
+          %
+        </span>
+      </div>
+    </Field>
+  );
+}

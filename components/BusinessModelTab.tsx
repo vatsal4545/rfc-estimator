@@ -6,7 +6,7 @@ import { defaultCommercial, modelInputsOf } from "@/lib/proposal/defaults";
 import type { ModelInputs, TariffRates } from "@/lib/proposal/types";
 import { MARKET_BENCHMARKS } from "@/lib/ref/benchmarks";
 import { useProject } from "./ProjectContext";
-import { Field, Grid, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
+import { Field, Grid, PctField, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
 // Business model — the downstream model the CEO builds from the intake (the
 // Best Western workbook's Utility_Rates, Revenue, Carbon, Financing, Cashflow
@@ -50,44 +50,6 @@ function NumField({
   );
 }
 
-/**
- * A percentage typed the way people say it — "20" for 20%, with the sign in the
- * box so there is no doubt. The value stays a fraction in the project, so saved
- * projects, the engine, the exports and the template never see the display form.
- */
-function PctField({
-  label,
-  hint,
-  value,
-  step,
-  min,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  value: number;
-  step?: string;
-  min?: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <Field label={label} hint={hint}>
-      <div className="relative">
-        <input
-          type="number"
-          step={step ?? "1"}
-          min={min}
-          className={`${inputCls} pr-7`}
-          value={fractionToPct(value)}
-          onChange={(e) => onChange(pctToFraction(Number(e.target.value)))}
-        />
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-zinc-400">
-          %
-        </span>
-      </div>
-    </Field>
-  );
-}
 
 function TextField({ label, hint, value, onChange, placeholder }: { label: string; hint?: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
