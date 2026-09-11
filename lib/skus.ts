@@ -11,7 +11,7 @@
 // project that still tracks them.
 
 import { HARDWARE_ALLOWANCE } from "./calc/autoplan";
-import { DEFAULT_LOAD_TYPES } from "./calc/tables";
+import { DEFAULT_LOAD_TYPES, portsForLoadType } from "./calc/tables";
 import type { LoadType, Project } from "./calc/types";
 import { defaultServiceTerms } from "./proposal/defaults";
 import type { ServiceTerms } from "./proposal/types";
@@ -147,10 +147,9 @@ export function includedWarrantyYears(rate: ServiceRate | undefined, terms: Serv
   return m ? Number(m[1]) : 2;
 }
 
-/** Billable ports (network fees bill per port): the model's override, else L2 = circuits, DCFC = 1. */
-export function portsForLoadType(lt: LoadType): number {
-  return lt.portsPerUnit ?? (lt.category === "L2" ? lt.runsPerUnit : lt.category === "DCFC" ? 1 : 0);
-}
+/** Billable ports (network fees bill per port) — defined in calc/tables so the
+ *  engine can count stalls without importing this module. */
+export { portsForLoadType };
 
 /** Billable ports per SKU: connectors; dispensers carry the cabinet's connectors; cabinets and accessories none. */
 export function portsForSku(sku: PriceBookSku): number {
