@@ -4,7 +4,7 @@
 // rather than a TypeScript port, which is what makes "the logic is unchanged"
 // a fact rather than a claim. The cost is a copy under public/, and a copy is
 // exactly what goes stale without anyone noticing: someone fixes a rate in
-// ../Proposals, the pytest suite there stays green, and the web app keeps
+// Proposals/, the pytest suite there stays green, and the web app keeps
 // shipping last month's arithmetic.
 //
 // So this asserts the copy is complete, is what the browser will actually
@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest";
 // lib/proposalDoc/__tests__ -> the app root.
 const APP = join(__dirname, "..", "..", "..");
 const VENDOR = join(APP, "public", "proposal");
-const SOURCE = join(APP, "..", "Proposals");
+const SOURCE = join(APP, "Proposals");
 const MANIFEST = join(VENDOR, "manifest.json");
 
 interface Manifest {
@@ -122,10 +122,11 @@ describe("the vendored proposal agent", () => {
     expect(existsSync(join(VENDOR, "web_entry.py"))).toBe(true);
   });
 
-  // Only meaningful in the full working copy. CI clones this app alone, where
-  // the vendored tree IS the source of truth and there is nothing to compare.
+  // Proposals/ is in the repo now, so this normally runs. It stays guarded for
+  // the case where the desktop app is stripped out of a deployment clone: the
+  // vendored tree is then the source of truth, with nothing to compare against.
   const hasSource = existsSync(join(SOURCE, "ev_proposal_agent"));
-  it.runIf(hasSource)("is identical to ../Proposals", () => {
+  it.runIf(hasSource)("is identical to Proposals/", () => {
     const actual = hashOf(manifest!.files, (rel) => {
       // The vendored layout flattens ev_proposal_agent/, tools/, config/ and
       // templates/ from the source root, so the relative paths line up 1:1.
@@ -133,7 +134,7 @@ describe("the vendored proposal agent", () => {
     });
     expect(
       actual,
-      "../Proposals has changed since the last sync — run `npm run proposal:sync` and re-run the pytest suite there",
+      "Proposals/ has changed since the last sync — run `npm run proposal:sync` and re-run the pytest suite there",
     ).toBe(manifest!.hash);
   });
 });

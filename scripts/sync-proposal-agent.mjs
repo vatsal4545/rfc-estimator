@@ -8,7 +8,7 @@
 //
 // So this script owns the copy, and it records a hash of what it copied in
 // public/proposal/manifest.json. `proposalAgent.test.ts` recomputes that hash
-// from ../Proposals and fails if the two disagree, which turns "someone edited
+// from Proposals/ and fails if the two disagree, which turns "someone edited
 // the Python and forgot the web app" into a red test rather than a proposal
 // with last month's logic in it.
 //
@@ -25,7 +25,9 @@ import { fileURLToPath } from "node:url";
 // pathname leaves percent-encoded.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = join(HERE, "..");
-const SOURCE = join(APP, "..", "Proposals");
+// Proposals/ lives inside the repo, so the desktop app and this one are
+// versioned together and its pytest suite travels with the web app.
+const SOURCE = join(APP, "Proposals");
 const DEST = join(APP, "public", "proposal");
 
 /**
@@ -91,10 +93,10 @@ export function sourceManifest() {
   const files = plan();
   const missing = files.filter((f) => !existsSync(f.from)).map((f) => relative(SOURCE, f.from));
   if (missing.length > 0) {
-    throw new Error("../Proposals is missing files this app needs:\n  " + missing.join("\n  "));
+    throw new Error("Proposals/ is missing files this app needs:\n  " + missing.join("\n  "));
   }
   return {
-    source: "../Proposals",
+    source: "Proposals/",
     files: files.map((f) => f.to),
     hash: hashOf(files, (f) => readFileSync(f.from)),
   };
@@ -112,10 +114,10 @@ function main() {
     // fine — the vendored copy is checked in and is what actually ships.
     const vendored = join(DEST, "manifest.json");
     if (existsSync(vendored)) {
-      console.log("sync-proposal-agent: ../Proposals not present; keeping the vendored copy as-is.");
+      console.log("sync-proposal-agent: Proposals/ not present; keeping the vendored copy as-is.");
       return;
     }
-    console.error("sync-proposal-agent: no ../Proposals and no vendored copy — the Generate Proposal tab will not work.");
+    console.error("sync-proposal-agent: no Proposals/ and no vendored copy — the Generate Proposal tab will not work.");
     process.exitCode = check ? 1 : 0;
     return;
   }
@@ -144,7 +146,7 @@ function main() {
 
   if (check) {
     console.error(
-      "sync-proposal-agent: public/proposal/ is out of date with ../Proposals.\n" +
+      "sync-proposal-agent: public/proposal/ is out of date with Proposals/.\n" +
         `  vendored: ${current ? current.hash.slice(0, 12) : "(absent)"}\n` +
         `  source:   ${manifest.hash.slice(0, 12)}\n` +
         "  Run: node scripts/sync-proposal-agent.mjs",

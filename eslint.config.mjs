@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The EV proposal generator is a Python project that happens to live in
+    // this repo, and public/proposal is its vendored mirror — neither is ours
+    // to lint, and the mirror must stay byte-for-byte identical.
+    "Proposals/**",
+    "public/proposal/**",
   ]),
 ]);
 

@@ -1,0 +1,15 @@
+build/
+dist/
+release/
+__pycache__/
+*.pyc
+tests/output/
+.claude/.dist-stale
+config/build_info.json
+
+# Packaged build output — 113 MB, and above GitHub's 100 MB per-file limit.
+# Rebuild it with build.ps1 rather than tracking it.
+dist.zip
+
+# pytest's cache
+.pytest_cache/

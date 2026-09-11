@@ -3,7 +3,7 @@
 // The Generate Proposal tab does not reimplement the proposal generator; it
 // runs the real Python package under Pyodide. That is what makes "the logic is
 // unchanged" a fact: the modules loaded here are the same files the pytest
-// suite in ../Proposals exercises, vendored byte-for-byte into public/proposal
+// suite in Proposals/ exercises, vendored byte-for-byte into public/proposal
 // by scripts/sync-proposal-agent.mjs and checked by lib/proposalDoc/__tests__.
 //
 // Everything is lazy and cached. Nothing here loads until the tab asks for it,
@@ -207,7 +207,7 @@ async function boot(onProgress: Progress): Promise<Runtime> {
   };
 
   // web_entry.py is ours and sits beside the vendored tree, so it is not in
-  // the manifest (whose hash tracks ../Proposals) but does have to be mounted.
+  // the manifest (whose hash tracks Proposals/) but does have to be mounted.
   const files = [...manifest.files, "web_entry.py"];
   const fetched = await Promise.all(
     files.map(async (rel) => {

@@ -85,7 +85,7 @@ async function main() {
   const outDir = outIdx >= 0 ? args[outIdx + 1] : join(APP, "..", "smoke-out");
   const workbookPath =
     args.find((a) => a.endsWith(".xlsx")) ??
-    join(APP, "..", "Proposals", "templates", "assets", "project-rfc-msrp-calculator.xlsx");
+    join(APP, "Proposals", "templates", "assets", "project-rfc-msrp-calculator.xlsx");
 
   if (!existsSync(join(VENDOR, "manifest.json"))) {
     throw new Error("public/proposal is not vendored yet — run node scripts/sync-proposal-agent.mjs");
