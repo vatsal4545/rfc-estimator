@@ -84,7 +84,11 @@ describe("estimator hardware defaults tie to the price book", () => {
     ["DCFC 240kW", "TP5-240-480-2-300"],
     ["DCFC 180kW Dual", "TP5-180-480-1"],
     ["DCFC 160kW", "TP5-160-480-1"],
-    ["DCFC 120kW Dual", "TP5-120-480-1"],
+    // The AiO duals cite their own family, not TP5 — their notes name the
+    // CTX Gen3 unit and the estimate has to agree with the book on that unit.
+    ["DCFC 120kW Dual", "CTX-AiO-120-2-350"],
+    ["DCFC 160kW Dual", "CTX-AiO-160-2-350"],
+    ["DCFC 240kW Dual", "CTX-AiO-240-2-300"],
     ["DCFC 60kW", "TP5-60-480-1"],
     ["L2 Dual 40A", "CTX-C40-240-2"],
     ["L2 Dual 80A", "CTX-C80-240-2"],
