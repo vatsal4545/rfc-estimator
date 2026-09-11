@@ -148,7 +148,7 @@ export function IntakeImportPanel() {
                 {report.completedBy ? ` · ${report.completedBy}` : ""}
                 {report.dateCompleted ? ` · ${report.dateCompleted}` : ""}
               </div>
-              <ul className="max-h-72 space-y-0.5 overflow-auto text-xs text-zinc-600 dark:text-zinc-400">
+              <ul className="slim-scroll max-h-72 space-y-0.5 overflow-auto text-xs text-zinc-600 dark:text-zinc-400">
                 {report.mapped.map((m, i) => (
                   <li key={i}>• {m}</li>
                 ))}
@@ -156,7 +156,7 @@ export function IntakeImportPanel() {
             </div>
             <div>
               <div className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">Skipped ({report.skipped.length})</div>
-              <ul className="max-h-72 space-y-0.5 overflow-auto text-xs text-zinc-600 dark:text-zinc-400">
+              <ul className="slim-scroll max-h-72 space-y-0.5 overflow-auto text-xs text-zinc-600 dark:text-zinc-400">
                 {report.skipped.map((m, i) => (
                   <li key={i}>• {m}</li>
                 ))}
@@ -165,7 +165,7 @@ export function IntakeImportPanel() {
             </div>
             <div>
               <div className="mb-1 text-sm font-medium text-amber-800 dark:text-amber-300">Look at ({report.warnings.length})</div>
-              <ul className="max-h-72 space-y-0.5 overflow-auto text-xs text-amber-900 dark:text-amber-200">
+              <ul className="slim-scroll max-h-72 space-y-0.5 overflow-auto text-xs text-amber-900 dark:text-amber-200">
                 {report.warnings.map((m, i) => (
                   <li key={i}>• {m}</li>
                 ))}

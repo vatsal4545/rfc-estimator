@@ -92,7 +92,7 @@ export function FlagBadge({ flag }: { flag: string }) {
  * and look exactly as they did.
  */
 export const tableWrapCls =
-  "data-table max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
+  "data-table slim-scroll max-h-[70vh] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800";
 
 /**
  * The header row of such a table. Opaque, because the body scrolls underneath

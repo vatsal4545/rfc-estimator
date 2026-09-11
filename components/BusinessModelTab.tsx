@@ -706,7 +706,7 @@ export function FinancingSection() {
           {financing.schedule.length > 0 && (
             <details className="rounded-lg border border-zinc-200 dark:border-zinc-800">
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Amortisation schedule ({financing.schedule.length} payments)</summary>
-              <div className="max-h-80 overflow-auto">
+              <div className="slim-scroll max-h-80 overflow-auto">
                 <table className={tableCls}>
                   <thead className={theadCls}>
                     <tr>
@@ -791,7 +791,7 @@ export function CashflowSection() {
             {cashflow.monthly.length > 0 && (
               <details className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
                 <summary className="cursor-pointer px-3 py-2 text-sm font-medium">Position by payment period — loan payment against carbon and charging</summary>
-                <div className="max-h-80 overflow-auto">
+                <div className="slim-scroll max-h-80 overflow-auto">
                   <table className={tableCls}>
                     <thead className={theadCls}>
                       <tr>

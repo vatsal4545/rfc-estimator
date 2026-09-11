@@ -324,7 +324,7 @@ function IntakeTabBar({ tab, setTab }: { tab: IntakeTabKey; setTab: (k: IntakeTa
     return <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${cls}`} />;
   };
   return (
-    <nav className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
+    <nav className="slim-scroll mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
       {INTAKE_TABS.map((t) => (
         <button
           key={t.key}
@@ -417,7 +417,7 @@ function AppShell() {
         {mode === "intake" ? (
           <IntakeTabBar tab={intakeTab} setTab={setIntakeTab} />
         ) : (
-          <nav className="mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
+          <nav className="slim-scroll mx-auto flex max-w-[1600px] gap-1 overflow-x-auto px-6 pb-2">
             {ESTIMATOR_TABS.map((t) => (
               <button
                 key={t.key}
