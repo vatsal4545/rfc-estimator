@@ -148,3 +148,45 @@ describe("striping counts stalls, not chargers", () => {
     ])).toBeCloseTo(0.9, 5);
   });
 });
+
+// A dual-cable DC cabinet usually serves two bays, but it is sometimes sited to
+// serve one — both cables reaching the same stall, or the second left spare.
+// The hardware cannot tell you which, so the project says.
+const withDcStalls = (
+  lines: { loadTypeId: string; count: number }[],
+  dcStallsPerCabinet?: 1 | 2,
+) => {
+  const base = buildQuickProject(
+    { ...defaultQuickInput(), terrain: "flat", lines },
+    defaultProject(),
+    "dcst",
+  );
+  const p = { ...base, setup: { ...base.setup, dcStallsPerCabinet } };
+  const r = computeEstimate(p);
+  return { stalls: r.rollups.nStalls, striping: r.peripherals.lines.signage.find((s) => s.name === "Striping")!.qty };
+};
+
+describe("how many stalls a DC cabinet serves", () => {
+  it("follows the cable count when the project does not say", () => {
+    expect(withDcStalls([{ loadTypeId: "DCFC 200kW Dual", count: 6 }]).stalls).toBe(12);
+    expect(withDcStalls([{ loadTypeId: "DCFC 200kW", count: 6 }]).stalls).toBe(6);
+  });
+
+  it("counts one stall a cabinet when the project says one", () => {
+    const r = withDcStalls([{ loadTypeId: "DCFC 200kW Dual", count: 6 }], 1);
+    expect(r.stalls).toBe(6);
+    expect(r.striping).toBeCloseTo(0.6, 5);
+  });
+
+  it("counts two even on a single-cable cabinet when the project says two", () => {
+    expect(withDcStalls([{ loadTypeId: "DCFC 200kW", count: 6 }], 2).stalls).toBe(12);
+  });
+
+  it("leaves the Level 2 side alone — this answers for DC only", () => {
+    const r = withDcStalls([
+      { loadTypeId: "L2 Dual 40A", count: 4 },
+      { loadTypeId: "DCFC 200kW Dual", count: 6 },
+    ], 1);
+    expect(r.stalls).toBe(4 * 2 + 6 * 1); // L2 still by its own plugs
+  });
+});
