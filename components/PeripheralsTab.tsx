@@ -10,6 +10,15 @@ import { MaterialRatesSection } from "./MaterialRatesSection";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
+/** Which peripherals count each signage line reads, for the editable cell. */
+const SIGNAGE_QTY_FIELD: Record<string, "signQtyOverride" | "signPostQtyOverride" | "adaSignPostQtyOverride" | "stripingQtyOverride" | "bollardsQty" | undefined> = {
+  Signs: "signQtyOverride",
+  "Sign posts": "signPostQtyOverride",
+  "ADA sign post": "adaSignPostQtyOverride",
+  Bollards: "bollardsQty",
+  Striping: "stripingQtyOverride",
+};
+
 /** Which peripherals rate each signage line reads, for the editable cell. */
 const SIGNAGE_RATE_FIELD: Record<string, "signUnitCost" | "signPostUnitCost" | "stripingUnitCost" | "bollardUnitCost" | undefined> = {
   Signs: "signUnitCost",
@@ -386,13 +395,46 @@ export function PeripheralsTab() {
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {result.peripherals.lines.signage.map((s) => {
                 const key = SIGNAGE_RATE_FIELD[s.name];
+                const qtyKey = SIGNAGE_QTY_FIELD[s.name];
+                // What the Takeoff would give if nobody had typed over it.
+                const derivedQty = s.autoQty ?? s.qty;
                 return (
                   <tr key={s.name}>
                     <td className="px-3 py-2">
                       {s.name}
                       {s.auto && <span className="ml-2 text-xs text-zinc-400">auto</span>}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-zinc-500">{num(s.qty, s.qty % 1 ? 1 : 0)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {qtyKey ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {!s.auto && qtyKey !== "bollardsQty" && (
+                            <button
+                              className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline"
+                              title="Hand this count back to the Takeoff"
+                              onClick={() => updateP(qtyKey, undefined)}
+                            >
+                              → auto
+                            </button>
+                          )}
+                          <input
+                            type="number"
+                            step="1"
+                            min={0}
+                            className={`${inputCls} rate-input w-20 text-right`}
+                            // Blank means automatic, so the derived count shows
+                            // as the placeholder rather than being typed in.
+                            placeholder={String(num(derivedQty, derivedQty % 1 ? 1 : 0))}
+                            value={qtyKey === "bollardsQty" ? p.bollardsQty : (p[qtyKey] ?? "")}
+                            onChange={(e) =>
+                              updateP(qtyKey, e.target.value === "" ? undefined : Number(e.target.value))
+                            }
+                            aria-label={`${s.name} quantity`}
+                          />
+                        </div>
+                      ) : (
+                        <span className="tabular-nums text-zinc-500">{num(s.qty, s.qty % 1 ? 1 : 0)}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       {key ? (
                         <input

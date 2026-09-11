@@ -268,12 +268,21 @@ export function computePeripherals(
   // and can be seen on the estimate.
   const signPostCost = input.signPostUnitCost ?? CIVIL_RATES.signPostEach;
   const adaStalls = adaByType ? adaVanQty + adaStdQty + adaAmbQty : adaQty;
+  // A derived count is right for a standard job and wrong for the one where the
+  // AHJ wants a sign at each end of the row. A typed count wins and the line
+  // stops calling itself automatic; clearing it hands the line back to the
+  // Takeoff. Read with ?? so a deliberate zero survives.
+  const counted = (override: number | undefined, derived: number) => ({
+    qty: override ?? derived,
+    auto: override === undefined,
+    autoQty: derived,
+  });
   const signage: SignageItem[] = [
-    { name: "Signs", qty: rollups.nChargers, unitCost: input.signUnitCost ?? CIVIL_RATES.signEach, auto: true },
-    { name: "Sign posts", qty: rollups.nL2 + Math.ceil(rollups.nDCFC / 2), unitCost: signPostCost, auto: true },
-    { name: "ADA sign post", qty: adaStalls > 0 ? 1 : 0, unitCost: signPostCost, auto: true },
-    { name: "Bollards", qty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
-    { name: "Striping", qty: (rollups.nL2 * 2 + rollups.nDCFC) / 10, unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall, auto: true },
+    { name: "Signs", ...counted(input.signQtyOverride, rollups.nChargers), unitCost: input.signUnitCost ?? CIVIL_RATES.signEach },
+    { name: "Sign posts", ...counted(input.signPostQtyOverride, rollups.nL2 + Math.ceil(rollups.nDCFC / 2)), unitCost: signPostCost },
+    { name: "ADA sign post", ...counted(input.adaSignPostQtyOverride, adaStalls > 0 ? 1 : 0), unitCost: signPostCost },
+    { name: "Bollards", qty: input.bollardsQty, autoQty: input.bollardsQty, unitCost: input.bollardUnitCost ?? CIVIL_RATES.bollardEach, auto: false },
+    { name: "Striping", ...counted(input.stripingQtyOverride, (rollups.nL2 * 2 + rollups.nDCFC) / 10), unitCost: input.stripingUnitCost ?? CIVIL_RATES.stripingPerStall },
   ];
   const signageSubtotal = signage.reduce((s, x) => s + x.qty * x.unitCost, 0);
 
