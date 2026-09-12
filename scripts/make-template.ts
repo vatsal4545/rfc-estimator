@@ -532,10 +532,22 @@ async function main() {
     formula: `IF(InstallMethod="Surface EMT",0,IF(InstallMethod="Hybrid",SUMPRODUCT(($D$${FDR_FIRST}:$D$${FDR_FIRST + 2}>0)*$F$${FDR_FIRST}:$F$${FDR_FIRST + 2}),RouteFt))`,
   } as ExcelJS.CellValue);
   label(intake, SITE + 8, "Construction labor days — overtype if known");
-  inputCell(SITE + 8, {
-    formula:
-      'IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc+1*NumL2+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE)+IF(InstallMethod="Trenched",0,RouteFt/EmtFtPerDay),0))',
-  } as ExcelJS.CellValue);
+  // Level 2 is charged by the work, not the unit: a dual-port unit is two
+  // circuits to pull and terminate (a full day), a single-port one is one
+  // circuit and several fit in a crew-day. G is ports per row, so L2 ports
+  // minus L2 units is the count of dual-port units. Mirrors INSTALL_DAYS in
+  // autoplan.ts — change both together or the template stops tying.
+  {
+    const l2Ports = `SUMPRODUCT(($D$${CH_FIRST}:$D$${CH_LAST}="L2")*$G$${CH_FIRST}:$G$${CH_LAST})`;
+    inputCell(SITE + 8, {
+      formula:
+        `IF(NTotal<=0,0,ROUNDUP((8+2.5*NDcfc` +
+        `+1*(${l2Ports}-NumL2)` +
+        `+0.25*(2*NumL2-${l2Ports})` +
+        `+TrenchFt/40)*VLOOKUP(Terrain,TerrainTable,3,FALSE)` +
+        `+IF(InstallMethod="Trenched",0,RouteFt/EmtFtPerDay),0))`,
+    } as ExcelJS.CellValue);
+  }
   wb.definedNames.add(`Intake!$B$${SITE + 1}`, "RunFtDcfc");
   wb.definedNames.add(`Intake!$B$${SITE + 2}`, "RunFtL2");
   wb.definedNames.add(`Intake!$B$${SITE + 3}`, "StepFt");
@@ -1708,7 +1720,15 @@ async function main() {
   // Two trench legs now — one per charger level (RunFtDcfc / RunFtL2 defaults).
   const trench = (100 + 15 * (nD - 1)) + (100 + 15 * (nL - 1));
   const t = TERRAIN_INFO.flat;
-  const laborDays = Math.ceil((8 + 2.5 * nD + nL + trench / 40) * t.laborFactor);
+  // Same split as the workbook and the engine: the default intake's 5 L2 are
+  // single-port, so they are a quarter-day apiece and not a day.
+  const nL2Multi = [{ id: "L2 Single 40A", cnt: 5 }].filter((x) => {
+    const m = models.find((y) => y.lt.id === x.id);
+    return m ? m.lt.runsPerUnit > 1 : false;
+  }).reduce((s, x) => s + x.cnt, 0);
+  const laborDays = Math.ceil(
+    (8 + 2.5 * nD + 1.0 * nL2Multi + 0.25 * (nL - nL2Multi) + trench / 40) * t.laborFactor,
+  );
   // Mirror the Wire Runs block defaults exactly as the template formulas do.
   const wireRow = (size: string) => WIRE_TABLE.find((w) => w.size === size)!;
   const pricePerFt = (size: string, mat: string) => (mat === "Cu" ? wireRow(size).cuPerFt : wireRow(size).alPerFt);
