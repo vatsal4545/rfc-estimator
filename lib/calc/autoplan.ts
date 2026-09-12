@@ -285,19 +285,26 @@ interface ChargerCounts {
   nL2: number;
   nDCFC: number;
   nChargers: number;
+  /** L2 units with more than one port — two circuits to pull and terminate. */
+  nL2Multiport: number;
 }
 
 export function countChargers(input: QuickEstimateInput, loadTypes: LoadType[]): ChargerCounts {
   let nL2 = 0;
   let nDCFC = 0;
+  let nL2Multiport = 0;
   for (const line of input.lines) {
     if (line.count <= 0) continue;
     const lt = findLoadType(loadTypes, line.loadTypeId);
     if (!lt) continue;
-    if (lt.category === "L2") nL2 += line.count;
+    if (lt.category === "L2") {
+      nL2 += line.count;
+      // An L2 run is one circuit per port, so runsPerUnit is its plug count.
+      if (lt.runsPerUnit > 1) nL2Multiport += line.count;
+    }
     if (lt.category === "DCFC") nDCFC += line.count;
   }
-  return { nL2, nDCFC, nChargers: nL2 + nDCFC };
+  return { nL2, nDCFC, nChargers: nL2 + nDCFC, nL2Multiport };
 }
 
 /**
@@ -340,6 +347,19 @@ export function normalizeQuickInput(q: QuickEstimateInput, setup?: Project["setu
   };
 }
 
+/** Crew-days to install one charger, by what the work actually is. */
+export const INSTALL_DAYS = {
+  dcfc: 2.5,
+  /** Two circuits to pull, terminate and commission. */
+  l2Multiport: 1.0,
+  /**
+   * One circuit. Several fit in a crew-day, so a day apiece overstated it
+   * badly on an L2-heavy site: 29 single-port units billed 29 days where the
+   * work is nearer seven.
+   */
+  l2SinglePort: 0.25,
+} as const;
+
 /**
  * Crew-days: mobilization + per-charger install + route production,
  * terrain-adjusted. Trenching digs ~40 ft/day; overhead EMT on strut racks
@@ -353,7 +373,13 @@ export function estimateLaborDays(
   surfaceFt = 0,
 ): number {
   if (counts.nChargers === 0) return 0;
-  const base = 8 + 2.5 * counts.nDCFC + 1.0 * counts.nL2 + trenchFt / 40;
+  const nL2Single = Math.max(0, counts.nL2 - counts.nL2Multiport);
+  const base =
+    8 +
+    INSTALL_DAYS.dcfc * counts.nDCFC +
+    INSTALL_DAYS.l2Multiport * counts.nL2Multiport +
+    INSTALL_DAYS.l2SinglePort * nL2Single +
+    trenchFt / 40;
   return Math.ceil(base * TERRAIN_INFO[terrain].laborFactor + surfaceFt / SURFACE_FT_PER_CREW_DAY);
 }
 
@@ -663,8 +689,15 @@ export interface TimelinePhase {
  * phase runs in parallel but is often the true critical path on DCFC sites.
  */
 export function estimateTimeline(project: Project, result: EstimateResult): TimelinePhase[] {
-  const { nL2, nDCFC } = result.rollups;
-  const counts: ChargerCounts = { nL2, nDCFC, nChargers: nL2 + nDCFC };
+  const { nL2, nDCFC, nL2Stalls } = result.rollups;
+  // Each multi-port L2 contributes one stall beyond its unit, so the excess is
+  // the count of dual-port units.
+  const counts: ChargerCounts = {
+    nL2,
+    nDCFC,
+    nChargers: nL2 + nDCFC,
+    nL2Multiport: Math.max(0, Math.min(nL2, nL2Stalls - nL2)),
+  };
   if (counts.nChargers === 0) return [];
   const phases: TimelinePhase[] = [];
 
