@@ -68,6 +68,21 @@ function pvcCementGallons(conduitLines: MaterialsConduitLine[]): number {
   }, 0);
 }
 
+/**
+ * EVSE disconnect (NEC 625.43), installed, by the largest DC branch breaker
+ * it sits behind: a 250 A frame is a heavy-duty safety switch, 400 A a
+ * fused switch in a NEMA 3R can, 600 A and up a bolted-pressure or
+ * breaker-type disconnect. The shop's own range — $5,000–7,000 by amperage
+ * (Sept 2026). Quote it per site.
+ */
+export const DISCONNECT_RATES = { upTo250A: 5000, upTo400A: 6000, above400A: 7000 } as const;
+
+export function disconnectRateFor(largestDcBreakerA: number): number {
+  if (largestDcBreakerA <= 250) return DISCONNECT_RATES.upTo250A;
+  if (largestDcBreakerA <= 400) return DISCONNECT_RATES.upTo400A;
+  return DISCONNECT_RATES.above400A;
+}
+
 function gearUnitCost(sel: GearSelection): number {
   if (sel.costOverride !== undefined) return sel.costOverride;
   const row = GEAR_CATALOG.find(
@@ -92,7 +107,14 @@ export function computePeripherals(
   // the main breaker that lands the EV load in it is, and it is the main
   // device — so it prices on the switchgear line.
   const gearMainSwitchgear = (input.existingSwitchgear ? 0 : mainSwitchgear.reduce((s, g) => s + g.total, 0)) + mainBreakers.reduce((s, g) => s + g.total, 0);
-  const gearOtherTotal = otherGear.reduce((s, g) => s + g.total, 0);
+  // EVSE disconnects at the chargers, counted by hand; the default rate steps
+  // with the largest 480 V branch breaker on the schedule.
+  const largestDcBreakerA = gearList
+    .filter((g) => g.item === "Branch breaker" && g.voltage === "480V")
+    .reduce((m, g) => Math.max(m, Number(/(\d+)/.exec(g.size)?.[1] ?? 0)), 0);
+  const disconnectUnitCost = input.disconnectUnitCost ?? disconnectRateFor(largestDcBreakerA);
+  const disconnectsTotal = (input.disconnectQty ?? 0) * disconnectUnitCost;
+  const gearOtherTotal = otherGear.reduce((s, g) => s + g.total, 0) + disconnectsTotal;
 
   const method = effectiveInstallMethod(setup);
   const surfaceMounted = method !== "trench";
@@ -320,6 +342,8 @@ export function computePeripherals(
   return {
     gearMainSwitchgear,
     gearOtherTotal,
+    disconnectsTotal,
+    disconnectUnitCost,
     hardwareSubtotal,
     civilSubtotal,
     asphaltTrenching,
@@ -361,6 +385,8 @@ export const PERIPHERAL_SHIPPED_PRICES = {
   consumablesPerDcfc: CIVIL_RATES.consumablesPerDcfc,
   serviceBoxUnitCost: 600,
   coringUnitCost: CIVIL_RATES.coringPerHole,
+  /** Nominal — the live default steps with amperage (disconnectRateFor); cleared, it tracks that again. */
+  disconnectUnitCost: DISCONNECT_RATES.upTo400A,
   pullBoxUnitCost: 0,
   utilityVaultUnitCost: 0,
 } as const;

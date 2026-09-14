@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../autoplan";
 import { defaultProject } from "../defaults";
 import { computeEstimate } from "../engine";
-import { CIVIL_RATES, PERIPHERAL_PRICE_KEYS, resetPeripheralPrices } from "../peripherals";
+import { CIVIL_RATES, DISCONNECT_RATES, PERIPHERAL_PRICE_KEYS, disconnectRateFor, resetPeripheralPrices } from "../peripherals";
 import { GEAR_CATALOG } from "../tables";
 import type { Project } from "../types";
 
@@ -92,5 +92,37 @@ describe("existing switchgear reused", () => {
     const b = dig({ existingSwitchgear: true });
     b.peripherals.bollardsQty = a.peripherals.bollardsQty;
     expect(concrete(a) - concrete(b)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("EVSE disconnects", () => {
+  const gearLine = (p: Project) => line(p, "Electrical Sub-Panels, Transformers, Breakers");
+
+  it("steps the default rate with the largest DC branch breaker", () => {
+    expect(disconnectRateFor(200)).toBe(DISCONNECT_RATES.upTo250A);
+    expect(disconnectRateFor(400)).toBe(DISCONNECT_RATES.upTo400A);
+    expect(disconnectRateFor(600)).toBe(DISCONNECT_RATES.above400A);
+    // Four 180 kW duals sit behind 400 A breakers.
+    const r = computeEstimate(garageProject({ disconnectQty: 4 }));
+    expect(r.panel.suggestedGear.some((g) => g.item === "Branch breaker" && g.size === "400A")).toBe(true);
+    expect(r.peripherals.disconnectUnitCost).toBe(DISCONNECT_RATES.upTo400A);
+    expect(r.peripherals.disconnectsTotal).toBe(4 * DISCONNECT_RATES.upTo400A);
+  });
+
+  it("prices into the sub-panels / transformers / breakers line, and nothing when uncounted", () => {
+    const none = garageProject();
+    const four = garageProject({ disconnectQty: 4 });
+    expect(gearLine(four) - gearLine(none)).toBeCloseTo(4 * DISCONNECT_RATES.upTo400A, 6);
+    expect(computeEstimate(none).peripherals.disconnectsTotal).toBe(0);
+    expect(line(four, "Main Distribution Switchgear")).toBe(line(none, "Main Distribution Switchgear"));
+  });
+
+  it("takes a typed price, which the price reset clears back to the amperage default", () => {
+    const quoted = garageProject({ disconnectQty: 4, disconnectUnitCost: 5500 });
+    expect(computeEstimate(quoted).peripherals.disconnectsTotal).toBe(4 * 5500);
+    expect(PERIPHERAL_PRICE_KEYS).toContain("disconnectUnitCost");
+    const reset = resetPeripheralPrices(quoted.peripherals);
+    expect(reset.disconnectUnitCost).toBeUndefined();
+    expect(reset.disconnectQty).toBe(4);
   });
 });

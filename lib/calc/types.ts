@@ -438,6 +438,14 @@ export interface PeripheralsInput {
    * what the existing board has to carry.
    */
   existingSwitchgear?: boolean;
+  /**
+   * EVSE disconnecting means (NEC 625.43) — fused or non-fused disconnects at
+   * the DC chargers, counted by hand. Priced into the sub-panels /
+   * transformers / breakers line. Absent = none.
+   */
+  disconnectQty?: number;
+  /** Installed cost each. Default steps with the largest DC branch breaker: DISCONNECT_RATES in peripherals.ts ($5,000–7,000). */
+  disconnectUnitCost?: number;
   /** Christy concrete box with traffic lid at the point of connection (hardware line). Absent = none. */
   serviceBoxQty?: number;
   /** Installed cost of that box. Default 600. */
@@ -450,7 +458,12 @@ export interface PeripheralsInput {
 
 export interface PeripheralsResult {
   gearMainSwitchgear: number;
+  /** Sub-panels, transformers, branch breakers and the EVSE disconnects. */
   gearOtherTotal: number;
+  /** EVSE disconnects: qty × the rate in force (inside gearOtherTotal). */
+  disconnectsTotal: number;
+  /** The disconnect rate in force — the typed one, else the amperage default. */
+  disconnectUnitCost: number;
   hardwareSubtotal: number;
   civilSubtotal: number;
   asphaltTrenching: number;

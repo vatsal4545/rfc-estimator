@@ -571,6 +571,16 @@ function fillPanel(ws: WS, project: Project, result: EstimateResult): void {
     ws.getCell(row, 6).numFmt = MONEY;
     row++;
   }
+  if ((project.peripherals.disconnectQty ?? 0) > 0) {
+    ws.getCell(row, 1).value = "EVSE disconnect (NEC 625.43)";
+    ws.getCell(row, 3).value = "480V";
+    ws.getCell(row, 4).value = project.peripherals.disconnectQty;
+    ws.getCell(row, 5).value = result.peripherals.disconnectUnitCost;
+    ws.getCell(row, 6).value = f(`D${row}*E${row}`, result.peripherals.disconnectsTotal);
+    ws.getCell(row, 5).numFmt = MONEY;
+    ws.getCell(row, 6).numFmt = MONEY;
+    row++;
+  }
   ws.getCell(row, 1).value = "Gear total";
   ws.getCell(row, 1).font = { bold: true };
   ws.getCell(row, 6).value = f(

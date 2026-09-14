@@ -495,6 +495,10 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     }
     distributionRow(name, type, g.qty, volts, amps, fedFrom, feeds, type === "Switchboard" && !!per.existingSwitchgear);
   }
+  if ((per.disconnectQty ?? 0) > 0) {
+    const largestDc = Math.max(0, ...result.rows.filter((r) => !r.synthetic && r.category === "DCFC").map((r) => r.ocpdA));
+    distributionRow("EVSE disconnect (NEC 625.43)", "EVSE disconnect", per.disconnectQty!, 480, largestDc || undefined, mainName, "DC chargers");
+  }
   for (const item of per.customItems ?? []) if (/\(quoted\)$/.test(item.name) && item.qty > 0) distributionRow(item.name.replace(/\s*\(quoted\)$/, ""), "Other", item.qty, undefined, undefined, mainName);
   // Customer-furnished utility substructures, so the CEO sees them on his schedule; their money travels in override row 14.
   if (per.transformerPadCost > 0) distributionRow("Transformer pad (customer-furnished, utility sets the transformer)", "Other", 1, undefined, undefined, "Utility primary", mainName);

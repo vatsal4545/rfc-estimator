@@ -2,7 +2,7 @@
 
 import { ADA_UNIT_COST, BOLLARD_RULE, adaStallBreakdown } from "@/lib/calc/autoplan";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
-import { CIVIL_RATES, peripheralPriceOverrideCount, resetPeripheralPrices } from "@/lib/calc/peripherals";
+import { CIVIL_RATES, DISCONNECT_RATES, peripheralPriceOverrideCount, resetPeripheralPrices } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
@@ -293,6 +293,23 @@ export function PeripheralsTab() {
         </button>
           </>
         )}
+        <h3 className="mt-6 text-sm font-semibold text-zinc-800 dark:text-zinc-200">EVSE disconnects — NEC 625.43</h3>
+        <p className="text-xs text-zinc-500">
+          A disconnecting means at each DC charger over 60 A or 150 V to ground, lockable open. Count them by hand; the price steps with the largest DC branch breaker
+          ({money(DISCONNECT_RATES.upTo250A)} to 250 A, {money(DISCONNECT_RATES.upTo400A)} at 400 A, {money(DISCONNECT_RATES.above400A)} from 600 A) unless you type a quote. Priced into the
+          Electrical Sub-Panels, Transformers, Breakers line on Costs Internal and counted in the gear total above.
+        </p>
+        <Grid cols={3}>
+          <Field label="EVSE disconnects (ea)">
+            <input type="number" min={0} step="1" className={inputCls} value={p.disconnectQty ?? ""} placeholder="0" onChange={(e) => updateP("disconnectQty", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Field>
+          <Field label="Disconnect ($/each, installed)" hint={p.disconnectUnitCost === undefined ? `Auto by amperage: ${money(result.peripherals.disconnectUnitCost)}` : "Quoted — clear to return to the amperage default"}>
+            <input type="number" min={0} step="1" className={`${inputCls} rate-input`} value={p.disconnectUnitCost ?? ""} placeholder={String(result.peripherals.disconnectUnitCost)} onChange={(e) => updateP("disconnectUnitCost", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Field>
+          <Field label="Disconnects subtotal">
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">{money(result.peripherals.disconnectsTotal)}</div>
+          </Field>
+        </Grid>
       </Section>
 
       <Section title="B. Hardware, civil, signage — manual counts" subtitle="Ground rods, anchor bolts, rebar, concrete, signs, striping and wheel stops are auto-derived from the Takeoff counts. Everything below is what you still count by hand.">
