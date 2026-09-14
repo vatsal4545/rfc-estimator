@@ -109,6 +109,16 @@ describe("EVSE disconnects", () => {
     expect(r.peripherals.disconnectsTotal).toBe(4 * DISCONNECT_RATES.upTo400A);
   });
 
+  it("keys the default off the charger breakers, not a larger transformer primary", () => {
+    // Twelve 180 kW duals (400 A breakers) with enough Level 2 for a 500 kVA step-down, whose primary breaker is 500 A.
+    const base: Project = defaultProject();
+    base.peripherals = { ...base.peripherals, disconnectQty: 12 };
+    const big = buildQuickProject({ ...defaultQuickInput(), lines: [{ loadTypeId: "DCFC 180kW Dual", count: 12 }, { loadTypeId: "L2 Dual 40A", count: 29 }] }, base, "t", HARDWARE_ALLOWANCE);
+    const r = computeEstimate(big);
+    expect(r.panel.transformer!.primaryBreakerA).toBeGreaterThan(400);
+    expect(r.peripherals.disconnectUnitCost).toBe(DISCONNECT_RATES.upTo400A);
+  });
+
   it("prices into the sub-panels / transformers / breakers line, and nothing when uncounted", () => {
     const none = garageProject();
     const four = garageProject({ disconnectQty: 4 });

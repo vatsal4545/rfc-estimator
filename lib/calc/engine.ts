@@ -33,6 +33,7 @@ export function computeEstimate(project: Project): EstimateResult {
     rollups,
     materials.conduitLines,
     project.peripherals.useAutoGear ? panel.suggestedGear : undefined,
+    Math.max(0, ...panel.branches.filter((b) => b.voltage >= 480).map((b) => b.breakerA)),
   );
   const equipment = computeEquipment(project.equipment, project.setup, rollups);
   const costs = computeCosts(materials, peripherals, equipment, project.financial, engineOverridesOf(project.overrides));

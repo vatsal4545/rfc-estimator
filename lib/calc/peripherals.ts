@@ -97,6 +97,8 @@ export function computePeripherals(
   rollups: Rollups,
   conduitLines: MaterialsConduitLine[],
   autoGear?: GearSelection[],
+  /** The largest breaker feeding a DC charger (panel schedule) — sets the disconnect default. Falls back to the largest 480 V breaker on the gear list. */
+  largestDcBreakerA?: number,
 ): PeripheralsResult {
   const gearList = autoGear ?? input.gear;
   const gearTotals = gearList.map((g) => ({ ...g, unitCost: gearUnitCost(g), total: g.qty * gearUnitCost(g) }));
@@ -109,10 +111,12 @@ export function computePeripherals(
   const gearMainSwitchgear = (input.existingSwitchgear ? 0 : mainSwitchgear.reduce((s, g) => s + g.total, 0)) + mainBreakers.reduce((s, g) => s + g.total, 0);
   // EVSE disconnects at the chargers, counted by hand; the default rate steps
   // with the largest 480 V branch breaker on the schedule.
-  const largestDcBreakerA = gearList
-    .filter((g) => g.item === "Branch breaker" && g.voltage === "480V")
-    .reduce((m, g) => Math.max(m, Number(/(\d+)/.exec(g.size)?.[1] ?? 0)), 0);
-  const disconnectUnitCost = input.disconnectUnitCost ?? disconnectRateFor(largestDcBreakerA);
+  // The charger circuits set the rate, not the step-down transformer's
+  // primary breaker, which on a mixed site is often the largest 480 V device.
+  const largestDc =
+    largestDcBreakerA ??
+    gearList.filter((g) => g.item === "Branch breaker" && g.voltage === "480V").reduce((m, g) => Math.max(m, Number(/(\d+)/.exec(g.size)?.[1] ?? 0)), 0);
+  const disconnectUnitCost = input.disconnectUnitCost ?? disconnectRateFor(largestDc);
   const disconnectsTotal = (input.disconnectQty ?? 0) * disconnectUnitCost;
   const gearOtherTotal = otherGear.reduce((s, g) => s + g.total, 0) + disconnectsTotal;
 
