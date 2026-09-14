@@ -14,7 +14,7 @@ import { INSTALL_METHOD_INFO, effectiveInstallMethod, surfaceRouteFt } from "./c
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
 import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
-import { computeExisting, RETAIN_ELEMENTS } from "./existing";
+import { computeExisting, keepsExistingService, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS } from "./existing";
 import { fillModelSheets } from "./exportModel";
 import { computeInterconnection } from "./interconnection";
 import { activeOverrideCount, overrideSpec } from "./overrides";
@@ -1152,9 +1152,9 @@ function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
   for (const c of ic.checks) note(`${c.ok ? "OK" : "LOOK"} — ${c.label}: ${c.detail}`, c.ok ? "FF666666" : "FF9A6700");
   row++;
 
-  // Existing installation — replacement sites only.
+  // Existing site — add-load and replacement sites.
   const ex = project.existing;
-  if (ex && ex.projectType !== "greenfield") {
+  if (ex && keepsExistingService(ex.projectType)) {
     const cap = computeSiteCapacity(project);
     const revenue = modelInputsOf(project.commercial).revenue;
     const bm = MARKET_BENCHMARKS.find((b) => b.state === revenue.benchmarkState);
@@ -1167,10 +1167,10 @@ function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
       benchmarkUtilisation: bm?.portUtilisation ?? null,
       benchmarkState: revenue.benchmarkState,
     });
-    sectionTitle(ws, row, "Existing installation — rip and replace");
+    sectionTitle(ws, row, "Existing site — existing service, rip and replace, or replace and expand");
     row++;
     for (const [label, value] of [
-      ["Project type", ex.projectType === "replace" ? "Rip and replace — reuse infrastructure" : "Replace and expand — reuse plus new capacity"],
+      ["Project type", PROJECT_TYPE_TEXT[ex.projectType]],
       ["Age (years) / reason / owner", `${dash(ex.ageYears)} · ${dash(ex.reason)} · ${dash(ex.owner)}`],
       ["Scope profile", r.register.scopeProfile],
       ["Electrical scope", r.register.electricalProfile],
@@ -1179,6 +1179,8 @@ function fillIntake(ws: WS, project: Project, result: EstimateResult): void {
       ["Units working / failed / unknown", `${r.units.working} / ${r.units.failed} / ${r.units.unknown}`],
       ["Existing service carries the new load?", r.checks.serviceCarriesLoad],
       ["Existing switchgear carries the new load?", r.checks.switchgearCarriesLoad],
+      ["Load basis in force / capacity available (A)", `${r.capacity.basis} / ${Math.round(r.capacity.availableA)}`],
+      ["Existing service verdict", r.capacity.verdict],
       ["Months of history / historical kWh per year", `${r.history.months} / ${Math.round(r.history.kwhPerYear)}`],
       ["Implied retail / delivered cost ($/kWh)", `${r.history.impliedRetailPerKwh.toFixed(4)} / ${r.history.impliedDeliveredPerKwh.toFixed(4)}`],
       ["Historical availability", `${(r.history.availability * 100).toFixed(1)}%`],

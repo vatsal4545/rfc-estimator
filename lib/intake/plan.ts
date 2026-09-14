@@ -1,4 +1,4 @@
-// Plan the fill of the CEO's EVSE Project Intake 3.5.0 from a project — which
+// Plan the fill of the CEO's EVSE Project Intake 3.6.0 from a project — which
 // cell gets which value. Pure and light (no zip code), so the intake tabs can
 // preview it live; fillIntake.ts applies it to the template.
 //
@@ -15,7 +15,7 @@
 import { GPR_ITEM_NAME } from "../calc/autoplan";
 import { effectiveInstallMethod } from "../calc/install";
 import type { EstimateResult, GearSelection, Project } from "../calc/types";
-import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS } from "../existing";
+import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS, capacityOf, hasExistingChargers, keepsExistingService } from "../existing";
 import { defaultInterconnection } from "../interconnection";
 import { defaultServiceTerms, modelInputsOf } from "../proposal/defaults";
 import type { ProposalResult, ScopeLine, ScopeStatus } from "../proposal/types";
@@ -164,7 +164,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Project", PROJECT_CELLS.utility, s.utility);
   put("Project", PROJECT_CELLS.currentSchedule, it?.currentRateSchedule);
   put("Project", PROJECT_CELLS.existingServiceA, it?.existingServiceA ?? x?.infrastructure.serviceA ?? undefined);
-  put("Project", PROJECT_CELLS.serviceVoltage, it?.existingServiceVoltage ?? 480);
+  put("Project", PROJECT_CELLS.serviceVoltage, it?.existingServiceVoltage ?? x?.infrastructure.voltage ?? 480);
   put("Project", PROJECT_CELLS.billsObtained, it?.billsObtained);
   const proposalSerial = it?.proposalDate ? isoToSerial(it.proposalDate) : null;
   if (proposalSerial !== null) put("Project", PROJECT_CELLS.proposalDate, proposalSerial);
@@ -175,13 +175,18 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
 
   // ---- Existing -----------------------------------------------------------
   put("Existing", EXISTING_CELLS.projectType, PROJECT_TYPE_TEXT[x?.projectType ?? "greenfield"]);
-  if (x && x.projectType !== "greenfield") {
+  // An add-load site keeps a service but has no chargers: the register's
+  // service, feeder and switchgear rows, section D and section I travel; the
+  // charger sections (units, history, connectors, uplifts, removal) stand
+  // down on the sheet and are left blank.
+  if (x && keepsExistingService(x.projectType)) {
+    const chargers = hasExistingChargers(x.projectType);
     put("Existing", EXISTING_CELLS.ageYears, x.ageYears ?? undefined);
     put("Existing", EXISTING_CELLS.reason, x.reason);
     put("Existing", EXISTING_CELLS.owner, x.owner);
     RETAIN_ELEMENTS.forEach((e, i) => put("Existing", `B${EXISTING_CELLS.registerFirstRow + i}`, x.register[e.key] || undefined));
     const unitRows = EXISTING_UNITS_TABLE.lastRow - EXISTING_UNITS_TABLE.firstRow + 1;
-    x.units.slice(0, unitRows).forEach((u, i) => {
+    (chargers ? x.units : []).slice(0, unitRows).forEach((u, i) => {
       const r = EXISTING_UNITS_TABLE.firstRow + i;
       put("Existing", `${EXISTING_UNITS_TABLE.makeModel}${r}`, u.makeModel);
       put("Existing", `${EXISTING_UNITS_TABLE.kw}${r}`, u.kw ?? undefined);
@@ -191,10 +196,9 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       put("Existing", `${EXISTING_UNITS_TABLE.yearInstalled}${r}`, u.yearInstalled);
       put("Existing", `${EXISTING_UNITS_TABLE.working}${r}`, u.working);
     });
-    if (x.units.length > unitRows) warnings.push(`${x.units.length - unitRows} existing unit row(s) beyond the intake's ${unitRows} were not written.`);
+    if (chargers && x.units.length > unitRows) warnings.push(`${x.units.length - unitRows} existing unit row(s) beyond the intake's ${unitRows} were not written.`);
     const inf = x.infrastructure;
     put("Existing", EXISTING_CELLS.serviceA, inf.serviceA ?? undefined);
-    put("Existing", EXISTING_CELLS.voltage, inf.voltage ?? undefined);
     put("Existing", EXISTING_CELLS.spareA, inf.spareA ?? undefined);
     put("Existing", EXISTING_CELLS.frameA, inf.frameA ?? undefined);
     put("Existing", EXISTING_CELLS.branchConductor, inf.branchConductor);
@@ -202,8 +206,13 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     put("Existing", EXISTING_CELLS.conduit, inf.conduit);
     put("Existing", EXISTING_CELLS.rateSchedule, inf.rateSchedule);
     put("Existing", EXISTING_CELLS.separatelyMetered, inf.separatelyMetered);
+    const cap = capacityOf(x);
+    put("Existing", EXISTING_CELLS.peakDemandKw, cap.peakDemandKw ?? undefined);
+    put("Existing", EXISTING_CELLS.gearSpaceForFeeder, cap.gearSpaceForFeeder);
+    put("Existing", EXISTING_CELLS.utilityNotified, cap.utilityNotified);
+    if (cap.peakDemandKw === null && inf.spareA === null) leftBlank.push("Existing B192 peak demand / B52 spare capacity — the capacity verdict falls back to the bare service size until one of them is entered.");
     const monthRows = EXISTING_HISTORY_TABLE.lastRow - EXISTING_HISTORY_TABLE.firstRow + 1;
-    const history = x.history.slice(0, monthRows);
+    const history = (chargers ? x.history : []).slice(0, monthRows);
     history.forEach((h, i) => {
       const r = EXISTING_HISTORY_TABLE.firstRow + i;
       put("Existing", `${EXISTING_HISTORY_TABLE.month}${r}`, h.month);
@@ -214,7 +223,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       put("Existing", `${EXISTING_HISTORY_TABLE.portsWorking}${r}`, h.portsWorking ?? undefined);
       put("Existing", `${EXISTING_HISTORY_TABLE.note}${r}`, h.note);
     });
-    if (x.history.length > monthRows) warnings.push(`${x.history.length - monthRows} history month(s) beyond the intake's ${monthRows} were not written.`);
+    if (chargers && x.history.length > monthRows) warnings.push(`${x.history.length - monthRows} history month(s) beyond the intake's ${monthRows} were not written.`);
+    if (chargers) {
     CONNECTOR_KEYS.forEach((k, i) => {
       const r = EXISTING_CONNECTOR_ROWS.firstRow + i;
       put("Existing", `${EXISTING_CONNECTOR_ROWS.onExisting}${r}`, yesNo(x.connectors[k].onExisting));
@@ -234,6 +244,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     put("Existing", EXISTING_REMOVAL_CELLS.hazmat, x.removal.hazmat);
     put("Existing", EXISTING_REMOVAL_CELLS.temporaryCharging, x.removal.temporaryCharging);
     put("Existing", EXISTING_REMOVAL_CELLS.protectionDays, x.removal.protectionDays);
+    }
     // Revenue tab's historical block — the site's own run rate.
     const withKwh = history.filter((h) => h.kwh !== null && h.kwh !== undefined);
     if (withKwh.length > 0) {
@@ -254,7 +265,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       const withPorts = withKwh.filter((h) => h.portsWorking !== null && h.portsWorking !== undefined);
       if (withPorts.length) put("Revenue", REVENUE_CELLS.historyPortsInService, Math.round((withPorts.reduce((t, h) => t + (h.portsWorking ?? 0), 0) / withPorts.length) * 10) / 10);
     }
-    put("Revenue", REVENUE_CELLS.revenueBasis, x.revenueBasis === "historical" ? INTAKE_TEXT.revenueBasis.historical : INTAKE_TEXT.revenueBasis.market);
+    put("Revenue", REVENUE_CELLS.revenueBasis, chargers && x.revenueBasis === "historical" ? INTAKE_TEXT.revenueBasis.historical : INTAKE_TEXT.revenueBasis.market);
   }
 
   // ---- Equipment ------------------------------------------------------------

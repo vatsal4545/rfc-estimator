@@ -11,8 +11,8 @@ import { defaultCommercial } from "../../proposal/defaults";
 import { importIntakeFile, looksLikeIntake, projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.5.0.xlsx");
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.5.0.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.6.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx");
 
 describe("importing a completed intake workbook", async () => {
   const base = { ...defaultProject(), commercial: defaultCommercial() };
@@ -22,8 +22,8 @@ describe("importing a completed intake workbook", async () => {
   const proposal = computeProposal(project, estimate)!;
 
   it("recognises the workbook and records its version", () => {
-    expect(report.templateVersion).toBe("3.5.0");
-    expect(report.contentHash).toBe("707fa08be51f7f32");
+    expect(report.templateVersion).toBe("3.6.0");
+    expect(report.contentHash).toBe("3ae762acca5ac36d");
     expect(report.fileVersion).toBe("Rev A");
     expect(report.completedBy).toBe("Test CPM");
     expect(report.dateCompleted).toBe("2026-09-02");
@@ -57,7 +57,7 @@ describe("importing a completed intake workbook", async () => {
     expect(it.projectReference).toBe("BW-TEST-001");
     expect(it.county).toBe("Los Angeles");
     expect(it.cca).toBe("Clean Power Alliance");
-    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.5\.0 Rev A completed by Test CPM on 2026-09-02/);
+    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.6\.0 Rev A completed by Test CPM on 2026-09-02/);
   });
 
   it("Equipment and Electrical → Quick Estimate lines, distances, materials and gear", () => {
@@ -165,11 +165,15 @@ describe("importing a completed intake workbook", async () => {
     expect(x.connectors.chademo).toEqual({ onExisting: true, onNew: false, fleetShare: 0.03 });
     expect(x.removal).toMatchObject({ cabinets: 4, pads: 4, bollards: 8, signs: 4, disposalLoads: 2, recycling: "Yes", hazmat: "No", temporaryCharging: "No", protectionDays: 5 });
     expect(x.revenueBasis).toBe("historical");
+    // Section I (3.6.0): the capacity inputs travel; the verdict rests on the measured peak.
+    expect(x.capacity).toEqual({ peakDemandKw: 320, gearSpaceForFeeder: "Yes", utilityNotified: "Yes" });
     // Removal priced into Dump / Waste; the model runs on history × uplifts.
     expect(project.peripherals.demolitionItems).toHaveLength(6);
     expect(estimate.peripherals.dumpWaste).toBeCloseTo(5000 + 5665, 6);
     const r = computeExisting(x, { newPorts: 12, newDcPositions: 8, newDcKw: 1440, newConnectedKw: 1468.8, serviceVoltage: 480, benchmarkUtilisation: 0.231, benchmarkState: "California" });
     expect(r.history.kwhPerYear).toBe(145000);
+    expect(r.capacity.basis).toBe("NEC 220.87 — measured peak demand");
+    expect(r.checks.serviceCarriesLoad).toMatch(/^UPGRADE NEEDED — 2,208 A required against 319 A available/); // 800 − 481
     expect(proposal.model.usage.basis).toBe("override"); // the register forces kWh/day — see below
     expect(proposal.model.context.historical?.months).toBe(12);
   });

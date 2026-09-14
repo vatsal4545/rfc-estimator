@@ -11,10 +11,12 @@
 
 import { SITE_WORKS_LINES } from "../calc/costs";
 import type { EstimateResult, Project } from "../calc/types";
+import { computeExisting, hasExistingChargers, keepsExistingService } from "../existing";
 import { money, num } from "../format";
 import { modelInputsOf } from "../proposal/defaults";
 import type { ProposalResult } from "../proposal/types";
 import { RATE_LIBRARY } from "../ref/rateLibrary";
+import { computeSiteCapacity } from "../skus";
 import { OVERRIDE_ROWS } from "./cells";
 
 export interface IntakeOverrideRow {
@@ -185,6 +187,22 @@ export function intakeCompleteness(project: Project, result: EstimateResult, pro
   const libraryRow = RATE_LIBRARY.find((r) => r.utility === s.utility && r.schedule === (it?.rateSchedule ?? ""));
   const tariffOk = m.tariff.basis === "manual" ? m.tariff.manual.peakPerKwh > 0 : !!libraryRow && !/NOT PUBLISHED|PLACEHOLDER/i.test(libraryRow.status);
 
+  // Existing!B201 — on an add-load or retained-service site the existing service and switchgear must carry the new load before the model is built.
+  const ex = project.existing;
+  let existingCapacityOk = true;
+  if (ex && keepsExistingService(ex.projectType)) {
+    const cap = computeSiteCapacity(project);
+    existingCapacityOk = computeExisting(ex, {
+      newPorts: cap.dcPositions + cap.l2Positions,
+      newDcPositions: cap.dcPositions,
+      newDcKw: cap.dcNameplateKw,
+      newConnectedKw: cap.dcNameplateKw + cap.l2NameplateKw,
+      serviceVoltage: ex.infrastructure.voltage ?? 480,
+      benchmarkUtilisation: null,
+      benchmarkState: "",
+    }).capacity.verdict.startsWith("OK");
+  }
+
   const section = (key: string, label: string, checks: SectionCheck[]): SectionStatus => {
     const filled = checks.filter((x) => x.ok).length;
     return { key, label, checks, filled, total: checks.length, state: filled === 0 ? "empty" : filled === checks.length ? "done" : "partial" };
@@ -205,7 +223,8 @@ export function intakeCompleteness(project: Project, result: EstimateResult, pro
     ]),
     section("existing", "Existing", [
       { label: "Project type stated", ok: !!project.existing },
-      { label: "History entered (replacement sites)", ok: project.existing ? project.existing.projectType === "greenfield" || project.existing.history.some((h) => has(h.kwh)) : false },
+      { label: "History entered (replacement sites)", ok: ex ? !hasExistingChargers(ex.projectType) || ex.history.some((h) => has(h.kwh)) : false },
+      { label: "Existing service carries the added load (add-load and retained-service sites)", ok: existingCapacityOk },
     ]),
     section("equipment", "2 · Equipment", [
       { label: "At least one charger line", ok: lines.length > 0 },

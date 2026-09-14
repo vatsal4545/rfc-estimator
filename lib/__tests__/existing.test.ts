@@ -5,6 +5,7 @@ import { computeEstimate } from "../calc/engine";
 import {
   DEFAULT_REMOVAL_RATES,
   RETAIN_ELEMENTS,
+  applyProjectType,
   applyRemovalScope,
   computeExisting,
   defaultExisting,
@@ -14,7 +15,8 @@ import {
   type ExistingContext,
   type ExistingInput,
 } from "../existing";
-import { defaultCommercial } from "../proposal/defaults";
+import { defaultInterconnection } from "../interconnection";
+import { defaultCommercial, defaultIntake as defaultCommercialIntake } from "../proposal/defaults";
 import { computeProposal } from "../proposal";
 
 const KWH = [9800, 10200, 9900, 11500, 12000, 11800, 12500, 13100, 12800, 13400, 13900, 14100];
@@ -64,9 +66,15 @@ describe("existing installation — rip and replace", () => {
     expect(r.units.working).toBe(2);
     expect(r.units.failed).toBe(2);
     expect(r.units.powerPerPosition).toBeCloseTo(37.5, 9);
-    // 1,468.8 kW at 480 V × 125% = 2,208 A against an 800 A service.
-    expect(r.checks.serviceCarriesLoad).toMatch(/^UNDERSIZED — 2,208 A/);
-    expect(r.checks.switchgearCarriesLoad).toMatch(/^UNDERSIZED/);
+    // 1,468.8 kW at 480 V × 125% = 2,208 A. No measured demand, so the basis is
+    // the 200 A of stated spare capacity plus the 271 A the 225 kW of removed
+    // chargers give back — 471 A available (Existing!B195).
+    expect(r.capacity.basis).toBe("Spare capacity stated for the gear");
+    expect(r.capacity.newAmps125).toBeCloseTo(2208, 0);
+    expect(r.capacity.availableA).toBeCloseTo(200 + (225 * 1000) / (480 * Math.sqrt(3)), 6);
+    expect(r.checks.serviceCarriesLoad).toMatch(/^UPGRADE NEEDED — 2,208 A required against 471 A available \(Spare capacity/);
+    expect(r.checks.switchgearCarriesLoad).toMatch(/^UNDERSIZED — the 800 A frame does not cover the new load at 125% plus the 600 A already on it/);
+    expect(r.capacity.verdict).toMatch(/^NOT YET — service: UPGRADE NEEDED/);
     expect(r.checks.loadChange).toBe("+1,244 kW (+553%) against the existing 225 kW");
     expect(r.checks.reuseFeasible).toMatch(/^NOT FEASIBLE/);
   });
@@ -144,9 +152,106 @@ describe("existing installation — rip and replace", () => {
 
   it("project type text from the intake's dropdown", () => {
     expect(projectTypeFromText("Greenfield — new service")).toBe("greenfield");
+    expect(projectTypeFromText("Greenfield — add load to existing service")).toBe("addLoad");
     expect(projectTypeFromText("Rip and replace — reuse infrastructure")).toBe("replace");
     expect(projectTypeFromText("Replace and expand — reuse plus new capacity")).toBe("expand");
     expect(projectTypeFromText("")).toBe("greenfield");
+  });
+});
+
+describe("existing site — greenfield, add load to existing service (intake 3.6.0 section I)", () => {
+  /** A 1,200 A 480 V service and board, 320 kW measured peak, taking 300 kW of new chargers. */
+  function addLoad(): ExistingInput {
+    const x = defaultExisting();
+    x.projectType = "addLoad";
+    x.register.service = "RETAIN";
+    x.register.feeder = "RETAIN";
+    x.register.switchgear = "RETAIN";
+    x.infrastructure = { ...x.infrastructure, serviceA: 1200, voltage: 480, spareA: null, frameA: 1200 };
+    x.capacity = { peakDemandKw: 320, gearSpaceForFeeder: "Yes", utilityNotified: "Yes" };
+    return x;
+  }
+  const small: ExistingContext = { ...ctx, newPorts: 4, newDcPositions: 4, newDcKw: 300, newConnectedKw: 300 };
+  const amps125 = (kw: number) => ((kw * 1000) / (480 * Math.sqrt(3))) * 1.25;
+
+  it("keeps a service but has no chargers: the register's service rows and section I apply, the charger sections stand down", () => {
+    const r = computeExisting(addLoad(), small);
+    expect(r.keepsService).toBe(true);
+    expect(r.isReplacement).toBe(false);
+    expect(r.register.scopeProfile).toMatch(/^Add load to existing service — no new service, no new feeder/);
+    expect(r.register.electricalProfile).toMatch(/^EXISTING SERVICE — no new service and no service feeder/);
+    expect(r.register.constructionProfile).toMatch(/^GREENFIELD SITE WORKS ON AN EXISTING SERVICE/);
+    expect(r.checks.loadChange).toBe("n/a — no existing chargers; the added load is 300 kW on top of the building load");
+    expect(r.removal.lines).toHaveLength(0);
+    expect(r.removal.crewDays).toBe(0);
+    expect(removalItems(addLoad())).toEqual([]);
+    expect(r.historicalUsable).toBe(false);
+  });
+
+  it("measured peak demand (NEC 220.87) is the strongest basis: service size less the demand at 125%", () => {
+    const r = computeExisting(addLoad(), small);
+    expect(r.capacity.basis).toBe("NEC 220.87 — measured peak demand");
+    expect(r.capacity.newAmps125).toBeCloseTo(amps125(300), 6);
+    expect(r.capacity.demandAmps125).toBeCloseTo(amps125(320), 6);
+    expect(r.capacity.availableA).toBeCloseTo(1200 - amps125(320), 6);
+    expect(r.checks.serviceCarriesLoad).toMatch(/^OK — 719 A available against 451 A the new load needs at 125% \(NEC 220\.87/);
+    // The frame must carry the existing demand plus the new load: 481 + 451 = 932 A on 1,200 A.
+    expect(r.checks.switchgearCarriesLoad).toMatch(/^OK — the 1,200 A frame carries the existing demand plus the new load at 125% \(932 A\)/);
+    expect(r.capacity.verdict).toBe("OK — the existing service and switchgear carry the added load");
+    expect(r.capacity.notes).toEqual([]);
+  });
+
+  it("without measured demand it falls back to the stated spare capacity, then to the bare service size", () => {
+    const spare = addLoad();
+    spare.capacity!.peakDemandKw = null;
+    spare.infrastructure.spareA = 500;
+    let r = computeExisting(spare, small);
+    expect(r.capacity.basis).toBe("Spare capacity stated for the gear");
+    expect(r.capacity.availableA).toBe(500); // no removed chargers to give current back
+    expect(r.checks.serviceCarriesLoad).toMatch(/^OK — 500 A available against 451 A/);
+    // With spare capacity the frame must carry what is already on it (1,200 − 500 = 700 A) plus the new load.
+    expect(r.checks.switchgearCarriesLoad).toMatch(/^OK — the 1,200 A frame is adequate for the new load on top of the load already on it/);
+    spare.infrastructure.spareA = 400;
+    r = computeExisting(spare, small);
+    expect(r.checks.serviceCarriesLoad).toMatch(/^UPGRADE NEEDED — 451 A required against 400 A available/);
+    expect(r.checks.reuseFeasible).toMatch(/^NOT FEASIBLE/);
+    expect(r.capacity.verdict).toMatch(/^NOT YET — service: UPGRADE NEEDED/);
+    const bare = addLoad();
+    bare.capacity!.peakDemandKw = null;
+    r = computeExisting(bare, small);
+    expect(r.capacity.basis).toBe("Service size only — no existing-load data");
+    expect(r.capacity.availableA).toBe(1200);
+    expect(r.checks.switchgearCarriesLoad).toMatch(/^OK — the 1,200 A frame is adequate for the new load$/);
+    const none = addLoad();
+    none.capacity!.peakDemandKw = null;
+    none.infrastructure.serviceA = null;
+    r = computeExisting(none, small);
+    expect(r.capacity.basis).toBe("no basis yet");
+    expect(r.checks.serviceCarriesLoad).toBe("enter the existing service size, its spare capacity or its peak demand");
+  });
+
+  it("the gear-space and utility-notification answers surface as notes, and a body stored before 3.6.0 reads with defaults", () => {
+    const x = addLoad();
+    x.capacity = { peakDemandKw: 320, gearSpaceForFeeder: "No", utilityNotified: "No" };
+    const r = computeExisting(x, small);
+    expect(r.capacity.notes).toHaveLength(2);
+    expect(r.capacity.notes[0]).toMatch(/section extension or a tap box/);
+    delete (x as Partial<ExistingInput>).capacity;
+    const legacy = computeExisting(x, small);
+    expect(legacy.capacity.basis).toBe("Service size only — no existing-load data");
+    expect(legacy.capacity.notes).toEqual(["Space on the existing gear for the new feeder not yet answered.", "Utility notification of the added load not yet answered."]);
+  });
+
+  it("applyProjectType fills in what an add-load site implies, only where blank", () => {
+    const p = { ...defaultProject(), intake: { ...defaultCommercialIntake(), interconnection: { ...defaultInterconnection(), serviceType: "New service" as const } } };
+    const next = applyProjectType(p, "addLoad");
+    expect(next.existing!.projectType).toBe("addLoad");
+    expect(next.existing!.register).toMatchObject({ service: "RETAIN", feeder: "RETAIN", switchgear: "RETAIN", pads: "" });
+    expect(next.intake!.interconnection).toMatchObject({ serviceType: "New service", serviceFeederBy: "Existing — retained", pointOfConnection: "Existing MSB" });
+    // Switching to a replacement leaves the register alone; back to greenfield too.
+    const rep = applyProjectType(next, "replace");
+    expect(rep.existing!.register.service).toBe("RETAIN");
+    expect(applyProjectType(rep, "greenfield").existing!.projectType).toBe("greenfield");
   });
 });
 

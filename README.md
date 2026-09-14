@@ -62,7 +62,7 @@ python scripts/verify-cached-values.py out.xlsx
 ## Commercial layer (Commercial tab)
 
 The estimator stops at **Total Cost**. The Commercial tab (`lib/proposal/`) turns
-that cost into a **customer price** the way the CEO's EVSE Project Intake 3.5.0
+that cost into a **customer price** the way the CEO's EVSE Project Intake 3.6.0
 and the Best Western project model do, without touching the engine:
 
 - Markups on materials-class lines and on labour (after contingency), discounts
@@ -132,7 +132,7 @@ matching sheets with live formulas (`lib/exportModel.ts`).
 
 ### Intake import, replacement sites, Rule 29 and the override register
 
-- **Import a completed intake** (Intake tab): a filled EVSE Project Intake 3.5.0
+- **Import a completed intake** (Intake tab): a filled EVSE Project Intake 3.6.0
   workbook becomes a new project — chargers and run distances, labour, D&E
   units, site-works quantities and rentals, pass-through fees, commercial and
   financing terms, revenue / tariff / carbon / deal assumptions, the existing
@@ -141,13 +141,21 @@ matching sheets with live formulas (`lib/exportModel.ts`).
   in force; the intake's unit costs do not travel. `lib/intake/xlsx.ts` is a
   small jszip-based cell reader (ExcelJS cannot open the CEO's template);
   `scripts/make-intake-sample.py` fills the template into the test fixture.
-- **Existing site** tab (`lib/existing.ts`): project type, the retain /
-  replace register, existing units, infrastructure, up to 36 months of
-  metered history, connector coverage, the four capture-factor uplifts and
-  the projected baseline, and the removal scope. Removal lines price into the
-  Dump / Waste line; with the revenue basis set to historical actuals (twelve
-  months minimum) the business model starts at the site's run rate and ramps
-  the uplift in instead of using the greenfield build-up.
+- **Existing site** tab (`lib/existing.ts`): project type (four since intake
+  3.6.0 — greenfield with a new service, greenfield adding its load to an
+  existing service and switchboard, rip and replace, replace and expand), the
+  retain / replace register, existing units, infrastructure, section I's
+  capacity test of the existing service (NEC 220.87 measured peak demand,
+  then stated spare capacity, then the bare service size — the verdict names
+  the basis it used), up to 36 months of metered history, connector coverage,
+  the four capture-factor uplifts and the projected baseline, and the removal
+  scope. On an add-load site only the service rows, the infrastructure and
+  the capacity test apply; picking that type fills in RETAIN on service /
+  feeder / switchgear and the added-load service type and retained feeder on
+  3 · Electrical where they are blank. Removal lines price into the Dump /
+  Waste line; with the revenue basis set to historical actuals (twelve months
+  minimum) the business model starts at the site's run rate and ramps the
+  uplift in instead of using the greenfield build-up.
 - **Utility interconnection** (Intake tab, `lib/interconnection.ts`): the
   regime resolved from the delivery utility (PG&E / SCE Rule 29, SDG&E Rule
   45, publicly owned utilities' own policies, Michigan), what the customer
@@ -169,7 +177,7 @@ The client does not fill the intake; we do. The app therefore has two ways
 through one project (the switch sits in the header, the choice is remembered
 per browser):
 
-- **Intake** — the CEO's EVSE Project Intake 3.5.0 tab for tab, in its order
+- **Intake** — the CEO's EVSE Project Intake 3.6.0 tab for tab, in its order
   and vocabulary: 1 · Project, Existing, 2 · Equipment, 3 · Electrical,
   4 · Construction, 5 · Commercial, 6 · Revenue, 7 · Carbon, 8 · Deal
   structure, 9 · Overrides, then the **Business model** output and **Version
@@ -183,7 +191,7 @@ per browser):
 - **Estimator** — the engineering detail, unchanged: Quick Estimate, Setup,
   Takeoff, Panel schedule, Peripherals, Financials, Costs Internal, Results…
 
-**⬇ Intake 3.5.0** (toolbar and the handoff tab) writes the project into a copy
+**⬇ Intake 3.6.0** (toolbar and the handoff tab) writes the project into a copy
 of the blank template shipped in `public/intake/` — values only, through a
 small jszip cell patcher (`lib/intake/xlsxWrite.ts`, the twin of the reader),
 so the template's formulas, live checks, dropdowns, comments and defined
@@ -274,7 +282,7 @@ benchmarks) are generated from the template with `npm run refdata`.
   customer price), `margin.ts` (scope of supply, margin by line, construction
   margin build-up), `model.ts` (tariff, revenue, carbon, financing, cashflow,
   deal structure), `finance.ts` (PMT / NPV / IRR with Excel's conventions),
-  `defaults.ts` (intake 3.5.0 terms). Reads the engine's result, never
+  `defaults.ts` (intake 3.6.0 terms). Reads the engine's result, never
   modifies it.
 - `lib/ref/` — generated reference data from the CEO's intake template
   (`scripts/import-intake-refdata.py`).
@@ -282,7 +290,7 @@ benchmarks) are generated from the template with `npm run refdata`.
   service / EVOLV derivation from the price book's service classes, site
   capacity for the business model.
 - `lib/intake/` — the intake importer (`xlsx.ts` reader, `importIntake.ts`
-  mapping, a filled 3.5.0 fixture under `__fixtures__/`); `lib/existing.ts`,
+  mapping, a filled 3.6.0 fixture under `__fixtures__/`); `lib/existing.ts`,
   `lib/interconnection.ts`, `lib/overrides.ts` — the replacement-site scope,
   the Rule 29 block and the override register.
 - `lib/recalc/` — the formula engine that gives every exported formula cell

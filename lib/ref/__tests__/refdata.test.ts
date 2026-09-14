@@ -13,9 +13,9 @@ import { RATE_SCHEDULE_PICKER, UTILITIES } from "../utilities";
 
 describe("reference data — provenance", () => {
   it("records the template it came from", () => {
-    expect(REFDATA_META.templateVersion).toBe("3.5.0");
-    expect(REFDATA_META.contentHash).toBe("707fa08be51f7f32");
-    expect(REFDATA_META.released).toBe("2026-09-12");
+    expect(REFDATA_META.templateVersion).toBe("3.6.0");
+    expect(REFDATA_META.contentHash).toBe("3ae762acca5ac36d");
+    expect(REFDATA_META.released).toBe("2026-09-14");
   });
 });
 

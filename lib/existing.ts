@@ -1,6 +1,10 @@
-// The existing installation on a replacement site — the CEO intake's Existing
-// tab (1B · Rip and replace). What is retained and what is replaced, the units
-// coming out, the electrical infrastructure already in the ground, up to
+// The existing site — the CEO intake's Existing tab (1B · existing service,
+// rip and replace, or replace and expand). Four project types since intake
+// 3.6.0: a greenfield build with a new service; a greenfield build that adds
+// its load to an existing service and switchboard (no chargers today); and
+// the two replacement types where chargers exist. What is retained and what
+// is replaced, the units coming out, the electrical infrastructure already in
+// the ground, section I's capacity test of that infrastructure, up to
 // thirty-six months of metered history, the port / connector / power uplifts
 // with their capture factors, and the removal scope.
 //
@@ -13,12 +17,25 @@
 
 import type { CustomLineItem, Project } from "./calc/types";
 
-export type ProjectType = "greenfield" | "replace" | "expand";
+export type ProjectType = "greenfield" | "addLoad" | "replace" | "expand";
+/** The intake's Existing!B5 dropdown, in its order. */
 export const PROJECT_TYPE_TEXT: Record<ProjectType, string> = {
   greenfield: "Greenfield — new service",
+  addLoad: "Greenfield — add load to existing service",
   replace: "Rip and replace — reuse infrastructure",
   expand: "Replace and expand — reuse plus new capacity",
 };
+export const PROJECT_TYPE_HINT: Record<ProjectType, string> = {
+  greenfield: "Builds everything, including a new utility service. Only the project type applies on this tab.",
+  addLoad: "No chargers today, but a service and switchboard that can take the new load. The register's service, feeder and switchgear rows, the existing infrastructure and the capacity test apply; the charger sections stand down.",
+  replace: "Chargers exist today and are swapped on the existing infrastructure. Every section applies.",
+  expand: "Chargers exist today; they are replaced and the site grows. Every section applies.",
+};
+
+/** Chargers exist on the site today — the register, units, history, uplifts and removal scope all apply. */
+export const hasExistingChargers = (t: ProjectType): boolean => t === "replace" || t === "expand";
+/** The site keeps an electrical service that must carry the new load — the infrastructure rows and section I apply. */
+export const keepsExistingService = (t: ProjectType): boolean => t !== "greenfield";
 
 export type RetainDecision = "" | "RETAIN" | "REPLACE" | "PARTIAL" | "NOT PRESENT";
 export const RETAIN_DECISIONS: RetainDecision[] = ["", "RETAIN", "REPLACE", "PARTIAL", "NOT PRESENT"];
@@ -95,6 +112,26 @@ export interface RemovalRates {
   protectionDay: number;
 }
 
+/**
+ * Section I · capacity of the existing service (intake 3.6.0 rows 188–201).
+ * The three inputs; the verdicts are computed. Optional on stored bodies
+ * written before 3.6.0 — read it through `capacityOf()`.
+ */
+export interface ExistingCapacity {
+  /** Highest fifteen-minute demand on the last twelve months of interval data or bills (kW) — NEC 220.87. */
+  peakDemandKw: number | null;
+  /** A spare main-section breaker, section or tap position to land the new feeder. */
+  gearSpaceForFeeder: "" | "Yes" | "No" | "Unknown";
+  /** Adding load to an existing service is still an application with most utilities. */
+  utilityNotified: "" | "Yes" | "No" | "Not required" | "Unknown";
+}
+
+export function defaultCapacity(): ExistingCapacity {
+  return { peakDemandKw: null, gearSpaceForFeeder: "", utilityNotified: "" };
+}
+
+export const capacityOf = (x: Pick<ExistingInput, "capacity">): ExistingCapacity => ({ ...defaultCapacity(), ...x.capacity });
+
 export interface ExistingInput {
   projectType: ProjectType;
   ageYears: number | null;
@@ -113,6 +150,8 @@ export interface ExistingInput {
     rateSchedule: string;
     separatelyMetered: "" | "Yes" | "No" | "Unknown";
   };
+  /** Section I — the existing service's capacity for the new load (add-load and replacement sites). */
+  capacity?: ExistingCapacity;
   history: HistoryMonth[];
   connectors: Record<ConnectorKey, ConnectorRow>;
   /** Capture factors: how much of each theoretical uplift converts to energy sold (intake defaults). */
@@ -171,6 +210,7 @@ export function defaultExisting(): ExistingInput {
       rateSchedule: "",
       separatelyMetered: "",
     },
+    capacity: defaultCapacity(),
     history: [],
     connectors: {
       nacs: { onExisting: false, onNew: true, fleetShare: 0 },
@@ -188,9 +228,35 @@ export function defaultExisting(): ExistingInput {
 /** Project type from the intake's dropdown text. */
 export function projectTypeFromText(text: string): ProjectType {
   const t = text.trim().toLowerCase();
-  if (!t || t.startsWith("greenfield")) return "greenfield";
+  if (!t) return "greenfield";
+  if (t.startsWith("greenfield")) return t.includes("add load") || t.includes("existing service") ? "addLoad" : "greenfield";
   if (t.includes("expand")) return "expand";
   return "replace";
+}
+
+/**
+ * What choosing a project type implies elsewhere in the project, filled in
+ * only where the field is still blank. An add-load site by definition keeps
+ * its service, feeder and switchgear, connects at the existing switchgear
+ * and is an added-load application with the utility — the intake's row 200
+ * checks that the three tabs agree, so set them together.
+ */
+export function applyProjectType(project: Project, projectType: ProjectType): Project {
+  const x: ExistingInput = { ...(project.existing ?? defaultExisting()), projectType };
+  let next: Project = { ...project, existing: x };
+  if (projectType !== "addLoad") return next;
+  const register = { ...x.register };
+  for (const k of ["service", "feeder", "switchgear"] as const) if (!register[k]) register[k] = "RETAIN";
+  next = { ...next, existing: { ...x, register } };
+  const ic = next.intake?.interconnection;
+  if (next.intake && ic) {
+    const patched = { ...ic };
+    if (!patched.serviceType) patched.serviceType = "Added load to existing service";
+    if (!patched.serviceFeederBy) patched.serviceFeederBy = "Existing — retained";
+    if (!patched.pointOfConnection) patched.pointOfConnection = "Existing MSB";
+    next = { ...next, intake: { ...next.intake, interconnection: patched } };
+  }
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,12 +289,36 @@ export interface RemovalLine extends CustomLineItem {
   total: number;
 }
 
+export interface CapacityResult {
+  /** False on a greenfield build with a new service — nothing to test. */
+  applies: boolean;
+  newLoadKw: number;
+  /** The new load at 125% (A) — the continuous-load rule; what the existing service has to have free. */
+  newAmps125: number;
+  peakDemandKw: number | null;
+  /** The measured peak at 125% (A) — what NEC 220.87 takes the existing load to be. */
+  demandAmps125: number;
+  /** Which of the three answers the verdict rests on: measured demand, stated spare capacity, or the bare service size. */
+  basis: string;
+  /** Capacity available for the new load (A). */
+  availableA: number;
+  gearSpaceForFeeder: ExistingCapacity["gearSpaceForFeeder"];
+  utilityNotified: ExistingCapacity["utilityNotified"];
+  /** One line for the reviewer (Existing!B201 without the cross-tab check): OK, NOT YET, or n/a. */
+  verdict: string;
+  notes: string[];
+}
+
 export interface ExistingResult {
   projectType: ProjectType;
+  /** Chargers exist today (rip and replace, replace and expand). */
   isReplacement: boolean;
+  /** The site keeps a service the new load must fit on (add-load and replacement sites). */
+  keepsService: boolean;
   register: { retained: number; replaced: number; scopeProfile: string; electricalProfile: string; constructionProfile: string };
   units: { count: number; ports: number; connectedKw: number; working: number; failed: number; unknown: number; powerPerPosition: number };
   checks: { serviceCarriesLoad: string; switchgearCarriesLoad: string; loadChange: string; reuseFeasible: string };
+  capacity: CapacityResult;
   history: {
     months: number;
     totalKwh: number;
@@ -267,28 +357,36 @@ const fmt = (v: number, d = 0) => v.toLocaleString("en-US", { minimumFractionDig
 const signed = (v: number) => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
 
 export function computeExisting(x: ExistingInput, ctx: ExistingContext): ExistingResult {
-  const isReplacement = x.projectType !== "greenfield";
+  const isReplacement = hasExistingChargers(x.projectType);
+  const keepsService = keepsExistingService(x.projectType);
+  const addLoad = x.projectType === "addLoad";
   const decisions = RETAIN_ELEMENTS.map((e) => x.register[e.key]);
   const retained = decisions.filter((d) => d === "RETAIN").length;
   const replaced = decisions.filter((d) => d === "REPLACE" || d === "PARTIAL").length;
   const reg = x.register;
-  const scopeProfile = !isReplacement
-    ? "Greenfield — the full electrical and civil scope is priced"
-    : reg.service === "RETAIN"
-      ? reg.feeder === "RETAIN"
-        ? "Infrastructure reuse — no new service, no new feeder"
-        : "Service retained, feeder replaced"
-      : "New or upgraded service — price this as greenfield electrical";
-  const electricalProfile = !isReplacement
-    ? "GREENFIELD — price the full electrical scope"
-    : reg.service === "RETAIN" && reg.branchConductors === "RETAIN" && reg.conduitTrench === "RETAIN"
-      ? "CHARGER SWAP — electrical scope is breakers, terminations and commissioning only"
-      : "PARTIAL — price the replaced elements; zero the retained lines on the takeoff";
-  const constructionProfile = !isReplacement
-    ? "GREENFIELD — full site works"
-    : reg.conduitTrench === "RETAIN"
-      ? "PAD-AND-CHARGER SWAP — demolition, new pads, reinstatement and protection. No trenching, no paving beyond the pads."
-      : "PARTIAL — trenching required for the replaced runs; reinstate what is opened";
+  const scopeProfile = addLoad
+    ? "Add load to existing service — no new service, no new feeder; connect at the existing switchgear and price the distribution from there inward"
+    : !isReplacement
+      ? "Greenfield — the full electrical and civil scope is priced"
+      : reg.service === "RETAIN"
+        ? reg.feeder === "RETAIN"
+          ? "Infrastructure reuse — no new service, no new feeder"
+          : "Service retained, feeder replaced"
+        : "New or upgraded service — price this as greenfield electrical";
+  const electricalProfile = addLoad
+    ? "EXISTING SERVICE — no new service and no service feeder; price the distribution from the existing switchgear inward and the full charger scope"
+    : !isReplacement
+      ? "GREENFIELD — price the full electrical scope"
+      : reg.service === "RETAIN" && reg.branchConductors === "RETAIN" && reg.conduitTrench === "RETAIN"
+        ? "CHARGER SWAP — electrical scope is breakers, terminations and commissioning only"
+        : "PARTIAL — price the replaced elements; zero the retained lines on the takeoff";
+  const constructionProfile = addLoad
+    ? "GREENFIELD SITE WORKS ON AN EXISTING SERVICE — pads, trench and conduit from the existing switchgear; no service or transformer work"
+    : !isReplacement
+      ? "GREENFIELD — full site works"
+      : reg.conduitTrench === "RETAIN"
+        ? "PAD-AND-CHARGER SWAP — demolition, new pads, reinstatement and protection. No trenching, no paving beyond the pads."
+        : "PARTIAL — trenching required for the replaced runs; reinstate what is opened";
 
   // Units coming out.
   const units = x.units.filter((u) => n(u.qty) > 0);
@@ -303,35 +401,83 @@ export function computeExisting(x: ExistingInput, ctx: ExistingContext): Existin
   const dcPorts = sum(dcUnits.map((u) => n(u.ports) * n(u.qty)));
   const existingPowerPerPosition = dcPorts > 0 ? dcKw / dcPorts : 0;
 
-  // Capacity checks (Existing!B60-B62, Electrical!B82).
+  // Section I — capacity of the existing service (Existing!B190–B201; rows
+  // 60–61 and Electrical!B215 read it). Three ways to answer "does the
+  // existing service carry the new load", in order of strength: the measured
+  // peak demand at 125% (NEC 220.87), the spare capacity stated for the gear,
+  // or the bare service size.
   const inf = x.infrastructure;
+  const cap = capacityOf(x);
   const volts = n(inf.voltage) || ctx.serviceVoltage || 480;
-  const newAmps125 = ctx.newConnectedKw > 0 ? ((ctx.newConnectedKw * 1000) / (volts * Math.sqrt(3))) * 1.25 : 0;
-  const serviceCarriesLoad = !isReplacement
+  const amps125 = (kw: number) => (kw > 0 ? ((kw * 1000) / (volts * Math.sqrt(3))) * 1.25 : 0);
+  const isNum = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);
+  const newAmps125 = amps125(ctx.newConnectedKw);
+  const hasDemand = isNum(cap.peakDemandKw);
+  const hasSpare = isNum(inf.spareA);
+  const hasService = isNum(inf.serviceA);
+  const demandAmps125 = hasDemand ? amps125(cap.peakDemandKw ?? 0) : 0;
+  const basis = hasDemand ? "NEC 220.87 — measured peak demand" : hasSpare ? "Spare capacity stated for the gear" : hasService ? "Service size only — no existing-load data" : "no basis yet";
+  // On a replacement the removed chargers give their current back to the spare capacity.
+  const removedAmps = isReplacement && unitKw > 0 ? (unitKw * 1000) / (volts * Math.sqrt(3)) : 0;
+  const availableA = !keepsService ? 0 : hasDemand ? Math.max(0, n(inf.serviceA) - demandAmps125) : hasSpare ? n(inf.spareA) + removedAmps : n(inf.serviceA);
+  const serviceCarriesLoad = !keepsService
     ? "n/a — greenfield, there is no existing service"
-    : n(inf.serviceA) === 0 || ctx.newConnectedKw === 0
-      ? "enter the existing service size and the new equipment"
-      : newAmps125 <= n(inf.serviceA)
-        ? `OK — ${fmt(newAmps125)} A required at 125% against a ${fmt(n(inf.serviceA))} A service`
-        : `UNDERSIZED — ${fmt(newAmps125)} A required at 125% against a ${fmt(n(inf.serviceA))} A service. A service upgrade puts Rule 29 back in scope.`;
-  const switchgearCarriesLoad = !isReplacement
+    : newAmps125 === 0
+      ? "enter the new equipment"
+      : basis === "no basis yet"
+        ? "enter the existing service size, its spare capacity or its peak demand"
+        : newAmps125 <= availableA
+          ? `OK — ${fmt(availableA)} A available against ${fmt(newAmps125)} A the new load needs at 125% (${basis})`
+          : `UPGRADE NEEDED — ${fmt(newAmps125)} A required against ${fmt(availableA)} A available (${basis}). A new or enlarged service puts Rule 29 back in scope.`;
+  const loadAlreadyOnFrame = hasSpare ? Math.max(0, n(inf.serviceA) - n(inf.spareA)) : 0;
+  const switchgearCarriesLoad = !keepsService
     ? "n/a — greenfield, there is no existing gear"
-    : n(inf.frameA) === 0 || ctx.newConnectedKw === 0
-      ? "enter the existing frame as a number and the new equipment"
-      : newAmps125 <= n(inf.frameA)
-        ? `OK — the ${fmt(n(inf.frameA))} A frame covers ${fmt(newAmps125)} A`
-        : `UNDERSIZED — the ${fmt(n(inf.frameA))} A frame does not cover ${fmt(newAmps125)} A. Replace the switchgear.`;
-  const loadChange =
-    unitKw === 0 || ctx.newConnectedKw === 0
+    : !isNum(inf.frameA)
+      ? "enter the existing frame as a number"
+      : newAmps125 === 0
+        ? "enter the new equipment"
+        : hasDemand
+          ? inf.frameA >= demandAmps125 + newAmps125
+            ? `OK — the ${fmt(inf.frameA)} A frame carries the existing demand plus the new load at 125% (${fmt(demandAmps125 + newAmps125)} A)`
+            : `UNDERSIZED — ${fmt(demandAmps125 + newAmps125)} A on a ${fmt(inf.frameA)} A frame. Replace the switchgear.`
+          : inf.frameA >= newAmps125 + loadAlreadyOnFrame
+            ? `OK — the ${fmt(inf.frameA)} A frame is adequate for the new load${hasSpare ? " on top of the load already on it" : ""}`
+            : `UNDERSIZED — the ${fmt(inf.frameA)} A frame does not cover the new load at 125%${hasSpare ? ` plus the ${fmt(loadAlreadyOnFrame)} A already on it` : ""}. Replace the switchgear.`;
+  const loadChange = addLoad
+    ? `n/a — no existing chargers; the added load is ${fmt(ctx.newConnectedKw)} kW on top of the building load`
+    : unitKw === 0 || ctx.newConnectedKw === 0
       ? "enter the existing equipment and the new equipment"
       : `${signed(ctx.newConnectedKw - unitKw)} kW (${signed(Math.round((ctx.newConnectedKw / unitKw - 1) * 100))}%) against the existing ${fmt(unitKw)} kW`;
-  const reuseFeasible = !isReplacement
+  const reuseFeasible = !keepsService
     ? "n/a"
-    : n(inf.serviceA) === 0 || ctx.newConnectedKw === 0
+    : newAmps125 === 0 || basis === "no basis yet"
       ? "enter the existing service size and the new equipment"
-      : newAmps125 <= n(inf.serviceA)
+      : newAmps125 <= availableA
         ? "OK — reuse is feasible on capacity grounds"
-        : "NOT FEASIBLE on capacity — the new load exceeds the existing service; price a new or upgraded service";
+        : "NOT FEASIBLE on capacity — the new load exceeds what the existing service has free; price a new or upgraded service";
+  const capacityNotes: string[] = [];
+  if (keepsService && cap.gearSpaceForFeeder === "No") capacityNotes.push("No spare position on the existing gear for the new feeder — a section extension or a tap box goes on the distribution schedule.");
+  if (keepsService && cap.gearSpaceForFeeder === "") capacityNotes.push("Space on the existing gear for the new feeder not yet answered.");
+  if (keepsService && cap.utilityNotified === "No") capacityNotes.push("The utility has not been notified of the added load — most utilities treat it as an application even with no new service.");
+  if (keepsService && cap.utilityNotified === "") capacityNotes.push("Utility notification of the added load not yet answered.");
+  const capacityVerdict = !keepsService
+    ? "n/a — greenfield, the service is priced new"
+    : serviceCarriesLoad.startsWith("OK") && switchgearCarriesLoad.startsWith("OK")
+      ? "OK — the existing service and switchgear carry the added load"
+      : `NOT YET — ${[!serviceCarriesLoad.startsWith("OK") ? `service: ${serviceCarriesLoad}` : "", !switchgearCarriesLoad.startsWith("OK") ? `frame: ${switchgearCarriesLoad}` : ""].filter(Boolean).join("; ")}`;
+  const capacity: CapacityResult = {
+    applies: keepsService,
+    newLoadKw: ctx.newConnectedKw,
+    newAmps125,
+    peakDemandKw: hasDemand ? cap.peakDemandKw : null,
+    demandAmps125,
+    basis: keepsService ? basis : "n/a",
+    availableA,
+    gearSpaceForFeeder: cap.gearSpaceForFeeder,
+    utilityNotified: cap.utilityNotified,
+    verdict: capacityVerdict,
+    notes: capacityNotes,
+  };
 
   // History (section E) — only months carrying kWh count.
   const withKwh = x.history.filter((m) => m.kwh !== null && Number.isFinite(m.kwh));
@@ -444,9 +590,11 @@ export function computeExisting(x: ExistingInput, ctx: ExistingContext): Existin
   return {
     projectType: x.projectType,
     isReplacement,
+    keepsService,
     register: { retained, replaced, scopeProfile, electricalProfile, constructionProfile },
     units: { count: unitCount, ports: unitPorts, connectedKw: unitKw, working, failed, unknown, powerPerPosition: existingPowerPerPosition },
     checks: { serviceCarriesLoad, switchgearCarriesLoad, loadChange, reuseFeasible },
+    capacity,
     history,
     coverage: { existing: coverageExisting, afterReplacement: coverageNew, multiple: coverageMultiple },
     uplifts,
@@ -470,15 +618,15 @@ export function computeExisting(x: ExistingInput, ctx: ExistingContext): Existin
             : "not yet answered",
       greenfieldError:
         !isReplacement && removalQty > 0
-          ? "REMOVAL QUANTITIES ARE ENTERED ON A GREENFIELD PROJECT. Greenfield means there is nothing on the site to remove — change the project type or clear the quantities."
+          ? "REMOVAL QUANTITIES ARE ENTERED ON A GREENFIELD PROJECT. Greenfield — new service or add-load — means there are no chargers on the site to remove — change the project type or clear the quantities."
           : null,
     },
   };
 }
 
-/** The removal lines as peripherals items (the engine prices them into Dump / Waste). Empty on a greenfield project. */
+/** The removal lines as peripherals items (the engine prices them into Dump / Waste). Empty unless chargers exist today. */
 export function removalItems(x: ExistingInput | undefined): CustomLineItem[] {
-  if (!x || x.projectType === "greenfield") return [];
+  if (!x || !hasExistingChargers(x.projectType)) return [];
   return computeExisting(x, EMPTY_CONTEXT).removal.lines.map(({ name, qty, unitCost }) => ({ name, qty, unitCost }));
 }
 

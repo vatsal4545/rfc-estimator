@@ -6,7 +6,8 @@ import { money } from "@/lib/format";
 import type { Project } from "@/lib/calc/types";
 import type { IntakeImportReport } from "@/lib/intake/importIntake";
 import { canRebuild, rebuildProject } from "@/lib/intake/rebuild";
-import { computeInterconnection, defaultInterconnection, type InterconnectionInput } from "@/lib/interconnection";
+import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
+import { FEEDER_BY_OPTIONS, computeInterconnection, defaultInterconnection, feederOutOfScope, type InterconnectionInput } from "@/lib/interconnection";
 import { defaultCommercial, defaultIntake } from "@/lib/proposal/defaults";
 import type { IntakeInput } from "@/lib/proposal/types";
 import { RATE_LIBRARY } from "@/lib/ref/rateLibrary";
@@ -80,10 +81,11 @@ export function useIntakeEditing() {
       const cur: InterconnectionInput = { ...defaultInterconnection(), ...p.intake?.interconnection, [key]: value };
       let next: Project = { ...p, intake: { ...(p.intake ?? defaultIntake()), interconnection: cur } };
       // Who builds the transformer-to-switchgear run decides whether that
-      // conductor is in our scope: the utility's EV rule → 0 ft of ours.
+      // conductor is in our scope: the utility's EV rule, or a retained
+      // existing feeder → 0 ft of ours.
       if (key === "serviceFeederBy") {
         const chain = p.setup.serviceChain ?? { enabled: true, material: "Al" as const, utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 };
-        const byUtility = String(value).startsWith("Utility");
+        const byUtility = feederOutOfScope(String(value));
         const ft = byUtility ? 0 : chain.utilityToSwitchgearFt > 0 ? chain.utilityToSwitchgearFt : 25;
         next = { ...next, setup: { ...next.setup, serviceChain: { ...chain, utilityToSwitchgearFt: ft } } };
         if (canRebuild(next)) next = rebuildProject(next, hardwareAllowance);
@@ -125,7 +127,7 @@ export function IntakeImportPanel() {
     <>
       <Section
         title="Import a completed intake workbook"
-        subtitle="The CEO's EVSE Project Intake (template 3.5.0) filled in by the client or the RSM. Every blue cell lands where the estimator keeps it — chargers and distances, terms, revenue and carbon assumptions, the existing installation, the Rule 29 block and the override register — as a NEW project in the library. The estimator's own rates stay in force."
+        subtitle={`The CEO's EVSE Project Intake (template ${INTAKE_TEMPLATE.version}) filled in by the client or the RSM. Every blue cell lands where the estimator keeps it — chargers and distances, terms, revenue and carbon assumptions, the existing site, the Rule 29 block and the override register — as a NEW project in the library. The estimator's own rates stay in force.`}
       >
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -340,7 +342,7 @@ export function UtilityTariffSection() {
   );
 }
 
-/** 3 · Electrical — the utility interconnection / Rule 29 block (intake 3.5.0 Electrical rows 185–202, feeder B155). */
+/** 3 · Electrical — the utility interconnection / Rule 29 block (intake 3.6.0 Electrical rows 185–202, feeder B155). */
 export function InterconnectionSection() {
   const x = useIntakeEditing();
   const { project, setProject, numOrNull, ic, icResult, setIc } = x;
@@ -367,8 +369,8 @@ export function InterconnectionSection() {
           <Field label="Distance to the utility's point of interconnection (ft)" hint="Drives whether distribution work is likely">
             <input type="number" className={inputCls} value={ic.distanceToPoiFt ?? ""} onChange={(e) => setIc("distanceToPoiFt", numOrNull(e.target.value))} />
           </Field>
-          <Field label="Who provides the transformer-to-switchgear run?" hint="Under the IOUs' EV rules the utility does — that conductor is then not in our scope">
-            <Pick value={ic.serviceFeederBy} onChange={(v) => setIc("serviceFeederBy", v as InterconnectionInput["serviceFeederBy"])} options={["", "Utility — EV infrastructure rule", "Zero Impact Energy"]} />
+          <Field label="Who provides the transformer-to-switchgear run?" hint="Under the IOUs' EV rules the utility does; on an add-load or replacement site whose feeder stays it already exists — either way that conductor is not in our scope">
+            <Pick value={ic.serviceFeederBy} onChange={(v) => setIc("serviceFeederBy", v as InterconnectionInput["serviceFeederBy"])} options={["", ...FEEDER_BY_OPTIONS]} />
           </Field>
           <Field label="Application submitted?" hint="Yes / No / In preparation — with the date (the intake splits it into its dropdown and date row)">
             <input className={inputCls} value={ic.applicationSubmitted} onChange={(e) => setIc("applicationSubmitted", e.target.value)} />

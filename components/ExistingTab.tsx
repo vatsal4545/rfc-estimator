@@ -4,14 +4,20 @@ import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import {
   CONNECTOR_KEYS,
   CONNECTOR_LABELS,
+  PROJECT_TYPE_HINT,
   PROJECT_TYPE_TEXT,
   RETAIN_DECISIONS,
   RETAIN_ELEMENTS,
+  applyProjectType,
   applyRemovalScope,
+  capacityOf,
   computeExisting,
   defaultExisting,
   emptyMonth,
   emptyUnit,
+  hasExistingChargers,
+  keepsExistingService,
+  type ExistingCapacity,
   type ExistingInput,
   type ProjectType,
   type RetainDecision,
@@ -22,11 +28,14 @@ import { computeSiteCapacity } from "@/lib/skus";
 import { useProject } from "./ProjectContext";
 import { Field, Grid, Pill, Section, inputCls, selectCls, tableWrapCls, theadCls } from "./ui";
 
-// Existing site — the CEO intake's Existing tab (1B · rip and replace). On a
-// greenfield site leave it alone. On a replacement site it decides the
-// electrical and civil scope, prices the removal into Dump / Waste, and can
-// hand the business model twelve months of metered history instead of the
-// market benchmark.
+// Existing site — the CEO intake's Existing tab (1B · existing service, rip
+// and replace, or replace and expand). On a greenfield site with a new service
+// leave it alone. On an add-load site (no chargers, an existing service that
+// carries the new load) the register's service rows, the infrastructure and
+// section I's capacity test apply. On a replacement site every section does:
+// it decides the electrical and civil scope, prices the removal into Dump /
+// Waste, and can hand the business model twelve months of metered history
+// instead of the market benchmark.
 
 const th = "px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 whitespace-nowrap";
 const thNum = `${th} text-right`;
@@ -70,7 +79,11 @@ export function ExistingTab() {
     benchmarkUtilisation: bm?.portUtilisation ?? null,
     benchmarkState: revenue.benchmarkState,
   });
-  const isReplacement = x.projectType !== "greenfield";
+  const isReplacement = hasExistingChargers(x.projectType);
+  const keepsService = keepsExistingService(x.projectType);
+  const capIn = capacityOf(x);
+  const setType = (t: ProjectType) => setProject((p) => applyRemovalScope(applyProjectType(p, t)));
+  const setCapacity = (patch: Partial<ExistingCapacity>) => update({ capacity: { ...capIn, ...patch } });
 
   function update(patch: Partial<ExistingInput>) {
     setProject((p) => applyRemovalScope({ ...p, existing: { ...(p.existing ?? defaultExisting()), ...patch } }));
@@ -91,12 +104,12 @@ export function ExistingTab() {
   return (
     <div>
       <Section
-        title="Existing installation — rip and replace"
-        subtitle="Complete this tab only when the site already has charging equipment. On a greenfield site leave it blank and the model ignores it. On a replacement site it is the most valuable page in the intake: it replaces market assumptions with the site's own history."
+        title="Existing site — existing service, rip and replace, or replace and expand"
+        subtitle="Complete this tab when the site already has an electrical service you intend to use, or charging equipment you intend to replace. Set the project type first: it decides which sections below apply, and every check here and on the Electrical and Construction tabs keys off it. On a greenfield site with a new service leave the rest alone."
       >
         <Grid cols={4}>
-          <Field label="Project type" hint="Greenfield builds everything. Rip and replace swaps the chargers and reuses the electrical infrastructure. Replace and expand does both.">
-            <select className={selectCls} value={x.projectType} onChange={(e) => update({ projectType: e.target.value as ProjectType })}>
+          <Field label="Project type" hint={PROJECT_TYPE_HINT[x.projectType]}>
+            <select className={selectCls} value={x.projectType} onChange={(e) => setType(e.target.value as ProjectType)}>
               {(Object.keys(PROJECT_TYPE_TEXT) as ProjectType[]).map((k) => (
                 <option key={k} value={k}>
                   {PROJECT_TYPE_TEXT[k]}
@@ -105,7 +118,7 @@ export function ExistingTab() {
             </select>
           </Field>
           <Field label="Age of the existing installation (years)" hint="Drives whether the existing conductors and gear are worth reusing">
-            <input type="number" className={inputCls} value={x.ageYears ?? ""} onChange={(e) => update({ ageYears: numOrNull(e.target.value) })} disabled={!isReplacement} />
+            <input type="number" className={inputCls} value={x.ageYears ?? ""} onChange={(e) => update({ ageYears: numOrNull(e.target.value) })} disabled={!keepsService} />
           </Field>
           <Field label="Reason for replacement" hint="End of life, unreliability, obsolete connectors, insufficient power, or a commercial decision">
             <input className={inputCls} value={x.reason} onChange={(e) => update({ reason: e.target.value })} disabled={!isReplacement} />
@@ -129,11 +142,15 @@ export function ExistingTab() {
         )}
       </Section>
 
-      {isReplacement && (
+      {keepsService && (
         <>
           <Section
             title="B · What is retained and what is replaced"
-            subtitle="This register is the whole commercial difference between a greenfield project and a replacement. Every line marked RETAIN removes cost from the electrical and construction scope; every REPLACE puts it back. Zero the retained lines on the Peripherals and Takeoff tabs — this register tells you which."
+            subtitle={
+              isReplacement
+                ? "This register is the whole commercial difference between a greenfield project and a replacement. Every line marked RETAIN removes cost from the electrical and construction scope; every REPLACE puts it back. Zero the retained lines on the Peripherals and Takeoff tabs — this register tells you which."
+                : "An add-load site keeps its service, feeder and switchgear — only those three rows apply; everything else on the site is new and priced in full. Tick Existing switchgear reused on the Peripherals tab so the board is not priced again."
+            }
           >
             <div className={wrapCls}>
               <table className={tableCls}>
@@ -145,7 +162,7 @@ export function ExistingTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                  {RETAIN_ELEMENTS.map((e) => (
+                  {RETAIN_ELEMENTS.filter((e) => isReplacement || e.key === "service" || e.key === "feeder" || e.key === "switchgear").map((e) => (
                     <tr key={e.key}>
                       <td className={td}>{e.label}</td>
                       <td className={td}>
@@ -166,7 +183,7 @@ export function ExistingTab() {
             <div className="mt-3">
               <KV
                 rows={[
-                  ["Elements retained / replaced", `${r.register.retained} / ${r.register.replaced}`, "of 12 in the register"],
+                  ["Elements retained / replaced", `${r.register.retained} / ${r.register.replaced}`, isReplacement ? "of 12 in the register" : "of the 3 rows that apply"],
                   ["Scope profile", r.register.scopeProfile],
                   ["Electrical scope", r.register.electricalProfile],
                   ["Construction scope", r.register.constructionProfile],
@@ -175,6 +192,10 @@ export function ExistingTab() {
             </div>
           </Section>
 
+        </>
+      )}
+
+      {isReplacement && (
           <Section title="C · Existing equipment being removed" subtitle="One row per existing cabinet or unit. Drives the demolition scope below and the port comparison in section F.">
             <div className={wrapCls}>
               <table className={tableCls}>
@@ -233,7 +254,7 @@ export function ExistingTab() {
             <button className="mt-2 rounded-md border border-blue-600 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950" onClick={() => update({ units: [...x.units, emptyUnit()] })}>
               + Add unit
             </button>
-            <div className="mt-3 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="mt-3">
               <KV
                 rows={[
                   ["Existing units on site", `${r.units.count}`, "cabinets or standalone units to be removed"],
@@ -243,57 +264,62 @@ export function ExistingTab() {
                   ["Existing power per DC position", `${num(r.units.powerPerPosition, 1)} kW`, "DC positions only (≥ 30 kW)"],
                 ]}
               />
-              <div>
-                <div className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">D · Existing electrical infrastructure</div>
-                <Grid cols={3}>
-                  <Field label="Service size (A)">
-                    <input type="number" className={inputCls} value={x.infrastructure.serviceA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, serviceA: numOrNull(e.target.value) } })} />
-                  </Field>
-                  <Field label="Service voltage">
-                    <input type="number" className={inputCls} value={x.infrastructure.voltage ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, voltage: numOrNull(e.target.value) } })} />
-                  </Field>
-                  <Field label="Spare capacity (A)">
-                    <input type="number" className={inputCls} value={x.infrastructure.spareA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, spareA: numOrNull(e.target.value) } })} />
-                  </Field>
-                  <Field label="Switchgear frame (A)">
-                    <input type="number" className={inputCls} value={x.infrastructure.frameA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, frameA: numOrNull(e.target.value) } })} />
-                  </Field>
-                  <Field label="Branch conductor size" hint="e.g. 250 KCMIL Cu">
-                    <input className={inputCls} value={x.infrastructure.branchConductor} onChange={(e) => update({ infrastructure: { ...x.infrastructure, branchConductor: e.target.value } })} />
-                  </Field>
-                  <Field label="Average branch run (ft)">
-                    <input type="number" className={inputCls} value={x.infrastructure.avgRunFt ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, avgRunFt: numOrNull(e.target.value) } })} />
-                  </Field>
-                  <Field label="Conduit size and type" hint="e.g. 2-1/2 in PVC">
-                    <input className={inputCls} value={x.infrastructure.conduit} onChange={(e) => update({ infrastructure: { ...x.infrastructure, conduit: e.target.value } })} />
-                  </Field>
-                  <Field label="Existing rate schedule" hint="The tariff the site is billed on today">
-                    <input className={inputCls} value={x.infrastructure.rateSchedule} onChange={(e) => update({ infrastructure: { ...x.infrastructure, rateSchedule: e.target.value } })} />
-                  </Field>
-                  <Field label="Separately metered for EV today?">
-                    <select className={selectCls} value={x.infrastructure.separatelyMetered} onChange={(e) => update({ infrastructure: { ...x.infrastructure, separatelyMetered: e.target.value as ExistingInput["infrastructure"]["separatelyMetered"] } })}>
-                      {["", "Yes", "No", "Unknown"].map((o) => (
-                        <option key={o} value={o}>
-                          {o || "—"}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </Grid>
-                <div className="mt-3">
-                  <KV
-                    rows={[
-                      ["Does the existing service carry the new load?", r.checks.serviceCarriesLoad],
-                      ["Does the existing switchgear carry the new load?", r.checks.switchgearCarriesLoad],
-                      ["Load change from the existing installation", r.checks.loadChange],
-                      ["Reuse feasibility", r.checks.reuseFeasible],
-                    ]}
-                  />
-                </div>
-              </div>
             </div>
           </Section>
+      )}
 
+      {keepsService && (
+        <Section title="D · Existing electrical infrastructure" subtitle="What is already in the ground. Where a line is being retained — including on an add-load site — this is what the new design has to live with.">
+          <Grid cols={3}>
+            <Field label="Service size (A)">
+              <input type="number" className={inputCls} value={x.infrastructure.serviceA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, serviceA: numOrNull(e.target.value) } })} />
+            </Field>
+            <Field label="Service voltage">
+              <input type="number" className={inputCls} value={x.infrastructure.voltage ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, voltage: numOrNull(e.target.value) } })} />
+            </Field>
+            <Field label="Spare capacity (A)">
+              <input type="number" className={inputCls} value={x.infrastructure.spareA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, spareA: numOrNull(e.target.value) } })} />
+            </Field>
+            <Field label="Switchgear frame (A)">
+              <input type="number" className={inputCls} value={x.infrastructure.frameA ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, frameA: numOrNull(e.target.value) } })} />
+            </Field>
+            <Field label="Branch conductor size" hint="e.g. 250 KCMIL Cu">
+              <input className={inputCls} value={x.infrastructure.branchConductor} onChange={(e) => update({ infrastructure: { ...x.infrastructure, branchConductor: e.target.value } })} />
+            </Field>
+            <Field label="Average branch run (ft)">
+              <input type="number" className={inputCls} value={x.infrastructure.avgRunFt ?? ""} onChange={(e) => update({ infrastructure: { ...x.infrastructure, avgRunFt: numOrNull(e.target.value) } })} />
+            </Field>
+            <Field label="Conduit size and type" hint="e.g. 2-1/2 in PVC">
+              <input className={inputCls} value={x.infrastructure.conduit} onChange={(e) => update({ infrastructure: { ...x.infrastructure, conduit: e.target.value } })} />
+            </Field>
+            <Field label="Existing rate schedule" hint="The tariff the site is billed on today">
+              <input className={inputCls} value={x.infrastructure.rateSchedule} onChange={(e) => update({ infrastructure: { ...x.infrastructure, rateSchedule: e.target.value } })} />
+            </Field>
+            <Field label="Separately metered for EV today?">
+              <select className={selectCls} value={x.infrastructure.separatelyMetered} onChange={(e) => update({ infrastructure: { ...x.infrastructure, separatelyMetered: e.target.value as ExistingInput["infrastructure"]["separatelyMetered"] } })}>
+                {["", "Yes", "No", "Unknown"].map((o) => (
+                  <option key={o} value={o}>
+                    {o || "—"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </Grid>
+          <div className="mt-3">
+            <KV
+              rows={[
+                ["Does the existing service carry the new load?", r.checks.serviceCarriesLoad],
+                ["Does the existing switchgear carry the new load?", r.checks.switchgearCarriesLoad],
+                ["Load change from the existing installation", r.checks.loadChange],
+                ["Reuse feasibility", r.checks.reuseFeasible],
+              ]}
+            />
+          </div>
+        </Section>
+      )}
+
+      {isReplacement && (
+        <>
           <Section
             title="E · Historical usage and billing"
             subtitle="Up to thirty-six months of actuals. Twelve is the minimum for a credible run rate; twenty-four is better. Enter outage months as they happened — a site that averaged 3.4 of 5 ports working was rationing demand, not meeting it, and section F states the recovery separately."
@@ -581,6 +607,58 @@ export function ExistingTab() {
             </div>
           </Section>
         </>
+      )}
+
+      {keepsService && (
+        <Section
+          title="I · Capacity of the existing service"
+          subtitle="The one question this tab has to answer for a site that keeps its service: does the existing service and switchgear carry the new load? Three ways to answer it, in order of strength — the highest fifteen-minute demand on the last twelve months of interval data or bills (NEC 220.87 takes the existing load at 125% of it), the spare capacity the engineer or the utility states for the gear, or the service size alone, which only works when the service serves nothing else. The verdict names the basis it used."
+        >
+          <Grid cols={3}>
+            <Field label="Existing peak demand, last 12 months (kW)" hint="Highest fifteen-minute demand on the utility interval data or bills. Leave blank to fall back to the spare capacity in section D.">
+              <input type="number" className={inputCls} value={capIn.peakDemandKw ?? ""} onChange={(e) => setCapacity({ peakDemandKw: numOrNull(e.target.value) })} />
+            </Field>
+            <Field label="Space on the existing gear for the new feeder?" hint="A spare main-section breaker, a spare section or a tap position. If there is none, a section extension or a tap box goes on the distribution schedule.">
+              <select className={selectCls} value={capIn.gearSpaceForFeeder} onChange={(e) => setCapacity({ gearSpaceForFeeder: e.target.value as ExistingCapacity["gearSpaceForFeeder"] })}>
+                {["", "Yes", "No", "Unknown"].map((o) => (
+                  <option key={o} value={o}>
+                    {o || "—"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Utility notified of the added load?" hint="Adding load to an existing service is still an application with most utilities, even when no new service is built. Record it in the Rule 29 block on 3 · Electrical.">
+              <select className={selectCls} value={capIn.utilityNotified} onChange={(e) => setCapacity({ utilityNotified: e.target.value as ExistingCapacity["utilityNotified"] })}>
+                {["", "Yes", "No", "Not required", "Unknown"].map((o) => (
+                  <option key={o} value={o}>
+                    {o || "—"}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </Grid>
+          <div className="mt-3">
+            <KV
+              rows={[
+                ["New load to be added", `${num(r.capacity.newLoadKw, 1)} kW`, "from the equipment schedule at nameplate"],
+                ["New load at 125%", `${num(r.capacity.newAmps125, 0)} A`, "kW × 1000 ÷ (V × √3) × 1.25 — the continuous-load rule; what the existing service has to have free"],
+                ["Existing peak demand at 125%", r.capacity.peakDemandKw !== null ? `${num(r.capacity.demandAmps125, 0)} A` : "—", "what the code takes the existing load to be"],
+                ["Load basis in force", r.capacity.basis, "measured demand beats a stated figure; a stated figure beats the service size"],
+                ["Capacity available for the new load", `${num(r.capacity.availableA, 0)} A`],
+                ["Service verdict", r.checks.serviceCarriesLoad],
+                ["Switchgear frame verdict", r.checks.switchgearCarriesLoad],
+              ]}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Pill ok={/^(OK|n\/a)/.test(r.capacity.verdict)}>{r.capacity.verdict}</Pill>
+            {r.capacity.notes.map((n) => (
+              <span key={n} className={noteCls}>
+                {n}
+              </span>
+            ))}
+          </div>
+        </Section>
       )}
       {!isReplacement && r.removal.greenfieldError && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">{r.removal.greenfieldError}</div>

@@ -18,11 +18,13 @@ import {
   defaultExisting,
   emptyMonth,
   projectTypeFromText,
+  defaultCapacity,
+  hasExistingChargers,
   type ExistingInput,
   type RetainDecision,
   type UnitCondition,
 } from "../existing";
-import { defaultInterconnection, type InterconnectionInput } from "../interconnection";
+import { defaultInterconnection, feederOutOfScope, type InterconnectionInput } from "../interconnection";
 import { applyFieldOverrides } from "../overrides";
 import { defaultCommercial, defaultIntake, modelInputsOf } from "../proposal/defaults";
 import type { CommercialInput, IntakeInput, ScopeLine, ScopeStatus, SubscriptionPolicy } from "../proposal/types";
@@ -30,7 +32,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, INTAKE_TEMPLATE, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, joinApplicationSubmitted } from "./cells";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
 export interface IntakeImportReport {
@@ -475,6 +477,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   let existing: ExistingInput | undefined;
   const projectType = projectTypeFromText(str("Existing", "B5"));
   if (sheets.get("Existing")) {
+    const X = EXISTING_CELLS;
     const x = defaultExisting();
     x.projectType = projectType;
     x.ageYears = num("Existing", "B6") ?? null;
@@ -500,14 +503,22 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     }
     x.infrastructure = {
       serviceA: num("Existing", "B50") ?? null,
-      voltage: num("Existing", "B51") ?? null,
-      spareA: num("Existing", "B52") ?? num("Electrical", "B33") ?? null,
+      // B51 is the sheet's formula (Project!B29 when the service is retained) and carries no cached value in a filled template.
+      voltage: num("Existing", "B51") ?? num("Project", "B29") ?? null,
+      spareA: num("Existing", "B52") ?? num("Electrical", E.spareCapacityA) ?? null,
       frameA: num("Existing", "B53") ?? null,
       branchConductor: str("Existing", "B54"),
       avgRunFt: num("Existing", "B55") ?? null,
       conduit: str("Existing", "B56"),
       rateSchedule: str("Existing", "B57"),
       separatelyMetered: (str("Existing", "B58") as ExistingInput["infrastructure"]["separatelyMetered"]) || "",
+    };
+    // Section I (3.6.0) — the capacity inputs; the verdicts are recomputed.
+    x.capacity = {
+      ...defaultCapacity(),
+      peakDemandKw: num("Existing", X.peakDemandKw) ?? null,
+      gearSpaceForFeeder: (str("Existing", X.gearSpaceForFeeder) as NonNullable<ExistingInput["capacity"]>["gearSpaceForFeeder"]) || "",
+      utilityNotified: (str("Existing", X.utilityNotified) as NonNullable<ExistingInput["capacity"]>["utilityNotified"]) || "",
     };
     for (let r = 67; r <= 102; r++) {
       const month = str("Existing", `A${r}`);
@@ -553,7 +564,15 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     const anything = projectType !== "greenfield" || x.units.length > 0 || x.history.length > 0;
     if (anything) {
       existing = x;
-      mapped.push(`Existing installation: ${projectType === "greenfield" ? "greenfield" : `replacement — ${x.units.length} unit row(s), ${x.history.filter((m) => m.kwh !== null).length} months of history, revenue basis ${x.revenueBasis}`}`);
+      mapped.push(
+        `Existing site: ${
+          projectType === "greenfield"
+            ? "greenfield"
+            : projectType === "addLoad"
+              ? `add load to the existing service — ${x.infrastructure.serviceA ?? "?"} A service, ${x.capacity.peakDemandKw !== null ? `${x.capacity.peakDemandKw} kW measured peak` : x.infrastructure.spareA !== null ? `${x.infrastructure.spareA} A spare` : "no existing-load data"}`
+              : `replacement — ${x.units.length} unit row(s), ${x.history.filter((m) => m.kwh !== null).length} months of history, revenue basis ${x.revenueBasis}`
+        }`,
+      );
     }
   }
 
@@ -618,10 +637,11 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   quickBase.setup.feederMaterial = material === "Al" ? "Al" : material === "Cu" ? "Cu" : quickBase.setup.feederMaterial;
   quickBase.setup.serviceChain = {
     ...(quickBase.setup.serviceChain ?? { enabled: false, material: "Al", utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }),
-    // The utility builds the transformer-to-switchgear run under its EV infrastructure rule — not our scope.
-    utilityToSwitchgearFt: feederBy.startsWith("Utility") ? 0 : (txToSwitchgear ?? quickBase.setup.serviceChain?.utilityToSwitchgearFt ?? 25),
+    // The utility builds the transformer-to-switchgear run under its EV infrastructure rule, or the existing feeder stays — either way not our scope.
+    utilityToSwitchgearFt: feederOutOfScope(feederBy) ? 0 : (txToSwitchgear ?? quickBase.setup.serviceChain?.utilityToSwitchgearFt ?? 25),
   };
   if (feederBy.startsWith("Utility")) mapped.push("Service feeder provided by the utility — the transformer-to-switchgear run is left out of our scope");
+  else if (feederBy.startsWith("Existing")) mapped.push("Service feeder retained — the transformer-to-switchgear run is neither sized nor costed");
   else if (txToSwitchgear !== undefined) mapped.push(`Transformer-to-switchgear run ${txToSwitchgear} ft (our scope)`);
   const quick = {
     ...defaultQuickInput(),
@@ -761,7 +781,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   project = applyEquipmentSchedule(project, allowance);
   project = applyRemovalScope(project);
   project = applyFieldOverrides(project);
-  if (existing && existing.projectType !== "greenfield") {
+  if (existing && hasExistingChargers(existing.projectType)) {
     const items = project.peripherals.demolitionItems ?? [];
     if (items.length) mapped.push(`Removal scope: ${items.length} line(s) into Dump / Waste at the estimator's removal rates`);
   }

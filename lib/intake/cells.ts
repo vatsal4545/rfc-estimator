@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.5.0 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.6.0 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -7,16 +7,16 @@
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.5.0",
+  version: "3.6.0",
   /**
    * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
-   * changed cells, and moved at 3.2.0 and 3.5.0 — so it is not a reliable
-   * content digest. The version string is what actually gates a fill.
+   * changed cells, and moved at 3.2.0, 3.5.0 and 3.6.0 — so it is not a
+   * reliable content digest. The version string is what actually gates a fill.
    */
-  contentHash: "707fa08be51f7f32",
-  file: "EVSE_Project_Intake_TEMPLATE_3.5.0.xlsx",
+  contentHash: "3ae762acca5ac36d",
+  file: "EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.5.0.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -442,7 +442,7 @@ export const EXISTING_CELLS = {
   /** Register rows 13–24 in RETAIN_ELEMENTS order, decision in column B. */
   registerFirstRow: 13,
   serviceA: "B50",
-  voltage: "B51",
+  /** B51 (existing service voltage) is the sheet's own formula — it reads Project!B29 when the service is retained. Write the voltage there. */
   spareA: "B52",
   frameA: "B53",
   branchConductor: "B54",
@@ -450,6 +450,10 @@ export const EXISTING_CELLS = {
   conduit: "B56",
   rateSchedule: "B57",
   separatelyMetered: "B58",
+  /** Section I · capacity of the existing service (3.6.0, rows 188–201): the three inputs. B190/B191/B193–B195 and B198–B201 are the sheet's own. */
+  peakDemandKw: "B192",
+  gearSpaceForFeeder: "B196",
+  utilityNotified: "B197",
 } as const;
 export const EXISTING_UNITS_TABLE = { firstRow: 33, lastRow: 40, makeModel: "A", kw: "B", ports: "C", connectors: "D", qty: "E", yearInstalled: "F", working: "G" } as const;
 export const EXISTING_HISTORY_TABLE = { firstRow: 67, lastRow: 102, month: "A", kwh: "B", revenue: "C", sessions: "D", utilityCost: "E", portsWorking: "F", note: "G" } as const;
@@ -486,6 +490,8 @@ export const INTAKE_TEXT = {
   revenueBasis: { market: "Market benchmark — greenfield", historical: "Historical actuals — replacement site" },
   feederByUtility: "Utility — EV infrastructure rule",
   feederByUs: "Zero Impact Energy",
+  /** 3.6.0: an add-load or replacement site whose service feeder stays — the run is neither sized nor costed. */
+  feederByExisting: "Existing — retained",
   costBasisPricedElsewhere: "Priced elsewhere in this workbook",
   costBasisVendorQuote: "Vendor quote",
   capacityAccessory: "Accessory",

@@ -29,9 +29,26 @@ export interface InterconnectionInput {
   acceptsActivation: "" | "Yes" | "No";
   designSubmitted: string;
   designReturned: string;
-  /** Who provides the transformer-to-switchgear run (intake Electrical!B119). */
-  serviceFeederBy: "" | "Utility — EV infrastructure rule" | "Zero Impact Energy";
+  /** Who provides the transformer-to-switchgear run (intake Electrical!B155). "Existing — retained" (3.6.0): the feeder stays, so it is neither sized nor costed. */
+  serviceFeederBy: "" | "Utility — EV infrastructure rule" | "Zero Impact Energy" | "Existing — retained";
   pointOfConnection: string;
+}
+
+/** The intake's Electrical!B155 dropdown, in its order. */
+export const FEEDER_BY_OPTIONS: InterconnectionInput["serviceFeederBy"][] = ["Utility — EV infrastructure rule", "Zero Impact Energy", "Existing — retained"];
+
+/** The transformer-to-switchgear run is not ours to size or cost: the utility builds it under its EV rule, or it already exists and stays. */
+export const feederOutOfScope = (by: string | undefined | null): boolean => {
+  const s = (by ?? "").trim();
+  return s.startsWith("Utility") || s.startsWith("Existing");
+};
+
+/** Why the run is out of scope, for hints and reports. */
+export function feederScopeNote(by: string | undefined | null): string {
+  const s = (by ?? "").trim();
+  if (s.startsWith("Utility")) return "The utility provides this run under its EV infrastructure rule — out of our scope";
+  if (s.startsWith("Existing")) return "The existing service feeder is retained — not sized or costed";
+  return "Customer-side feeder, our scope";
 }
 
 export function defaultInterconnection(): InterconnectionInput {
@@ -113,8 +130,11 @@ export function computeInterconnection(project: Project, estimate: EstimateResul
   const serviceRun = estimate.rows.filter((r) => r.synthetic && r.loadTypeId.startsWith("SVC")).reduce((s, r) => s + r.rowTotal, 0);
   const switchgear = estimate.costs.lines.find((l) => l.name === "Main Distribution Switchgear")?.finalCost ?? 0;
   const hardware = buildup ? (buildup.rows.find((r) => r.id === "hardware")?.price ?? 0) : project.financial.chargerHardwareCost;
-  const serviceRetained = project.existing && project.existing.projectType !== "greenfield" && project.existing.register.service === "RETAIN";
+  const existing = project.existing;
+  const addLoad = existing?.projectType === "addLoad";
+  const serviceRetained = !!existing && (addLoad || (existing.projectType !== "greenfield" && existing.register.service === "RETAIN"));
   const feederByUtility = input.serviceFeederBy.startsWith("Utility");
+  const feederRetained = input.serviceFeederBy.startsWith("Existing");
 
   const utilityPaysFor = regime.evRuleApplies
     ? [
@@ -138,9 +158,13 @@ export function computeInterconnection(project: Project, estimate: EstimateResul
     },
     {
       item: "Service entrance conductors and conduit (transformer to switchgear)",
-      inPrice: feederByUtility ? "NO — EXCLUDED" : serviceRun > 0 ? "Yes" : "Not carried",
-      amount: feederByUtility ? null : serviceRun,
-      treatment: feederByUtility ? "The utility provides this run under its EV infrastructure rule — not in our scope." : "In the wires and conduits line (service chain)",
+      inPrice: feederByUtility ? "NO — EXCLUDED" : feederRetained ? "Not carried" : serviceRun > 0 ? "Yes" : "Not carried",
+      amount: feederByUtility || feederRetained ? null : serviceRun,
+      treatment: feederByUtility
+        ? "The utility provides this run under its EV infrastructure rule — not in our scope."
+        : feederRetained
+          ? "The existing service feeder is retained — not sized or costed; the new load lands on the existing switchgear."
+          : "In the wires and conduits line (service chain)",
     },
     { item: "Meter socket, main breaker, switchboard", inPrice: switchgear > 0 ? "Yes" : "Not carried", amount: switchgear, treatment: "In the switchgear line" },
     { item: "All EV charging equipment", inPrice: hardware > 0 ? "Yes" : "Not carried", amount: hardware, treatment: "In the hardware line" },
@@ -179,12 +203,35 @@ export function computeInterconnection(project: Project, estimate: EstimateResul
   checks.push({ label: "Regime resolved from the delivery utility", ok: regime.regime !== "unknown", detail: regime.label });
   if (!regime.evRuleApplies && designFee > 0)
     checks.push({ label: "No Rule 29 allowance on a non-IOU site", ok: false, detail: `${money(designFee)} interconnection fee carried on a ${regime.label} — confirm the utility actually charges it` });
-  if (serviceRetained)
+  if (serviceRetained && addLoad)
+    checks.push({
+      label: "Existing service — added-load application, no new service",
+      ok: input.serviceType !== "New service",
+      detail: input.serviceType === "New service" ? "The project type adds load to the existing service but the service type says New service" : `Existing service stays; the added load is an application with most utilities${designFee > 0 ? ` — ${money(designFee)} carried for it` : ""}`,
+    });
+  else if (serviceRetained)
     checks.push({
       label: "Retained service — no new interconnection",
       ok: designFee === 0 && input.serviceType !== "New service",
       detail: designFee === 0 ? "Existing service stays: no application, no design fee" : `The Existing tab retains the service but ${money(designFee)} of interconnection fee is carried`,
     });
+  if (serviceRetained && existing) {
+    // Existing!B200 — the same facts are entered on three tabs; say whether they agree.
+    const disagreements = [
+      input.serviceType !== "Added load to existing service" ? "service type should read Added load to existing service" : "",
+      !/existing/i.test(input.pointOfConnection) ? "point of connection should name the existing switchgear" : "",
+      existing.register.feeder === "RETAIN" && !feederRetained ? "the feeder is retained on the Existing tab, so who provides it should read Existing — retained" : "",
+      existing.register.switchgear === "RETAIN" && !project.peripherals.existingSwitchgear ? "the switchgear is retained on the Existing tab but a new switchboard is priced (tick Existing switchgear reused on Peripherals)" : "",
+      project.intake?.existingServiceA != null && existing.infrastructure.serviceA != null && project.intake.existingServiceA !== existing.infrastructure.serviceA
+        ? `the Project tab says a ${project.intake.existingServiceA} A service, the Existing tab ${existing.infrastructure.serviceA} A`
+        : "",
+    ].filter(Boolean);
+    checks.push({
+      label: "Existing service agrees across the tabs",
+      ok: disagreements.length === 0,
+      detail: disagreements.length === 0 ? "Point of connection, service type, feeder and switchgear agree" : disagreements.join("; "),
+    });
+  }
   if (regime.evRuleApplies) {
     checks.push({
       label: "Application status recorded",
@@ -210,7 +257,7 @@ export function computeInterconnection(project: Project, estimate: EstimateResul
     });
   }
   checks.push({ label: "Transformer pad location agreed", ok: input.padLocationAgreed === "Yes", detail: input.padLocationAgreed || "not yet agreed" });
-  if (input.serviceType === "Added load to existing service" && !serviceRetained && project.existing?.projectType !== "greenfield" && project.existing)
+  if (input.serviceType === "Added load to existing service" && !serviceRetained && existing && existing.projectType !== "greenfield")
     checks.push({ label: "Service type agrees with the Existing register", ok: false, detail: "Added load to the existing service, but the Existing tab does not mark the service RETAIN" });
 
   return { regime, input, utilityPaysFor, customerBears, exclusionWording, obligations, checks };

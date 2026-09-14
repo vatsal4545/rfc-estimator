@@ -80,6 +80,37 @@ describe("what the customer bears, exclusions and checks", () => {
     expect(r.exclusionWording).toMatch(/own policy/);
   });
 
+  it("an add-load site (3.6.0): retained feeder not carried, added-load application allowed, and the three tabs must agree", () => {
+    const p = project("SCE — Southern California Edison");
+    const existing = defaultExisting();
+    existing.projectType = "addLoad";
+    existing.register.service = "RETAIN";
+    existing.register.feeder = "RETAIN";
+    existing.register.switchgear = "RETAIN";
+    p.existing = existing;
+    p.intake = { ...p.intake!, interconnection: { ...defaultInterconnection(), serviceType: "Added load to existing service", serviceFeederBy: "Existing — retained", pointOfConnection: "Existing MSB" } } as typeof p.intake;
+    let r = computeInterconnection(p, computeEstimate(p));
+    const feeder = r.customerBears.find((b) => b.item.startsWith("Service entrance"))!;
+    expect(feeder.inPrice).toBe("Not carried");
+    expect(feeder.amount).toBeNull();
+    expect(feeder.treatment).toMatch(/retained — not sized or costed/);
+    // The $3,500 design fee is fine here: adding load is still an application.
+    expect(r.checks.find((c) => c.label.startsWith("Existing service — added-load"))!.ok).toBe(true);
+    expect(r.checks.find((c) => c.label.startsWith("Retained service"))).toBeUndefined();
+    // The switchgear is RETAIN on the Existing tab but a new board is priced — the cross-tab check says so.
+    const agree = r.checks.find((c) => c.label.startsWith("Existing service agrees"))!;
+    expect(agree.ok).toBe(false);
+    expect(agree.detail).toMatch(/Existing switchgear reused/);
+    p.peripherals.existingSwitchgear = true;
+    r = computeInterconnection(p, computeEstimate(p));
+    expect(r.checks.find((c) => c.label.startsWith("Existing service agrees"))!.ok).toBe(true);
+    // Service type New service on an add-load site fails the application check.
+    p.intake = { ...p.intake!, interconnection: { ...p.intake!.interconnection!, serviceType: "New service" } } as typeof p.intake;
+    r = computeInterconnection(p, computeEstimate(p));
+    expect(r.checks.find((c) => c.label.startsWith("Existing service — added-load"))!.ok).toBe(false);
+    expect(r.checks.find((c) => c.label.startsWith("Existing service agrees"))!.detail).toMatch(/service type should read Added load/);
+  });
+
   it("a retained service on a replacement site needs no application — a fee still carried fails the check", () => {
     const p = project("PG&E — Pacific Gas and Electric");
     const existing = defaultExisting();

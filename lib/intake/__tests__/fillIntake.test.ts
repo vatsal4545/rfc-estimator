@@ -18,7 +18,7 @@ import { projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 import { patchWorkbook } from "../xlsxWrite";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.5.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx");
 
 /** Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, manual tariff, a deal structure, two register entries. */
 function bwProject(): Project {
@@ -130,7 +130,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("writes without a refusal and reports what it did", () => {
     expect(report.refused).toEqual([]);
-    expect(report.templateVersion).toBe("3.5.0");
+    expect(report.templateVersion).toBe("3.6.0");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
     expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Version"]);
@@ -144,7 +144,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Version", "B12")).toBe("Test CPM");
     expect(wb.get("Version", "B13")).toBe("BW-TEST-001");
     expect(wb.get("Version", "B14")).toMatch(/^Second issue after the site walk\. Filled by the RFC Estimator on 2026-09-02 for Best Western Hawthorne/);
-    expect(wb.get("Version", "B4")).toBe("3.5.0"); // untouched
+    expect(wb.get("Version", "B4")).toBe("3.6.0"); // untouched
     expect(wb.get("Project", "B5")).toBe("Best Western Hawthorne");
     expect(wb.get("Project", "B6")).toBe("Mohammad Noorali");
     expect(wb.get("Project", "B12")).toBe("Best Western Hawthorne");
@@ -360,7 +360,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("refuses a template the cell map was not written for", async () => {
     const doctored = await patchWorkbook(template, [{ sheet: "Version", ref: "B4", value: "3.3.0" }]);
-    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.5\.0/);
+    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.6\.0/);
     expect(() => verifyIntakeTemplate({ sheetNames: [], has: () => false, get: () => null, formula: () => undefined, cells: () => new Map() })).toThrow();
   });
 
@@ -381,9 +381,72 @@ describe("filling the CEO's intake from a project", async () => {
     expect(conduitToIntake('1-1/4"')).toBe('(1 1/4")');
     expect(conduitToIntake('3"')).toBe('(3") ');
     expect(conduitToIntake('2-1/2"')).toBe('(2 1/2")');
-    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.5.0-rev-b.xlsx");
+    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.6.0-rev-b.xlsx");
     const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(true);
+  });
+});
+
+describe("filling the intake for an add-load site (3.6.0 project type)", async () => {
+  // The Best Western equipment on a site with no chargers today: a 1,200 A
+  // 480 V service and board that carry the new load, 320 kW measured peak.
+  const project = bwProject();
+  project.existing = {
+    ...defaultExisting(),
+    projectType: "addLoad",
+    register: { ...defaultExisting().register, service: "RETAIN", feeder: "RETAIN", switchgear: "RETAIN" },
+    infrastructure: { ...defaultExisting().infrastructure, serviceA: 1200, voltage: 480, frameA: 1200, rateSchedule: "TOU-GS-2" },
+    capacity: { peakDemandKw: 320, gearSpaceForFeeder: "Yes", utilityNotified: "Yes" },
+    // Charger-section data that must NOT travel on an add-load site.
+    units: [{ makeModel: "ghost", kw: 50, ports: 2, connectors: "CCS1", qty: 1, yearInstalled: "2018", working: "Working" }],
+    history: [{ ...emptyMonth("2025-09"), kwh: 1000 }],
+    revenueBasis: "historical",
+  };
+  project.intake = { ...project.intake!, existingServiceA: 1200, interconnection: { ...project.intake!.interconnection!, serviceType: "Added load to existing service", serviceFeederBy: "Existing — retained", pointOfConnection: "Existing MSB" } };
+  project.peripherals = { ...project.peripherals, existingSwitchgear: true };
+  project.setup = { ...project.setup, serviceChain: { ...project.setup.serviceChain!, utilityToSwitchgearFt: 0 } };
+  const result = computeEstimate(project);
+  const proposal = computeProposal(project, result)!;
+  const { bytes, report } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, proposal, { today: "2026-09-14" });
+  const wb = await readWorkbook(bytes);
+
+  it("writes the project type, the three register rows, section D and section I — and leaves the charger sections blank", () => {
+    expect(report.refused).toEqual([]);
+    expect(wb.get("Existing", "B5")).toBe("Greenfield — add load to existing service");
+    expect(wb.get("Existing", "B13")).toBe("RETAIN");
+    expect(wb.get("Existing", "B14")).toBe("RETAIN");
+    expect(wb.get("Existing", "B15")).toBe("RETAIN");
+    expect(wb.get("Existing", "B16")).toBeNull(); // branch conductors — not applicable, left blank
+    expect(wb.get("Existing", "B50")).toBe(1200);
+    expect(wb.get("Existing", "B53")).toBe(1200);
+    expect(wb.get("Existing", "B192")).toBe(320);
+    expect(wb.get("Existing", "B196")).toBe("Yes");
+    expect(wb.get("Existing", "B197")).toBe("Yes");
+    expect(wb.get("Existing", "A33")).toBeNull(); // no existing units
+    expect(wb.get("Existing", "A67")).toBeNull(); // no history
+    expect(wb.get("Existing", "B131")).toBeNull(); // no connector uplift
+    expect(wb.get("Existing", "B174")).toBeNull(); // no removal scope
+    expect(wb.get("Revenue", "B59")).toBe("Market benchmark — greenfield");
+    expect(wb.get("Electrical", "B155")).toBe("Existing — retained");
+    expect(wb.get("Electrical", "B185")).toBe("Added load to existing service");
+    expect(wb.get("Electrical", "B148")).toBe("Existing MSB");
+    expect(wb.get("Project", "B28")).toBe(1200); // Existing!B200 wants the Project tab's service size to agree
+  });
+
+  it("imports back as an add-load site with the capacity inputs, the retained feeder out of scope", () => {
+    const back = projectFromIntake(wb, { ...defaultProject(), commercial: defaultCommercial() });
+    const x = back.project.existing!;
+    expect(x.projectType).toBe("addLoad");
+    expect(x.register).toMatchObject({ service: "RETAIN", feeder: "RETAIN", switchgear: "RETAIN" });
+    expect(x.infrastructure).toMatchObject({ serviceA: 1200, voltage: 480, frameA: 1200 });
+    expect(x.capacity).toEqual({ peakDemandKw: 320, gearSpaceForFeeder: "Yes", utilityNotified: "Yes" });
+    expect(x.units).toEqual([]);
+    expect(x.history).toEqual([]);
+    expect(back.project.setup.serviceChain?.utilityToSwitchgearFt).toBe(0);
+    expect(back.project.intake!.interconnection?.serviceFeederBy).toBe("Existing — retained");
+    expect(back.report.mapped.some((m) => /^Existing site: add load to the existing service — 1200 A service, 320 kW measured peak/.test(m))).toBe(true);
+    expect(back.report.mapped.some((m) => /Service feeder retained/.test(m))).toBe(true);
+    expect(back.project.peripherals.demolitionItems).toBeUndefined();
   });
 });

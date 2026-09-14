@@ -10,7 +10,7 @@
 // workbook's own figures in and ties every sheet to the cent.
 
 import type { Project } from "../calc/types";
-import { computeExisting } from "../existing";
+import { computeExisting, hasExistingChargers } from "../existing";
 import { modelOverridesOf } from "../overrides";
 import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { RATE_LIBRARY, type RateSchedule } from "../ref/rateLibrary";
@@ -85,7 +85,7 @@ export function modelContextOf(project: Project, costBuildup: CostBuildupResult,
   if (!it?.hoursOpen) notes.push("Hours open per day not set on the Intake tab — 24 assumed.");
   let historical: HistoricalBasis | undefined;
   const ex = project.existing;
-  if (ex && ex.projectType !== "greenfield") {
+  if (ex && hasExistingChargers(ex.projectType)) {
     const revenue = modelInputsOf(project.commercial).revenue;
     const bm = MARKET_BENCHMARKS.find((b) => b.state === revenue.benchmarkState);
     const r = computeExisting(ex, {

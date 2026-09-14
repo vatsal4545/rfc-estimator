@@ -264,7 +264,7 @@ describe("Excel export — intake blocks for a replacement site with overrides",
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { importIntakeFile } = await import("../../intake/importIntake");
-  const fixture = join(__dirname, "..", "..", "intake", "__fixtures__", "intake-sample-3.5.0.xlsx");
+  const fixture = join(__dirname, "..", "..", "intake", "__fixtures__", "intake-sample-3.6.0.xlsx");
   const imported = await importIntakeFile(readFileSync(fixture), { ...defaultProject(), commercial: defaultCommercial() });
   const project = { ...imported.project, commercial: { ...imported.project.commercial!, lineExtensionContribution: 12000 } };
   const result = computeEstimate(project);
@@ -280,7 +280,7 @@ describe("Excel export — intake blocks for a replacement site with overrides",
     expect(labels.some((l) => l.startsWith("Utility interconnection — SCE Rule 29"))).toBe(true);
     expect(labels).toContain("Rule 15 distribution line extension");
     expect(labels).toContain("Exclusion wording for the proposal");
-    expect(labels.some((l) => l.startsWith("Existing installation — rip and replace"))).toBe(true);
+    expect(labels.some((l) => l.startsWith("Existing site — existing service, rip and replace"))).toBe(true);
     expect(labels).toContain("Availability recovered");
     expect(labels).toContain("Removal — concrete pads saw-cut and broken out");
     expect(labels.some((l) => l.startsWith("Override register — 5 active"))).toBe(true);

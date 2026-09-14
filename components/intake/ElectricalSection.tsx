@@ -5,6 +5,7 @@ import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInp
 import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import type { StickyPath } from "@/lib/intake/rebuild";
+import { feederOutOfScope, feederScopeNote } from "@/lib/interconnection";
 import { defaultIntake } from "@/lib/proposal/defaults";
 import { money, num } from "@/lib/format";
 import { MaterialRatesSection } from "../MaterialRatesSection";
@@ -13,7 +14,7 @@ import { InterconnectionSection } from "../IntakeTab";
 import { Field, Grid, Pill, Section, inputCls, selectCls } from "../ui";
 import { useRebuild } from "./useRebuild";
 
-// 3 · Electrical — the intake's Electrical tab (3.5.0): the sizing basis, the
+// 3 · Electrical — the intake's Electrical tab (3.6.0): the sizing basis, the
 // charger-run table (one row per unit — DC and Level 2 alike), the service and
 // switchgear, the Rule 29 block and the distribution schedule. Inputs are the
 // Quick Estimate's; the tables are the engine's sizing, live.
@@ -50,7 +51,7 @@ export function ElectricalSection() {
   const input: QuickEstimateInput = project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput();
   const s = project.setup;
   const chain = s.serviceChain;
-  const feederByUtility = (project.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility");
+  const feederByUtility = feederOutOfScope(project.intake?.interconnection?.serviceFeederBy);
 
   const setQuick = (patch: Partial<QuickEstimateInput>) =>
     rebuild((p) => ({ ...p, quick: { ...(p.quick ? normalizeQuickInput(p.quick, p.setup) : defaultQuickInput()), ...patch } }));
@@ -184,7 +185,7 @@ export function ElectricalSection() {
 
       <Section title="Service and switchgear" subtitle="Where the site connects, the customer-side feeder, and the frame being priced. The Rule 29 block below records the utility's side.">
         <Grid cols={4}>
-          <Field label="Transformer to switchgear (ft)" hint={feederByUtility ? "The utility provides this run under its EV infrastructure rule — out of our scope (0)" : "Customer-side feeder, our scope"}>
+          <Field label="Transformer to switchgear (ft)" hint={feederOutOfScope(project.intake?.interconnection?.serviceFeederBy) ? `${feederScopeNote(project.intake?.interconnection?.serviceFeederBy)} (0)` : feederScopeNote(project.intake?.interconnection?.serviceFeederBy)}>
             <input type="number" className={inputCls} value={chain?.utilityToSwitchgearFt ?? 25} disabled={feederByUtility} onChange={(e) => setChainDistance(Number(e.target.value))} />
           </Field>
           <Field label="Switchgear size being priced (A)" hint={bus480 ? `Code minimum ${num(bus480.autoBusA)} A at 125% of ${num(bus480.connectedAmps, 0)} A connected — blank = auto` : bus208 ? `208 V service · code minimum ${num(bus208.autoBusA)} A` : "no load yet"}>
