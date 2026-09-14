@@ -92,14 +92,21 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
 
   if (carry) {
     const r = result.rollups;
-    put(OVERRIDE_ROWS.wires, base("Wires, Conduits & Electrical Peripherals"), `RFC Estimator take-off: ${num(r.totalConductorFt)} ft conductor, ${num(r.totalConduitFt)} ft conduit, peripherals — before contingency and markup`);
+    const per = project.peripherals;
+    const coring = per.coringQty ?? 0;
+    put(
+      OVERRIDE_ROWS.wires,
+      base("Wires, Conduits & Electrical Peripherals"),
+      `RFC Estimator take-off: ${num(r.totalConductorFt)} ft conductor, ${num(r.totalConduitFt)} ft conduit, peripherals${coring > 0 ? `, ${num(coring)} core-drilled penetration(s)` : ""} — before contingency and markup`,
+    );
     const bus480 = result.panel.bus480;
     const bus208 = result.panel.bus208;
     const tx = result.panel.transformer;
     const gearBits = [
-      bus480 ? `${num(bus480.suggestedBusA)} A 480 V switchgear` : "",
+      bus480 ? (per.existingSwitchgear ? `${num(bus480.suggestedBusA)} A main breaker into the existing switchgear (board retained, not priced)` : `${num(bus480.suggestedBusA)} A 480 V switchgear`) : "",
       tx ? `${num(tx.suggestedKva)} kVA step-down` : "",
       bus208 ? `${num(bus208.suggestedBusA)} A 208 V sub-panel` : "",
+      (per.disconnectQty ?? 0) > 0 ? `${num(per.disconnectQty ?? 0)} EVSE disconnect(s) at ${money(result.peripherals.disconnectUnitCost)}` : "",
     ].filter(Boolean);
     put(
       OVERRIDE_ROWS.switchgear,
@@ -111,7 +118,6 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
     const demolition = result.peripherals.lines.demolition.length;
     put(OVERRIDE_ROWS.dump, base("Dump / Waste"), `RFC Estimator: terrain-scaled spoils haul-off${demolition ? ` + ${demolition} removal line(s) from the existing installation` : ""}`);
     put(OVERRIDE_ROWS.permits, base("Permits") + f.planCheckPermitFee, `RFC Estimator: plan check ${money(f.planCheckPermitFee)} (valuation-based) + permit issuance ${money(base("Permits"))} — pass-through`);
-    const per = project.peripherals;
     const subs = [
       per.transformerPadCost > 0 ? `transformer pad ${money(per.transformerPadCost)}` : "",
       per.cableWellCost > 0 ? `cable well ${money(per.cableWellCost)}` : "",

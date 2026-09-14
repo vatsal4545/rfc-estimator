@@ -4,6 +4,7 @@ import { defaultProject } from "../defaults";
 import { computeEstimate } from "../engine";
 import { CIVIL_RATES, DISCONNECT_RATES, PERIPHERAL_PRICE_KEYS, disconnectRateFor, resetPeripheralPrices } from "../peripherals";
 import { GEAR_CATALOG } from "../tables";
+import { estimatorOverrideRows } from "../../intake/handoff";
 import type { Project } from "../types";
 
 // A hotel garage job: the site keeps its switchgear, the route is EMT inside
@@ -134,5 +135,20 @@ describe("EVSE disconnects", () => {
     const reset = resetPeripheralPrices(quoted.peripherals);
     expect(reset.disconnectUnitCost).toBeUndefined();
     expect(reset.disconnectQty).toBe(4);
+  });
+});
+
+describe("the intake's override register says what the gear money is", () => {
+  it("names the main breaker, the retained board, the disconnects and the cores", () => {
+    const p = garageProject({ existingSwitchgear: true, disconnectQty: 4, coringQty: 15 });
+    const rows = estimatorOverrideRows(p, computeEstimate(p), null);
+    const gear = rows.find((r) => r.row === 10)!.reason;
+    expect(gear).toMatch(/main breaker into the existing switchgear/);
+    expect(gear).not.toMatch(/480 V switchgear/);
+    expect(gear).toMatch(/4 EVSE disconnect/);
+    expect(rows.find((r) => r.row === 9)!.reason).toMatch(/15 core-drilled/);
+    const plain = estimatorOverrideRows(garageProject(), computeEstimate(garageProject()), null);
+    expect(plain.find((r) => r.row === 10)!.reason).toMatch(/480 V switchgear/);
+    expect(plain.find((r) => r.row === 9)!.reason).not.toMatch(/core-drilled/);
   });
 });
