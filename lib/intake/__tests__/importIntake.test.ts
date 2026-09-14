@@ -80,7 +80,16 @@ describe("importing a completed intake workbook", async () => {
     // Quoted distribution gear lands in the wires and peripherals line.
     expect(project.peripherals.customItems!.some((c) => c.name.startsWith("EVSE disconnects") && c.unitCost === 12000)).toBe(true);
     expect(report.mapped.some((m) => /Distribution equipment: 1 quoted item/.test(m))).toBe(true);
-    expect(report.skipped.some((s) => /Trench surface/.test(s))).toBe(true);
+    expect(report.skipped.some((s) => /trench surface/i.test(s))).toBe(true);
+    // Site facts and the engineer's own rows travel as typed: trench facts, every run's distance and conductor, the schedule, the revision history.
+    expect(project.intake!.trenchSurface).toBe("Asphalt");
+    expect(project.intake!.trenchDepthIn).toBe(24);
+    expect(project.takeoffEdits!["DCFC 360kW Dual #4"]).toEqual({ oneWayDistFt: 125, sizeOverride: "300 kcmil", runsPerUnitOverride: 2 });
+    expect(project.takeoffEdits!["L2 Dual 40A #2"]).toEqual({ oneWayDistFt: 75, sizeOverride: "8 AWG", runsPerUnitOverride: 2 });
+    expect(project.takeoff.find((r) => r.genKey === "DCFC 360kW Dual #4")!.oneWayDistFt).toBe(125);
+    expect(project.intake!.distributionSchedule).toHaveLength(1);
+    expect(project.intake!.distributionSchedule![0]).toMatchObject({ item: "EVSE disconnects", type: "EVSE disconnect", qty: 4, volts: 480, ratingA: 600, fedFrom: "MSB", quotedCost: 12000 });
+    expect(project.intake!.fileVersion).toBe("Rev A");
   });
 
   it("Construction → labour, D&E, site-works quantities, rentals and pass-through fees", () => {
@@ -114,7 +123,8 @@ describe("importing a completed intake workbook", async () => {
     expect(project.commercial!.markupLaborPct).toBe(0.2);
     expect(project.commercial!.markupMaterialsPct).toBe(0.2);
     const rental = (name: string) => project.equipment.find((e) => e.name === name)!;
-    expect(rental("Mini excavator")).toMatchObject({ qty: 1, durationValue: 30, rate: 2110 }); // intake days, estimator rate
+    expect(rental("Mini excavator")).toMatchObject({ qty: 1, durationValue: 30, rateBasis: "per day" }); // intake days and the intake's per-day rate (the template's C40)
+    expect(rental("Mini excavator").rate).toBeCloseTo(98.5667, 3);
     expect(rental("Dump truck")).toMatchObject({ qty: 1, durationValue: 4 });
     expect(rental("Generator rental")).toMatchObject({ qty: 1, rate: 220, durationValue: 10 }); // not in the standard list → appended at the intake's rate
     expect(report.skipped.some((s) => /Rebar/.test(s))).toBe(false); // nothing entered for rebar

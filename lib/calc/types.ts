@@ -495,6 +495,8 @@ export interface EquipmentRentalItem {
    * and it cannot silence the auto-quantity fencing line at all.
    */
   excluded?: boolean;
+  /** A typed quantity for the auto-quantity fencing line (an imported intake's figure) — wins over the trench-length count. */
+  qtyOverride?: number;
 }
 
 export interface EquipmentResult {

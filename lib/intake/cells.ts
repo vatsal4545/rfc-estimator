@@ -30,6 +30,9 @@ export const VERSION_CELLS = {
   revisionNotes: "B14",
 } as const;
 
+/** The Revisions tab — this filled file's own history, one row per issue (row 4 is the header). */
+export const REVISIONS_TABLE = { firstRow: 5, lastRow: 16, rev: "A", date: "B", by: "C", notes: "D" } as const;
+
 export const PROJECT_CELLS = {
   clientName: "B5",
   contactName: "B6",
@@ -264,6 +267,8 @@ export const SITE_WORKS_ROWS = {
   dump: 27,
 } as const;
 export const SITE_WORKS_COLS = { qty: "B", include: "E" } as const;
+/** The template's design unit rates (Construction!D32 / D33) — the fill back-derives set counts from the estimator's design costs with them. */
+export const DESIGN_SET_RATES = { autoCad: 3412.5, ee: 2080 } as const;
 
 /** Rentals: name in A (the template's own labels), qty B, unit cost C, days D, include E. */
 export const RENTAL_TABLE = { firstRow: 39, lastRow: 52, name: "A", qty: "B", unitCost: "C", days: "D", include: "E" } as const;

@@ -95,7 +95,17 @@ export function clearSticky(project: Project, path: string): Project {
 /** Copy every pinned value from `before` onto `after`. */
 export function restoreSticky(before: Project, after: Project): Project {
   let next = after;
-  for (const path of before.sticky ?? []) next = writePath(next, path, readPath(before, path));
+  for (const path of before.sticky ?? []) {
+    if (path === "peripherals.gpr") {
+      // The pinned GPR line keeps its own unit cost (a quoted or imported rate), not the regenerated default.
+      const pinned = (before.peripherals.customItems ?? []).find((c) => c.name === GPR_ITEM);
+      const items = (next.peripherals.customItems ?? []).filter((c) => c.name !== GPR_ITEM);
+      if (pinned && pinned.qty > 0) items.push({ ...pinned });
+      next = { ...next, peripherals: { ...next.peripherals, customItems: items } };
+      continue;
+    }
+    next = writePath(next, path, readPath(before, path));
+  }
   return next;
 }
 

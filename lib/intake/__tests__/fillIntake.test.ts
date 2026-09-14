@@ -133,7 +133,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(report.templateVersion).toBe("3.6.0");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
-    expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Version"]);
+    expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Revisions", "Version"]);
     expect(report.leftBlank.some((s) => s.startsWith("Electrical B10"))).toBe(true);
     expect(report.warnings).toEqual([]);
   });

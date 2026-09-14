@@ -10,7 +10,7 @@
 // except where the intake carries a quote the estimator has no table for.
 
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
-import type { EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine } from "../calc/types";
+import type { EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
   CONNECTOR_KEYS,
   RETAIN_ELEMENTS,
@@ -20,6 +20,7 @@ import {
   projectTypeFromText,
   defaultCapacity,
   hasExistingChargers,
+  keepsExistingService,
   type ExistingInput,
   type RetainDecision,
   type UnitCondition,
@@ -27,12 +28,13 @@ import {
 import { defaultInterconnection, feederOutOfScope, type InterconnectionInput } from "../interconnection";
 import { applyFieldOverrides } from "../overrides";
 import { defaultCommercial, defaultIntake, modelInputsOf } from "../proposal/defaults";
-import type { CommercialInput, IntakeInput, ScopeLine, ScopeStatus, SubscriptionPolicy } from "../proposal/types";
+import type { CommercialInput, DistributionScheduleRow, IntakeInput, RevisionEntry, ScopeLine, ScopeStatus, SubscriptionPolicy } from "../proposal/types";
 import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
+import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
 export interface IntakeImportReport {
@@ -56,7 +58,7 @@ export interface IntakeImportResult {
   name: string;
 }
 
-const INTAKE_SHEETS = ["Version", "Project", "Existing", "Equipment", "Electrical", "Construction", "Commercial", "Revenue", "Carbon", "Deal_Structure", "Overrides"] as const;
+const INTAKE_SHEETS = ["Version", "Revisions", "Project", "Existing", "Equipment", "Electrical", "Construction", "Commercial", "Revenue", "Carbon", "Deal_Structure", "Overrides"] as const;
 
 /** Is this workbook an EVSE Project Intake (any 1.x/2.x generation)? */
 export function looksLikeIntake(wb: WorkbookCells): boolean {
@@ -128,9 +130,22 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const contentHash = str("Version", "B8");
   const fileVersion = str("Version", "B10");
   const dateCompleted = str("Version", "B11");
+  const revisions: RevisionEntry[] = [];
+  if (sheets.get("Revisions")) {
+    for (let r = REVISIONS_TABLE.firstRow; r <= REVISIONS_TABLE.lastRow; r++) {
+      const rev = str("Revisions", `${REVISIONS_TABLE.rev}${r}`);
+      const notes = str("Revisions", `${REVISIONS_TABLE.notes}${r}`);
+      if (!rev && !notes) continue;
+      // The sheet's own summary block (counts and checks) sits below the table — a formula in the date column marks it.
+      if (wb.formula(sheets.get("Revisions")!, `${REVISIONS_TABLE.date}${r}`) !== undefined) break;
+      revisions.push({ rev, date: cellToIso(cell("Revisions", `${REVISIONS_TABLE.date}${r}`)), by: str("Revisions", `${REVISIONS_TABLE.by}${r}`), notes });
+    }
+  }
   const completedBy = str("Version", "B12");
   const projectReference = str("Version", "B13");
   const revisionNotes = str("Version", "B14");
+  // The fill appends its own sentence to the notes; strip it so a re-fill does not stack a second copy.
+  const carriedRevisionNotes = revisionNotes.replace(/\s*Filled by the RFC Estimator on \d{4}-\d{2}-\d{2}[\s\S]*$/, "").trim();
   if (templateVersion && templateVersion !== INTAKE_TEMPLATE.version) {
     const [major, minor] = templateVersion.split(".").map(Number);
     const beforeRebuild = Number.isFinite(major) && Number.isFinite(minor) && (major < 3 || (major === 3 && minor < 3));
@@ -157,6 +172,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const lines: QuickChargerLine[] = [];
   const extras: QuickExtraLine[] = [];
   const equipmentLine = new Map<number, { sku: string; role: string }>();
+  const lineLoadType = new Map<number, string>();
   for (let r = 7; r <= 18; r++) {
     const sku = str("Equipment", `C${r}`);
     const qty = num("Equipment", `I${r}`) ?? 0;
@@ -179,6 +195,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
       continue;
     }
     lines.push({ loadTypeId, count: qty, sku });
+    lineLoadType.set(r - 6, loadTypeId);
     mapped.push(`Equipment: ${qty} × ${sku} → sized as ${loadTypeId}`);
     if (book.role === "power_cabinet") {
       const perCabinet = num("Equipment", `N${r}`) ?? 0;
@@ -216,14 +233,40 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   }
   const dcDist: number[] = [];
   const l2Dist: number[] = [];
+  // Every unit's own row travels as a takeoff edit on the row the Quick
+  // Estimate generates for it ("<load type> #n"): its exact distance, and the
+  // conductor and sets typed against it. The ladder below is only the Quick
+  // tab's summary of the same distances.
+  const takeoffEdits: Record<string, TakeoffEdit> = {};
+  const unitIndex = new Map<number, number>();
+  let runsWithDistance = 0;
+  let runsSharingTrench = 0;
   for (let k = 0; k < unitLines.length; k++) {
     const row = CHARGER_RUN_TABLE.firstRow + k;
     if (row > CHARGER_RUN_TABLE.lastRow) break;
+    const lineNo = unitLines[k];
+    const n = (unitIndex.get(lineNo) ?? 0) + 1;
+    unitIndex.set(lineNo, n);
     const d = num("Electrical", `${CHARGER_RUN_TABLE.distanceFt}${row}`);
+    const conductor = str("Electrical", `${CHARGER_RUN_TABLE.conductorOverride}${row}`);
+    const sets = num("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`);
+    const loadTypeId = lineLoadType.get(lineNo);
+    if (loadTypeId && (d !== undefined || conductor || sets !== undefined)) {
+      const edit: TakeoffEdit = {};
+      if (d !== undefined && d > 0) edit.oneWayDistFt = d;
+      if (conductor) edit.sizeOverride = conductorFromIntake(conductor);
+      if (sets !== undefined && sets > 0) edit.runsPerUnitOverride = sets;
+      takeoffEdits[`${loadTypeId} #${n}`] = edit;
+    }
     if (d === undefined || d <= 0) continue;
-    if (equipmentLine.get(unitLines[k])?.role === "level_2") l2Dist.push(d);
+    runsWithDistance++;
+    if (str("Electrical", `${CHARGER_RUN_TABLE.sharesTrench}${row}`).toLowerCase() === "yes") runsSharingTrench++;
+    if (equipmentLine.get(lineNo)?.role === "level_2") l2Dist.push(d);
     else dcDist.push(d);
   }
+  const sharedTrenchRuns = runsWithDistance > 0 && runsSharingTrench === runsWithDistance;
+  const typedConductors = Object.values(takeoffEdits).filter((e) => e.sizeOverride).length;
+  if (typedConductors) mapped.push(`Conductor sizes typed on ${typedConductors} charger run(s) carried as size overrides`);
   const ladder = (ds: number[]) => {
     const sorted = [...ds].sort((a, b) => a - b);
     const first = sorted[0];
@@ -247,15 +290,11 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     if (d !== undefined && d > 0) dcRuns.push(d);
   }
   if (dcRuns.length) skipped.push(`${dcRuns.length} cabinet-to-dispenser DC run(s), ${dcRuns.reduce((s, d) => s + d, 0)} ft — dispenser DC runs are not in the estimator takeoff yet.`);
-  for (const [ref, label] of [
-    [E.trenchSurface, "Trench surface"],
-    [E.trenchDepthIn, "Trench depth (in)"],
-    [E.pointOfConnection, "Point of connection"],
-    [E.switchgearToPoleFt, "Distance switchgear to pole (ft)"],
-  ] as const) {
-    const v = str("Electrical", ref);
-    if (v) skipped.push(`Electrical ${label}: "${v}" — recorded in the notes, not modelled.`);
-  }
+  // Site facts the estimator does not model but the intake records — carried as typed so a round trip keeps them.
+  const trenchSurface = str("Electrical", E.trenchSurface);
+  const trenchDepthIn = num("Electrical", E.trenchDepthIn);
+  const switchgearToPoleFt = num("Electrical", E.switchgearToPoleFt);
+  if (trenchSurface || trenchDepthIn !== undefined) skipped.push(`Electrical trench surface "${trenchSurface || "—"}", depth ${trenchDepthIn ?? "—"} in — carried to the intake, not modelled by the estimator.`);
   const feederBy = str("Electrical", E.feederBy);
   const interconnection: InterconnectionInput = {
     ...defaultInterconnection(),
@@ -279,13 +318,35 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   };
   const interconnectFeeUnit = num("Electrical", E.interconnectFee) ?? 0;
   const lineExtensionUnit = num("Electrical", E.contributionAboveAllowance) ?? 0;
-  // Distribution equipment schedule — quoted items we provide, at the materials markup.
+  // Distribution equipment schedule — quoted items we provide, at the materials
+  // markup; and the rows themselves, verbatim, so the fill writes the
+  // engineer's schedule back rather than a regenerated one.
   const distributionItems: { name: string; qty: number; unitCost: number }[] = [];
+  const distributionSchedule: DistributionScheduleRow[] = [];
   const D = DISTRIBUTION_TABLE;
   for (let r = D.firstRow; r <= D.lastRow; r++) {
     const item = str("Electrical", `${D.item}${r}`);
     const cost = num("Electrical", `${D.quotedCost}${r}`) ?? 0;
     const who = str("Electrical", `${D.whoProvides}${r}`).toLowerCase();
+    const typeText = str("Electrical", `${D.type}${r}`);
+    if (item || typeText || cost > 0) {
+      distributionSchedule.push({
+        item,
+        type: typeText,
+        qty: num("Electrical", `${D.qty}${r}`) ?? null,
+        volts: num("Electrical", `${D.volts}${r}`) ?? null,
+        phases: num("Electrical", `${D.phases}${r}`) ?? null,
+        ratingA: num("Electrical", `${D.ratingA}${r}`) ?? null,
+        fedFrom: str("Electrical", `${D.fedFrom}${r}`),
+        feeds: str("Electrical", `${D.feeds}${r}`),
+        location: str("Electrical", `${D.location}${r}`),
+        whoProvides: str("Electrical", `${D.whoProvides}${r}`),
+        costBasis: str("Electrical", `${D.costBasis}${r}`),
+        quotedCost: cost > 0 ? cost : null,
+      });
+      const ratingText = str("Electrical", `${D.ratingA}${r}`);
+      if (ratingText && num("Electrical", `${D.ratingA}${r}`) === undefined) warnings.push(`Distribution schedule row ${r}: rating "${ratingText}" is text in a number cell — the sheet cannot size on it.`);
+    }
     if (!item || cost <= 0 || who === "by others") continue;
     const type = str("Electrical", `${D.type}${r}`);
     const rating = num("Electrical", `${D.ratingA}${r}`);
@@ -310,7 +371,10 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const gprEa = siteQty(25);
   const gfiEa = siteQty(26);
   const dumpLots = siteQty(27);
-  for (const [row, label] of [[15, "Rebar"], [16, "Steel mesh"], [18, "Striping"], [22, "Signs"], [23, "Sign posts"], [24, "Switchgear sign"]] as [number, string][]) {
+  const signsQty = siteQty(22);
+  const signPostsQty = siteQty(23);
+  const switchgearSignQty = siteQty(24);
+  for (const [row, label] of [[15, "Rebar"], [16, "Steel mesh"], [18, "Striping"]] as [number, string][]) {
     const q = num("Construction", `B${row}`);
     if (q !== undefined && q > 0) skipped.push(`Construction ${label} quantity ${q} — the estimator derives this line from the chargers and the dig.`);
   }
@@ -634,6 +698,16 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
 
   // ---- Build the project ---------------------------------------------------
   const quickBase: Project = JSON.parse(JSON.stringify(base));
+  // The planner reads the service type (no utility substructures on an added
+  // load), the retained-switchgear flag (no board, no gear pad, no gear
+  // bollards) and the per-unit takeoff edits while it builds — so they have
+  // to be on the project before the build, not patched in afterwards.
+  quickBase.intake = { ...(quickBase.intake ?? defaultIntake()), interconnection };
+  if (existing && keepsExistingService(existing.projectType) && existing.register.switchgear === "RETAIN") {
+    quickBase.peripherals = { ...quickBase.peripherals, existingSwitchgear: true };
+    mapped.push("Switchgear retained on the Existing tab — the estimator prices a main breaker into the existing board, no switchboard, pad or gear bollards");
+  }
+  if (Object.keys(takeoffEdits).length) quickBase.takeoffEdits = takeoffEdits;
   quickBase.setup.feederMaterial = material === "Al" ? "Al" : material === "Cu" ? "Cu" : quickBase.setup.feederMaterial;
   quickBase.setup.serviceChain = {
     ...(quickBase.setup.serviceChain ?? { enabled: false, material: "Al", utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }),
@@ -694,17 +768,20 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   }
   if (adaRamps !== undefined) per.adaRampCost = adaRamps * (num("Construction", "D20") ?? 5200);
   if (bollards !== undefined) per.bollardsQty = bollards;
+  if (signsQty !== undefined) per.signQtyOverride = signsQty;
+  if (signPostsQty !== undefined) per.signPostQtyOverride = signPostsQty;
   if (gfiEa !== undefined) per.gfiTestQty = gfiEa;
   if (dumpLots !== undefined) per.dumpWasteCost = dumpLots * (num("Construction", "D27") ?? 5000);
   let customItems = per.customItems ?? [];
   if (gprEa !== undefined) {
     customItems = customItems.filter((c) => c.name !== GPR_ITEM_NAME);
-    if (gprEa > 0) customItems.push({ name: GPR_ITEM_NAME, qty: gprEa, unitCost: customItems.find((c) => c.name === GPR_ITEM_NAME)?.unitCost ?? 1500 });
+    if (gprEa > 0) customItems.push({ name: GPR_ITEM_NAME, qty: gprEa, unitCost: num("Construction", "D25") ?? customItems.find((c) => c.name === GPR_ITEM_NAME)?.unitCost ?? 1500 });
   }
   customItems = [...customItems, ...distributionItems];
   per.customItems = customItems;
   if (permitQty > 0) per.permitFeeTotal = permitFees;
   if (utilityQty > 0) per.utilityAppFee = utilityFees;
+  else if (str("Construction", "E82").toUpperCase() === "N" || num("Construction", "B82") === 0) per.utilityAppFee = 0; // the fee table says no utility application fee
   project.peripherals = per;
   const siteNotes = [concreteYd !== undefined && `${concreteYd} yd concrete`, asphaltSf !== undefined && `${asphaltSf} sq ft asphalt`, adaStalls !== undefined && `${adaStalls} ADA stall(s)`, bollards !== undefined && `${bollards} bollards`, gfiEa !== undefined && `${gfiEa} GFI test(s)`, dumpLots !== undefined && `${dumpLots} dump lot(s)`].filter(Boolean);
   if (siteNotes.length) mapped.push(`Site works quantities: ${siteNotes.join(", ")} (estimator rates)`);
@@ -720,12 +797,22 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     if (target) {
       const item = equipment.find((e) => e.name === target);
       if (!item) continue;
+      const perWeek = /per week/i.test(item.rateBasis);
       if (!r.include) item.qty = 0;
       else {
-        if (r.qty !== undefined) item.qty = r.qty;
-        if (r.days !== undefined) item.durationValue = target === "Temporary fencing" ? Math.max(1, Math.ceil(r.days / 7)) : r.days;
+        // The sheet's rows are per day; the estimator's fencing is per ft per week — carried as an exact conversion both ways.
+        if (r.qty !== undefined) {
+          item.qty = r.qty;
+          if (target === "Temporary fencing") item.qtyOverride = r.qty;
+        }
+        if (r.days !== undefined) item.durationValue = perWeek ? r.days / 7 : r.days;
+        // A live row's typed rate is what the CEO's engine prices with, so the estimator prices with it too (the sheet's rows are per day).
+        if (r.unitCost !== undefined && r.unitCost > 0 && (r.qty ?? 0) > 0) {
+          item.rate = perWeek ? r.unitCost * 7 : r.unitCost;
+          if (!perWeek) item.rateBasis = "per day";
+        }
       }
-      mapped.push(`Rental ${target}: qty ${item.qty}, ${item.durationValue} × ${item.rateBasis}`);
+      mapped.push(`Rental ${target}: qty ${item.qty}, ${item.durationValue} × ${item.rateBasis}${r.unitCost !== undefined && (r.qty ?? 0) > 0 ? ` at the intake's ${money(r.unitCost)}` : ""}`);
     } else if (r.include && (r.qty ?? 0) > 0) {
       equipment.push({ name: r.name, qty: r.qty ?? 1, rate: r.unitCost ?? 0, rateBasis: "per day", durationValue: r.days ?? 1, delivery: 0 });
       mapped.push(`Rental ${r.name} added: ${r.qty} × ${money(r.unitCost ?? 0)}/day × ${r.days ?? 1} days`);
@@ -735,7 +822,10 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
 
   commercial.utilityInterconnectFee = interconnectFee;
   commercial.lineExtensionContribution = lineExtensionOverride ?? (lineExtension > 0 ? lineExtension : undefined);
-  if (additionalScope !== undefined) commercial.additionalScope = additionalScope;
+  if (additionalScope !== undefined) {
+    commercial.additionalScope = additionalScope;
+    commercial.additionalScopeReason = str("Overrides", "D18") || undefined;
+  }
   commercial.tariff = tariff;
   commercial.revenue = revenue;
   commercial.carbon = carbon;
@@ -772,7 +862,40 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     cca: str("Project", "B46"),
     interconnection,
     designAmbientC: designAmbientC ?? null,
+    fileVersion: fileVersion || undefined,
+    completedBy: completedBy || undefined,
+    revisionNotes: carriedRevisionNotes || undefined,
+    trenchSurface: trenchSurface || undefined,
+    trenchDepthIn: trenchDepthIn ?? null,
+    switchgearToPoleFt: switchgearToPoleFt ?? null,
+    switchgearSignQty: switchgearSignQty ?? null,
+    sharedTrenchRuns: sharedTrenchRuns || undefined,
+    distributionSchedule: distributionSchedule.length ? distributionSchedule : undefined,
+    revisions: revisions.length ? revisions : undefined,
   };
+  // What the intake typed stays typed: pin those fields so an Equipment or
+  // Electrical edit in the app (which rebuilds the estimate) restores them
+  // instead of re-deriving them from the chargers.
+  const sticky = new Set<string>(project.sticky ?? []);
+  if (crewDays !== undefined) sticky.add("financial.laborBusinessDays");
+  if (pmHours !== undefined) sticky.add("financial.pmHours");
+  if (pmPct !== undefined) sticky.add("financial.pmPctOfLabor");
+  if (autoCadSets !== undefined) sticky.add("financial.autoCadDesignCost");
+  if (eeSets !== undefined) sticky.add("financial.electricalEngDesignCost");
+  if (permitQty > 0) {
+    sticky.add("financial.planCheckPermitFee");
+    sticky.add("peripherals.permitFeeTotal");
+  }
+  if (utilityQty > 0 || str("Construction", "E82").toUpperCase() === "N" || num("Construction", "B82") === 0) sticky.add("peripherals.utilityAppFee");
+  if (bollards !== undefined) sticky.add("peripherals.bollardsQty");
+  if (adaStalls !== undefined) for (const k of ["peripherals.adaVanQty", "peripherals.adaStdQty", "peripherals.adaAmbQty"]) sticky.add(k);
+  if (adaRamps !== undefined) sticky.add("peripherals.adaRampCost");
+  if (gfiEa !== undefined) sticky.add("peripherals.gfiTestQty");
+  if (dumpLots !== undefined) sticky.add("peripherals.dumpWasteCost");
+  if (gprEa !== undefined) sticky.add("peripherals.gpr");
+  if (rentals.some((r) => r.qty !== undefined || r.days !== undefined)) sticky.add("equipment");
+  if (scopeSentence) sticky.add("setup.scopeOfWork");
+  if (sticky.size) project.sticky = [...sticky];
   project.intake = intake;
   if (rateSchedule) mapped.push(`Rate schedule ${rateSchedule}${access ? ` · ${access}` : ""} · ${hoursOpen ?? 24} h/day · ${daysOpen ?? 365} days/yr`);
   project.existing = existing;

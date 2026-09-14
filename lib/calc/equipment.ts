@@ -19,7 +19,7 @@ export function computeEquipment(
     method === "trench" ? rollups.longestRunFt : method === "hybrid" ? setup.trenchLengthFt : 0;
   const autoFencingQty = fencedFt > 0 ? fencedFt * 2 + 60 : 0;
   const withTotals = items.map((item) => {
-    const qty = item.name === AUTO_QTY_ITEM ? autoFencingQty : item.qty;
+    const qty = item.qtyOverride !== undefined ? item.qtyOverride : item.name === AUTO_QTY_ITEM ? autoFencingQty : item.qty;
     // An excluded line still reports its quantity — the row has to stay
     // readable, and putting it back should cost nothing but a click — but it
     // contributes no money, delivery included.

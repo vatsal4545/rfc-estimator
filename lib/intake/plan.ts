@@ -16,6 +16,7 @@ import { GPR_ITEM_NAME } from "../calc/autoplan";
 import { effectiveInstallMethod } from "../calc/install";
 import type { EstimateResult, GearSelection, Project } from "../calc/types";
 import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS, capacityOf, hasExistingChargers, keepsExistingService } from "../existing";
+import { feederOutOfScope } from "../interconnection";
 import { defaultInterconnection } from "../interconnection";
 import { defaultServiceTerms, modelInputsOf } from "../proposal/defaults";
 import type { ProposalResult, ScopeLine, ScopeStatus } from "../proposal/types";
@@ -41,6 +42,8 @@ import {
   FEE_ROWS,
   INTAKE_TEXT,
   OVERRIDE_COLS,
+  REVISIONS_TABLE,
+  DESIGN_SET_RATES,
   PROJECT_CELLS,
   RENTAL_ROW_NAMES,
   RENTAL_TABLE,
@@ -142,7 +145,24 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Version", VERSION_CELLS.completedBy, it?.completedBy?.trim() || s.cpm);
   put("Version", VERSION_CELLS.projectReference, it?.projectReference);
   const generated = `Filled by the RFC Estimator on ${today}${s.clientName ? ` for ${s.clientName}` : ""}. Construction and engineering figures are the estimator's — see the Overrides tab.`;
-  put("Version", VERSION_CELLS.revisionNotes, [it?.revisionNotes?.trim(), generated].filter(Boolean).join(" "));
+  const revisionNotes = [it?.revisionNotes?.trim(), generated].filter(Boolean).join(" ");
+  put("Version", VERSION_CELLS.revisionNotes, revisionNotes);
+  // The Revisions tab: the file's own history as imported, then this issue —
+  // replacing the row that already carries this revision letter, else appended.
+  const history = (it?.revisions ?? []).filter((r) => r.rev.trim() || r.notes.trim());
+  const thisIssue = { rev: fileVersion, date: today, by: it?.completedBy?.trim() || s.cpm, notes: revisionNotes };
+  const slot = history.findIndex((r) => r.rev.trim().toLowerCase() === fileVersion.toLowerCase());
+  const revisions = slot >= 0 ? history.map((r, i) => (i === slot ? thisIssue : r)) : [...history, thisIssue];
+  const revisionRows = REVISIONS_TABLE.lastRow - REVISIONS_TABLE.firstRow + 1;
+  revisions.slice(0, revisionRows).forEach((r, i) => {
+    const row = REVISIONS_TABLE.firstRow + i;
+    put("Revisions", `${REVISIONS_TABLE.rev}${row}`, r.rev);
+    const serial = isoToSerial(r.date);
+    if (serial !== null) put("Revisions", `${REVISIONS_TABLE.date}${row}`, serial);
+    put("Revisions", `${REVISIONS_TABLE.by}${row}`, r.by);
+    put("Revisions", `${REVISIONS_TABLE.notes}${row}`, r.notes);
+  });
+  if (revisions.length > revisionRows) warnings.push(`${revisions.length - revisionRows} revision row(s) beyond the Revisions tab's ${revisionRows} were not written.`);
 
   // ---- Project ------------------------------------------------------------
   put("Project", PROJECT_CELLS.clientName, s.clientName);
@@ -330,7 +350,9 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const ambientC = it?.designAmbientC ?? null;
   if (ambientC !== null && Number.isFinite(ambientC)) put("Electrical", ELECTRICAL_CELLS.ambientC, ambientC);
   else leftBlank.push("Electrical B10 design ambient (C) — site data the sheet insists on: every charger-run verdict reads SET THE DESIGN AMBIENT until it is typed. Enter it on the Electrical section (ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs).");
-  leftBlank.push("Electrical B8 trench surface, B9 trench depth — site facts the estimator does not model; the template's Mixed / 24 in stand.");
+  if (it?.trenchSurface?.trim()) put("Electrical", ELECTRICAL_CELLS.trenchSurface, it.trenchSurface.trim());
+  if (it?.trenchDepthIn !== undefined && it?.trenchDepthIn !== null) put("Electrical", ELECTRICAL_CELLS.trenchDepthIn, it.trenchDepthIn);
+  if (!it?.trenchSurface?.trim() || it?.trenchDepthIn === undefined || it?.trenchDepthIn === null) leftBlank.push("Electrical B8 trench surface, B9 trench depth — site facts the estimator does not model; the template's Mixed / 24 in stand unless an imported intake carried them.");
 
   // Block B — the charger-run table. The sheet lists every unit that takes a
   // feeder or a branch itself, line by line in Equipment order; the estimator
@@ -372,6 +394,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       const row = CHARGER_RUN_TABLE.firstRow + before + k;
       if (row > CHARGER_RUN_TABLE.lastRow) continue;
       put("Electrical", `${CHARGER_RUN_TABLE.distanceFt}${row}`, r.oneWayDistFt);
+      if (it?.sharedTrenchRuns) put("Electrical", `${CHARGER_RUN_TABLE.sharesTrench}${row}`, INTAKE_TEXT.yes);
       put("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`, Math.max(1, r.resolvedRunsPerUnit));
       // The estimator's size, or the next one up when the sheet's table does not
       // carry it (3 AWG, 450 kcmil…); a snapped conductor takes the sheet's own
@@ -379,7 +402,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       const conductor = snapConductorToIntake(r.selectedWire);
       put("Electrical", `${CHARGER_RUN_TABLE.conductorOverride}${row}`, conductor.size);
       if (conductor.snapped) snappedSizes.set(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`, (snappedSizes.get(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`) ?? 0) + 1);
-      else put("Electrical", `${CHARGER_RUN_TABLE.conduitOverride}${row}`, conduitToIntake(r.conduitSize));
+      // A conductor someone typed on the row (an imported intake's, or a Takeoff override) goes with the sheet's own conduit for it; the estimator's conduit travels only with the estimator's conductor.
+      else if (!r.sizeOverride) put("Electrical", `${CHARGER_RUN_TABLE.conduitOverride}${row}`, conduitToIntake(r.conduitSize));
       runFt += r.oneWayDistFt;
     }
   }
@@ -393,7 +417,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     const written = unitsWritten.get(rowNo) ?? 0;
     if (written < count) warnings.push(`Equipment line ${rowNo - EQUIPMENT_TABLE.firstRow + 1}: ${count} unit(s) on the schedule but the estimate sizes ${written} — ${count - written} charger-run row(s) left without a distance.`);
   }
-  if (runFt > 0 && s.trenchLengthFt > 0 && s.trenchLengthFt < runFt) {
+  if (!it?.sharedTrenchRuns && runFt > 0 && s.trenchLengthFt > 0 && s.trenchLengthFt < runFt) {
     leftBlank.push(`Electrical G18–G77 shared-trench flags — the estimator digs ${Math.round(s.trenchLengthFt)} ft of trench for ${Math.round(runFt)} ft of charger runs; mark the runs that share another run's trench so the sheet's trench figure agrees.`);
   }
   if (totalCabinets > 0) leftBlank.push(`Electrical rows ${DISPENSER_RUN_TABLE.firstRow}–${DISPENSER_RUN_TABLE.lastRow} cabinet-to-dispenser DC runs — the estimator sizes the cabinets' AC feeders only.`);
@@ -403,12 +427,14 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Electrical", ELECTRICAL_CELLS.txToSwitchgearFt, s.serviceChain?.utilityToSwitchgearFt);
   put("Electrical", ELECTRICAL_CELLS.spareCapacityA, x?.infrastructure.spareA ?? undefined);
   const frame = result.panel.bus480 ?? result.panel.bus208;
-  put("Electrical", ELECTRICAL_CELLS.switchgearPricedA, frame?.suggestedBusA);
-  leftBlank.push("Electrical B150 distance to the pole, B140 board count and B144–B145 load management — the estimator sizes one board at full nameplate; the template's 1 / No stand.");
+  // A retained board is not a priced one: the sheet's B142 is "size being priced", and 0 keeps RefData from pricing a switchboard the site already has.
+  put("Electrical", ELECTRICAL_CELLS.switchgearPricedA, per.existingSwitchgear ? 0 : frame?.suggestedBusA);
+  if (it?.switchgearToPoleFt !== undefined && it?.switchgearToPoleFt !== null) put("Electrical", ELECTRICAL_CELLS.switchgearToPoleFt, it.switchgearToPoleFt);
+  leftBlank.push("Electrical B150 distance to the pole (unless an imported intake carried it), B140 board count and B144–B145 load management — the estimator sizes one board at full nameplate; the template's 1 / No stand.");
   leftBlank.push("Electrical B147 demand-limiting setpoint — the billing setpoint the EMS holds the peak fifteen-minute draw to. Nothing is sized on it and the estimator does not model it; blank leaves the template falling back to the sizing cap above.");
   put("Electrical", ELECTRICAL_CELLS.feederBy, ic.serviceFeederBy);
-  const svc = result.rows.find((r) => r.synthetic && r.loadTypeId.startsWith("SVC Utility"));
-  put("Electrical", `${SERVICE_FEEDER_ROW.material}${SERVICE_FEEDER_ROW.row}`, s.serviceChain?.material ?? svc?.material);
+  const svc = feederOutOfScope(ic.serviceFeederBy) ? undefined : result.rows.find((r) => r.synthetic && r.loadTypeId.startsWith("SVC Utility"));
+  if (!feederOutOfScope(ic.serviceFeederBy)) put("Electrical", `${SERVICE_FEEDER_ROW.material}${SERVICE_FEEDER_ROW.row}`, s.serviceChain?.material ?? svc?.material);
   if (svc) {
     put("Electrical", `${SERVICE_FEEDER_ROW.conductor}${SERVICE_FEEDER_ROW.row}`, snapConductorToIntake(svc.selectedWire, INTAKE_FEEDER_SIZES).size);
     put("Electrical", `${SERVICE_FEEDER_ROW.sets}${SERVICE_FEEDER_ROW.row}`, svc.resolvedRunsPerUnit);
@@ -440,6 +466,27 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   // Block E — distribution equipment, documented and priced through the override register (never twice).
   const gear: GearSelection[] = per.useAutoGear ? result.panel.suggestedGear : per.gear;
   let dRow = DISTRIBUTION_TABLE.firstRow;
+  const typedSchedule = (it?.distributionSchedule ?? []).filter((r) => r.item.trim() || r.type.trim() || (r.quotedCost ?? 0) > 0);
+  if (typedSchedule.length) {
+    // An imported intake's schedule travels back exactly as typed — the engineer's own rows, not a regenerated list.
+    for (const r of typedSchedule.slice(0, DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1)) {
+      put("Electrical", `${DISTRIBUTION_TABLE.item}${dRow}`, r.item);
+      put("Electrical", `${DISTRIBUTION_TABLE.type}${dRow}`, r.type);
+      put("Electrical", `${DISTRIBUTION_TABLE.qty}${dRow}`, r.qty ?? undefined);
+      put("Electrical", `${DISTRIBUTION_TABLE.volts}${dRow}`, r.volts ?? undefined);
+      put("Electrical", `${DISTRIBUTION_TABLE.phases}${dRow}`, r.phases ?? undefined);
+      put("Electrical", `${DISTRIBUTION_TABLE.ratingA}${dRow}`, r.ratingA ?? undefined);
+      put("Electrical", `${DISTRIBUTION_TABLE.fedFrom}${dRow}`, r.fedFrom);
+      put("Electrical", `${DISTRIBUTION_TABLE.feeds}${dRow}`, r.feeds);
+      put("Electrical", `${DISTRIBUTION_TABLE.location}${dRow}`, r.location);
+      put("Electrical", `${DISTRIBUTION_TABLE.whoProvides}${dRow}`, r.whoProvides);
+      put("Electrical", `${DISTRIBUTION_TABLE.costBasis}${dRow}`, r.costBasis);
+      put("Electrical", `${DISTRIBUTION_TABLE.quotedCost}${dRow}`, r.quotedCost ?? undefined);
+      dRow++;
+    }
+    if (typedSchedule.length > DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1) warnings.push(`${typedSchedule.length - (DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1)} distribution schedule row(s) beyond the intake's table were not written.`);
+    dRow = DISTRIBUTION_TABLE.lastRow + 1; // nothing generated below a typed schedule
+  }
   // Every item names what feeds it and what it feeds — the sheet's own check
   // ("a panel nobody feeds is a panel nobody costed a feeder to") reads column G.
   const distributionRow = (item: string, type: string, qty: number, volts?: number, ratingA?: number, fedFrom?: string, feeds?: string, existing = false) => {
@@ -532,29 +579,41 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   siteQty(SITE_WORKS_ROWS.concreteYd, qtyOf(civil, (n) => n.startsWith("Concrete (")));
   siteQty(SITE_WORKS_ROWS.rebar, qtyOf(civil, (n) => n === "Rebar"));
   siteQty(SITE_WORKS_ROWS.asphaltSf, qtyOf(civil, (n) => n === "Asphalt paving — parking stalls"));
-  siteQty(SITE_WORKS_ROWS.striping, qtyOf(signage, (n) => n === "Striping") > 0 ? 1 : 0);
+  siteQty(SITE_WORKS_ROWS.striping, qtyOf(signage, (n) => n === "Striping"));
   const adaPerType = qtyOf(civil, (n) => /^ADA (van|standard|ambulatory)/.test(n));
   siteQty(SITE_WORKS_ROWS.adaStalls, adaPerType > 0 ? adaPerType : qtyOf(civil, (n) => n === "ADA asphalt / paving allowance"));
   siteQty(SITE_WORKS_ROWS.adaRamp, qtyOf(civil, (n) => n === "ADA ramp"));
   siteQty(SITE_WORKS_ROWS.bollards, qtyOf(signage, (n) => n === "Bollards"));
   siteQty(SITE_WORKS_ROWS.signs, qtyOf(signage, (n) => n === "Signs"));
   siteQty(SITE_WORKS_ROWS.signPosts, qtyOf(signage, (n) => n === "Sign posts"));
-  siteQty(SITE_WORKS_ROWS.gpr, (per.customItems ?? []).find((i) => i.name === GPR_ITEM_NAME)?.qty ?? 0);
+  const gprItem = (per.customItems ?? []).find((i) => i.name === GPR_ITEM_NAME);
+  siteQty(SITE_WORKS_ROWS.gpr, gprItem?.qty ?? 0);
+  if (gprItem && gprItem.qty > 0 && gprItem.unitCost > 0) put("Construction", `D${SITE_WORKS_ROWS.gpr}`, gprItem.unitCost);
   siteQty(SITE_WORKS_ROWS.gfi, qtyOf(civil, (n) => n.startsWith("GFI test")));
   siteQty(SITE_WORKS_ROWS.dump, qtyOf(civil, (n) => n === "Dump / waste"));
-  leftBlank.push("Construction B16 steel mesh and B24 switchgear sign — not separate lines in the estimator (inside the site-works override).");
+  // Steel mesh is inside the estimator's concrete line — a blank quantity would let the sheet add its standard build on top.
+  siteQty(SITE_WORKS_ROWS.steelMesh, 0);
+  if (it?.switchgearSignQty !== undefined && it?.switchgearSignQty !== null) siteQty(SITE_WORKS_ROWS.switchgearSign, it.switchgearSignQty);
+  else leftBlank.push("Construction B24 switchgear sign — not a separate line in the estimator (inside the site-works override) unless an imported intake carried a count.");
   if (f.pmHours > 0) put("Construction", CONSTRUCTION_CELLS.pmHours, f.pmHours);
-  leftBlank.push("Construction B32/B33 drawing-set counts — the estimator prices design as fees; the D&E total travels as override row 16.");
+  // Drawing-set counts: the estimator prices design as fees; where a fee is a whole number of the template's sets, say so.
+  const sets = (cost: number, rate: number) => (cost > 0 && Math.abs(cost / rate - Math.round(cost / rate)) < 1e-6 ? Math.round(cost / rate) : undefined);
+  put("Construction", CONSTRUCTION_CELLS.autoCadSets, sets(f.autoCadDesignCost, DESIGN_SET_RATES.autoCad));
+  put("Construction", CONSTRUCTION_CELLS.eeSets, sets(f.electricalEngDesignCost, DESIGN_SET_RATES.ee));
+  leftBlank.push("Construction B32/B33 drawing-set counts — written only where the estimator's design fee is a whole number of the template's sets; the D&E total travels as override row 16 regardless.");
+  const round4 = (n: number) => Math.round(n * 10000) / 10000;
+  const rentalRowOf = (i: { name: string }) => RENTAL_ROW_NAMES.find((rr) => (rr.estimator ?? rr.label).toLowerCase() === i.name.toLowerCase() || rr.label.toLowerCase() === i.name.toLowerCase());
   for (const rr of RENTAL_ROW_NAMES) {
-    if (!rr.estimator) continue;
-    const item = result.equipment.items.find((i) => i.name === rr.estimator);
+    const item = result.equipment.items.find((i) => rentalRowOf(i)?.row === rr.row);
     if (!item) continue;
+    const perWeek = /per week/i.test(item.rateBasis);
     put("Construction", `${RENTAL_TABLE.qty}${rr.row}`, item.qty);
-    put("Construction", `${RENTAL_TABLE.unitCost}${rr.row}`, item.rate);
-    put("Construction", `${RENTAL_TABLE.days}${rr.row}`, rr.estimator === "Temporary fencing" ? item.durationValue * 7 : item.durationValue);
-    put("Construction", `${RENTAL_TABLE.include}${rr.row}`, yn(item.qty > 0));
+    // The sheet's rental rows are per day; the estimator's fencing is per ft per week.
+    put("Construction", `${RENTAL_TABLE.unitCost}${rr.row}`, perWeek ? round4(item.rate / 7) : item.rate);
+    put("Construction", `${RENTAL_TABLE.days}${rr.row}`, perWeek ? round4(item.durationValue * 7) : item.durationValue);
+    put("Construction", `${RENTAL_TABLE.include}${rr.row}`, yn(item.qty > 0 && !item.excluded));
   }
-  const unmappedRentals = result.equipment.items.filter((i) => i.qty > 0 && !RENTAL_ROW_NAMES.some((rr) => rr.estimator === i.name)).map((i) => i.name);
+  const unmappedRentals = result.equipment.items.filter((i) => i.qty > 0 && !rentalRowOf(i)).map((i) => i.name);
   if (unmappedRentals.length) warnings.push(`Rental(s) with no intake row: ${unmappedRentals.join(", ")} — carried inside override row 15 only.`);
   put("Construction", CONSTRUCTION_CELLS.markupMaterials, c?.markupMaterialsPct);
   const feeAmount = (row: number, amount: number) => {

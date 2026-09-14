@@ -139,7 +139,7 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
     if (dcBreakers.length === 1) put(OVERRIDE_ROWS.branchBreakerA, dcBreakers[0], "RFC Estimator: branch breaker per DC unit (125% of circuit amps, next standard size)");
   }
   if (c && c.lineExtensionContribution && c.lineExtensionContribution > 0) put(OVERRIDE_ROWS.lineExtension, c.lineExtensionContribution, "Rules 15/16 contribution from the utility design — pass-through at cost");
-  if (c && c.additionalScope > 0) put(OVERRIDE_ROWS.additionalScope, c.additionalScope, "Additional or unforeseen scope carried on the Commercial tab — pass-through");
+  if (c && c.additionalScope > 0) put(OVERRIDE_ROWS.additionalScope, c.additionalScope, c.additionalScopeReason?.trim() || "Additional or unforeseen scope carried on the Commercial tab — pass-through");
 
   // Entries typed on the app's register travel as typed and win their row.
   const units = (project.quick?.lines ?? []).reduce((s, l) => s + Math.max(0, l.count), 0);

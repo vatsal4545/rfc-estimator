@@ -122,6 +122,48 @@ export interface IntakeInput {
    * intake's own derivation stays visible beside them.
    */
   carryEstimatorOverrides?: boolean;
+  /** Site facts the intake records and the estimator does not model — carried through a round trip as typed (Electrical!B8, B9, B150). */
+  trenchSurface?: string;
+  trenchDepthIn?: number | null;
+  switchgearToPoleFt?: number | null;
+  /** Construction!B24 — the estimator has no switchgear-sign line; an imported count travels as typed. */
+  switchgearSignQty?: number | null;
+  /** Every charger run shares a trench (Electrical G18–G77 all Yes) — the sheet's trench figure counts one dig. */
+  sharedTrenchRuns?: boolean;
+  /**
+   * The intake's distribution equipment schedule (Electrical rows 165–176)
+   * exactly as typed on an imported workbook. When present the fill writes
+   * these rows back verbatim instead of generating the schedule from the
+   * panel; the quoted costs still price through peripherals.customItems.
+   */
+  distributionSchedule?: DistributionScheduleRow[];
+  /** The intake's Revisions tab — one row per issue of this file, written back and extended on every fill. */
+  revisions?: RevisionEntry[];
+}
+
+/** One row of the intake's distribution equipment schedule, columns A–L, as typed. */
+export interface DistributionScheduleRow {
+  item: string;
+  type: string;
+  qty: number | null;
+  volts: number | null;
+  phases: number | null;
+  ratingA: number | null;
+  fedFrom: string;
+  feeds: string;
+  location: string;
+  whoProvides: string;
+  costBasis: string;
+  quotedCost: number | null;
+}
+
+/** One row of the intake's Revisions tab. */
+export interface RevisionEntry {
+  rev: string;
+  /** ISO yyyy-mm-dd. */
+  date: string;
+  by: string;
+  notes: string;
 }
 
 export interface CommercialInput {
@@ -152,6 +194,8 @@ export interface CommercialInput {
   utilityInterconnectFee: number;
   /** Anything the standard build does not cover — pass-through. */
   additionalScope: number;
+  /** What the additional scope is (the intake Overrides!D18 reason) — travels back into the register's reason column. */
+  additionalScopeReason?: string;
   /**
    * Utility line-extension contribution (PG&E Rules 15/16 and the ITCC gross-up
    * on it), if the utility's design triggers one — pass-through at cost.

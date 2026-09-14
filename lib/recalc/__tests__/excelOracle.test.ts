@@ -63,9 +63,6 @@ async function diffAgainstCachedValues(path: string) {
   return { compared, disagreements, warnings: engine.warnings };
 }
 
-/** Intake 3.6.0 shipped these formulas unbalanced (one closing parenthesis short). Empty this when the template is fixed. */
-const TEMPLATE_3_6_0_UNBALANCED = ["Electrical!N160", "Electrical!B211", "Electrical!C211", "Electrical!B212", "Electrical!C212", "Electrical!B213", "Electrical!C213", "Electrical!B214", "Construction!B66"].map((ref) => `${ref}: formula ended early`);
-
 describe("the engine reproduces what Excel computed", () => {
   it("matches every cached value in the RFC / MSRP calculator template", async () => {
     const { compared, disagreements, warnings } = await diffAgainstCachedValues(RFC_TEMPLATE_PATH);
@@ -91,12 +88,13 @@ describe("the engine reproduces what Excel computed", () => {
     // open. Template 3.0.0 repointed those SUMIFS at B35, the utility name,
     // which is what they always meant to match; the loop is gone and this is
     // our independent confirmation of it. A warning reappearing here means the
-    // template has regressed — and at 3.6.0 it did: the nine Electrical and
-    // Construction formulas the release wrapped in a new outer IF for the
-    // add-load project type were each saved one closing parenthesis short
-    // (Electrical!N160, B211–B214, C211–C213, Construction!B66). The parser
-    // is right to refuse them. Pinned here so the list is visible and a
-    // template that fixes them fails this line, which is the cue to empty it.
-    expect(warnings.map((w) => `${w.sheet}!${w.ref}: ${w.message}`)).toEqual(TEMPLATE_3_6_0_UNBALANCED);
+    // template has regressed — and at 3.6.0 as published it did: the nine
+    // Electrical and Construction formulas the release wrapped in a new outer
+    // IF for the add-load project type were each saved one closing parenthesis
+    // short (Electrical!N160, B211–B214, C211–C213, Construction!B66). The
+    // app's copies carry the CEO's own corrected text for those nine cells
+    // (identical to what his engine wrote into the Hilton Rev B file), so this
+    // is clean again; the published file is not.
+    expect(warnings.map((w) => `${w.sheet}!${w.ref}: ${w.message}`)).toEqual([]);
   });
 });
