@@ -136,12 +136,35 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
   { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 75600, note: "Sept 2026: Larson $16.76/A slope (was $67,500, below even switch-only gear)" },
   { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 100000, note: "Sept 2026: user's budget; slope gives $92.4k, Larson switch-only 5000A is $80.3k (was $70,000)" },
   { item: "Main switchgear", size: "350A", voltage: "208V", unitCost: 0, note: "No price on original list" },
-  { item: "Main breaker", size: "110A", voltage: "480V", unitCost: 0, note: "No price on original list" },
-  { item: "Main breaker", size: "125A", voltage: "480V", unitCost: 0, note: "No price on original list" },
-  { item: "Main breaker", size: "250A", voltage: "480V", unitCost: 0, note: "No price on original list" },
+  // Main breaker on its own — the device that goes INTO an existing board
+  // when the site keeps its switchgear (the panel schedule swaps it in for
+  // the switchboard at the frame size). New equipment, 3-pole 480 V,
+  // electronic trip from 800 A, budgetary and installed loose in the board.
+  // Sept 2026 basis: molded-case 800–1200 A frames $3,000–5,500 (Eaton NGS
+  // $3,000–3,800, Schneider PowerPacT P $5,200–7,100 — Alibaba 1200 A buyer's
+  // guide, Q2 2024); PowerPacT R 1600 A ≈ $4,800 (onesto-ep); insulated-case
+  // Square D MasterPact NW 2500/3000 A $19,999 and NW40 4000 A $29,500,
+  // Eaton Magnum SB 2500/3000 A $35,000 (Select Equipment / Quality
+  // Switchgear listings); re-certified Square D SE 2500 A $28,950, 3000 A
+  // $29,204, 4000 A $35,932 (Relectric). Verify with a vendor quote.
+  { item: "Main breaker", size: "110A", voltage: "480V", unitCost: 450, note: "Budgetary — verify vendor quote" },
+  { item: "Main breaker", size: "125A", voltage: "480V", unitCost: 500, note: "Budgetary — verify vendor quote" },
+  { item: "Main breaker", size: "250A", voltage: "480V", unitCost: 900, note: "Budgetary — verify vendor quote" },
   { item: "Main breaker", size: "300A", voltage: "480V", unitCost: 1200 },
-  { item: "Main breaker", size: "400A", voltage: "208V", unitCost: 0, note: "No price on original list" },
-  { item: "Main breaker", size: "600A", voltage: "208V", unitCost: 0, note: "No price on original list" },
+  { item: "Main breaker", size: "400A", voltage: "480V", unitCost: 1600, note: "Budgetary — verify vendor quote" },
+  { item: "Main breaker", size: "600A", voltage: "480V", unitCost: 2800, note: "Budgetary — verify vendor quote" },
+  { item: "Main breaker", size: "800A", voltage: "480V", unitCost: 3800, note: "Budgetary — molded-case 800 A frame, electronic trip" },
+  { item: "Main breaker", size: "1000A", voltage: "480V", unitCost: 4600, note: "Budgetary — 1000 A frames run $3.4k–8.9k" },
+  { item: "Main breaker", size: "1200A", voltage: "480V", unitCost: 5500, note: "Budgetary — Eaton NGS $3.0–3.8k, PowerPacT P $5.2–7.1k" },
+  { item: "Main breaker", size: "1600A", voltage: "480V", unitCost: 7500, note: "Budgetary — PowerPacT R 1600 A ≈ $4.8k; insulated-case from $9k" },
+  { item: "Main breaker", size: "2000A", voltage: "480V", unitCost: 12000, note: "Budgetary — top of the molded-case range, insulated-case above" },
+  { item: "Main breaker", size: "2500A", voltage: "480V", unitCost: 20000, note: "Budgetary — MasterPact NW25 listed $19,999; Magnum SB $35k" },
+  { item: "Main breaker", size: "3000A", voltage: "480V", unitCost: 21000, note: "Budgetary — MasterPact NW30 listed $19,999" },
+  { item: "Main breaker", size: "3200A", voltage: "480V", unitCost: 22500, note: "Budgetary — between the NW30 and NW40 listings" },
+  { item: "Main breaker", size: "4000A", voltage: "480V", unitCost: 29500, note: "Budgetary — MasterPact NW40 listed $29,500; re-certified SE 4000 A $35.9k" },
+  { item: "Main breaker", size: "5000A", voltage: "480V", unitCost: 40000, note: "Budgetary — extrapolated above the NW40; a switchboard quote at this size" },
+  { item: "Main breaker", size: "400A", voltage: "208V", unitCost: 1500, note: "Budgetary — verify vendor quote" },
+  { item: "Main breaker", size: "600A", voltage: "208V", unitCost: 2600, note: "Budgetary — verify vendor quote" },
   { item: "Branch breaker", size: "40A", voltage: "208V", unitCost: 60 },
   { item: "Branch breaker", size: "50A", voltage: "208V", unitCost: 75, note: "Budgetary — verify vendor quote" },
   { item: "Branch breaker", size: "60A", voltage: "208V", unitCost: 90, note: "Budgetary — verify vendor quote" },

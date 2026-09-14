@@ -445,7 +445,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     dRow++;
   };
   const mainGear = gear.find((g) => g.qty > 0 && gearType(g.item) === "Switchboard");
-  const mainName = mainGear ? `${mainGear.item} ${mainGear.size}`.trim() : ic.pointOfConnection || "Service equipment";
+  const existingBoard = per.existingSwitchgear ? `Existing main switchgear${result.panel.bus480 ? ` ${result.panel.bus480.suggestedBusA}A frame` : ""}` : undefined;
+  const mainName = existingBoard ?? (mainGear ? `${mainGear.item} ${mainGear.size}`.trim() : ic.pointOfConnection || "Service equipment");
   const stepDown = gear.find((g) => g.qty > 0 && gearType(g.item) === "Transformer");
   const stepDownName = stepDown ? `${stepDown.item} ${stepDown.size}`.trim() : undefined;
   const subPanel = gear.find((g) => g.qty > 0 && (gearType(g.item) === "Subpanel" || gearType(g.item) === "Panelboard"));
@@ -456,6 +457,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const branchOcpd = (category: string) => new Set(result.rows.filter((r) => !r.synthetic && r.category === category && r.ocpdA > 0).map((r) => r.ocpdA));
   const dcOcpd = branchOcpd("DCFC");
   const l2Ocpd = branchOcpd("L2");
+  if (existingBoard) distributionRow(existingBoard, "Switchboard", 1, 480, result.panel.bus480?.suggestedBusA, serviceSource, "New main breaker for the EV load", true);
   for (const g of gear) {
     if (g.qty <= 0) continue;
     const amps = /a$/i.test(g.size.trim()) ? parseNumber(g.size) : undefined;
@@ -473,6 +475,9 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     } else if (type === "Subpanel" || type === "Panelboard") {
       fedFrom = stepDownName ?? mainName;
       feeds = "Level 2 branches";
+    } else if (/^main breaker/i.test(g.item)) {
+      fedFrom = mainName;
+      feeds = [hasDc ? "DC charger branches" : "", stepDownName ?? (hasL2 ? "Level 2 branches" : "")].filter(Boolean).join(", ") || "Charger branches";
     } else if (/breaker/i.test(g.item)) {
       // A branch breaker matches the engine's OCPD for a DC or Level 2 circuit; anything else on the main is the step-down's primary device.
       if (amps !== undefined && l2Ocpd.has(amps) && (volts === undefined || volts < 300)) {

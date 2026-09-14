@@ -86,9 +86,12 @@ export function computePeripherals(
   const gearList = autoGear ?? input.gear;
   const gearTotals = gearList.map((g) => ({ ...g, unitCost: gearUnitCost(g), total: g.qty * gearUnitCost(g) }));
   const mainSwitchgear = gearTotals.filter((g) => g.item === "Main switchgear");
-  const otherGear = gearTotals.filter((g) => g.item !== "Main switchgear");
-  // An existing board stays in service: nothing to buy on the switchgear line.
-  const gearMainSwitchgear = input.existingSwitchgear ? 0 : mainSwitchgear.reduce((s, g) => s + g.total, 0);
+  const mainBreakers = gearTotals.filter((g) => g.item === "Main breaker");
+  const otherGear = gearTotals.filter((g) => g.item !== "Main switchgear" && g.item !== "Main breaker");
+  // An existing board stays in service: the switchboard is not bought, but
+  // the main breaker that lands the EV load in it is, and it is the main
+  // device — so it prices on the switchgear line.
+  const gearMainSwitchgear = (input.existingSwitchgear ? 0 : mainSwitchgear.reduce((s, g) => s + g.total, 0)) + mainBreakers.reduce((s, g) => s + g.total, 0);
   const gearOtherTotal = otherGear.reduce((s, g) => s + g.total, 0);
 
   const method = effectiveInstallMethod(setup);

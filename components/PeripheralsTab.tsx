@@ -119,7 +119,7 @@ export function PeripheralsTab() {
           <span>
             <span className="font-medium">Existing switchgear reused</span>
             <span className="ml-2 text-xs text-zinc-500">
-              No new switchboard is priced — the Main Distribution Switchgear line reads $0 on Costs Internal, no switchgear pad is poured and the planner adds no bollards at the gear. The frame is still sized so the intake and the adequacy check see what the existing board carries.
+              No new switchboard is priced. The Main Distribution Switchgear line carries only a main breaker at the frame size — the device that lands the EV load in the existing board — and every branch breaker for the chargers stays. No switchgear pad is poured and the planner adds no bollards at the gear. The frame is still sized so the intake and the adequacy check see what the existing board carries.
               {project.existing?.register.switchgear === "RETAIN" && !p.existingSwitchgear && <span className="ml-1 text-amber-600">The Existing site tab marks the switchgear RETAIN.</span>}
             </span>
           </span>

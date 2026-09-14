@@ -74,6 +74,7 @@ export function computePanelSchedule(
   rows: TakeoffRowComputed[],
   loadTypes: LoadType[],
   overrides?: GearOverrides,
+  opts: { existingSwitchgear?: boolean } = {},
 ): PanelSchedule {
   const notes: string[] = [];
   const chargerRows = rows.filter((r) => r.category === "L2" || r.category === "DCFC");
@@ -204,7 +205,10 @@ export function computePanelSchedule(
   // Suggested gear list, on catalog size strings so Peripherals can price it.
   const suggestedGear: GearSelection[] = [];
   if (bus480) {
-    suggestedGear.push({ item: "Main switchgear", size: `${bus480.suggestedBusA}A`, voltage: "480V", qty: 1 });
+    // A site that keeps its switchgear still buys the main device that lands
+    // the EV load in that board — a main breaker at the frame size — and
+    // every branch breaker below. Only the switchboard itself drops out.
+    suggestedGear.push({ item: opts.existingSwitchgear ? "Main breaker" : "Main switchgear", size: `${bus480.suggestedBusA}A`, voltage: "480V", qty: 1 });
   }
   if (bus208) {
     const item = bus208.suggestedBusA >= 1000 ? "Distribution panel" : "Sub-panel";

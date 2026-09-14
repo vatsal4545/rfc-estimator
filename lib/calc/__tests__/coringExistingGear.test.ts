@@ -3,6 +3,7 @@ import { HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../aut
 import { defaultProject } from "../defaults";
 import { computeEstimate } from "../engine";
 import { CIVIL_RATES, PERIPHERAL_PRICE_KEYS, resetPeripheralPrices } from "../peripherals";
+import { GEAR_CATALOG } from "../tables";
 import type { Project } from "../types";
 
 // A hotel garage job: the site keeps its switchgear, the route is EMT inside
@@ -46,12 +47,33 @@ describe("existing switchgear reused", () => {
   const freshR = computeEstimate(fresh);
   const keptR = computeEstimate(kept);
 
-  it("zeroes the Main Distribution Switchgear line and nothing else on the gear", () => {
-    expect(line(fresh, "Main Distribution Switchgear")).toBeGreaterThan(0);
-    expect(line(kept, "Main Distribution Switchgear")).toBe(0);
+  it("swaps the switchboard for a main breaker at the frame size and keeps every branch breaker", () => {
+    const frame = freshR.panel.bus480!.suggestedBusA;
+    expect(keptR.panel.bus480?.suggestedBusA).toBe(frame); // the frame is still sized
+    expect(keptR.panel.suggestedGear.some((g) => g.item === "Main switchgear")).toBe(false);
+    expect(keptR.panel.suggestedGear).toContainEqual({ item: "Main breaker", size: `${frame}A`, voltage: "480V", qty: 1 });
+    const branches = (r: typeof freshR) => r.panel.suggestedGear.filter((g) => g.item === "Branch breaker");
+    expect(branches(keptR)).toEqual(branches(freshR));
+    expect(branches(keptR).filter((g) => g.voltage === "480V").reduce((s, g) => s + g.qty, 0)).toBeGreaterThanOrEqual(4); // one per DC charger
+  });
+
+  it("prices only the main breaker on the Main Distribution Switchgear line, the rest of the gear unchanged", () => {
+    const mainBreaker = GEAR_CATALOG.find((g) => g.item === "Main breaker" && g.size === `${freshR.panel.bus480!.suggestedBusA}A` && g.voltage === "480V")!;
+    expect(mainBreaker.unitCost).toBeGreaterThan(0);
+    expect(line(kept, "Main Distribution Switchgear")).toBe(mainBreaker.unitCost);
+    expect(line(kept, "Main Distribution Switchgear")).toBeLessThan(line(fresh, "Main Distribution Switchgear"));
     expect(keptR.peripherals.gearOtherTotal).toBe(freshR.peripherals.gearOtherTotal);
-    expect(keptR.panel.bus480?.suggestedBusA).toBe(freshR.panel.bus480?.suggestedBusA); // the frame is still sized
     expect(keptR.costs.totalCost).toBeLessThan(freshR.costs.totalCost);
+  });
+
+  it("carries a main-breaker price at every switchboard frame in the catalog", () => {
+    const frames = GEAR_CATALOG.filter((g) => g.item === "Main switchgear" && g.voltage === "480V").map((g) => g.size);
+    for (const size of frames) {
+      const hit = GEAR_CATALOG.find((g) => g.item === "Main breaker" && g.size === size && g.voltage === "480V");
+      expect(hit?.unitCost ?? 0, `main breaker ${size}`).toBeGreaterThan(0);
+    }
+    const ladder = GEAR_CATALOG.filter((g) => g.item === "Main breaker" && g.voltage === "480V").map((g) => g.unitCost);
+    expect(ladder).toEqual([...ladder].sort((a, b) => a - b)); // monotonic in amps
   });
 
   it("drops the bollards at the gear on a rebuild", () => {
