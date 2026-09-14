@@ -6,7 +6,7 @@ import { laborBreakdown } from "../../calc/costs";
 import { defaultProject } from "../../calc/defaults";
 import { computeEstimate } from "../../calc/engine";
 import type { Project } from "../../calc/types";
-import { COSTS_INTERNAL_LABELS } from "../../costsInternalSheet";
+import { COSTS_INTERNAL_LABELS, costsInternalLoading } from "../../costsInternalSheet";
 import { readWorkbook } from "../../intake/xlsx";
 import { patchWorkbook } from "../../intake/xlsxWrite";
 import { computeProposal } from "../../proposal";
@@ -159,11 +159,19 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
   // ---- 3 · Costs Internal --------------------------------------------------
 
   it("Costs Internal: the app's table, row for row", () => {
+    const loading = costsInternalLoading(result.costs, fin, project.commercial);
     COSTS_INTERNAL_LABELS.forEach((_label, i) => {
       const r = 3 + i;
       expect(wb.get("Costs Internal", `C${r}`)).toBe(1);
       expect(wb.get("Costs Internal", `D${r}`)).toBeCloseTo(result.costs.lines[i].base, 2);
-      expect(wb.get("Costs Internal", `E${r}`)).toBe(fin.contingencyPct);
+      // E carries contingency AND the commercial markup, compounded, so F/G
+      // land on the list price. Pass-through lines load by nothing at all.
+      expect(wb.get("Costs Internal", `E${r}`)).toBeCloseTo(loading.lines[i], 9);
+      const passThrough = project.commercial!.passThroughLines.includes(result.costs.lines[i].name);
+      expect(wb.get("Costs Internal", `E${r}`)).toBeCloseTo(
+        passThrough ? 0 : (1 + fin.contingencyPct) * (1 + project.commercial!.markupMaterialsPct) - 1,
+        9,
+      );
       // The CPM Calcs formula the app's figure supersedes is gone.
       expect(wb.formula("Costs Internal", `D${r}`)).toBeUndefined();
     });
@@ -188,11 +196,23 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
   });
 
   it("Costs Internal: Construction PM is shown but stays out of the subtotal", () => {
-    const expected =
-      result.costs.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
+    // CEO-basis PM plus the manual design / permitting PM hours. The
+    // auto-calculated design fees stay on the Design Invoice rows.
+    const expected = result.costs.constructionPm + fin.pmHours * fin.pmHourlyRate;
     expect(wb.get("Costs Internal", "C14")).toBe(1);
     expect(wb.get("Costs Internal", "D14")).toBeCloseTo(expected, 2);
-    expect(wb.get("Costs Internal", "E14")).toBe(0);
+    // Blended loading: the CEO-basis PM is marked up, the design PM hours are
+    // in-house and are not, so E14 sits between 0 and the labour markup.
+    const mLab = project.commercial!.markupLaborPct;
+    expect(wb.get("Costs Internal", "E14")).toBeCloseTo(
+      (result.costs.constructionPm * (1 + mLab) + fin.pmHours * fin.pmHourlyRate) / expected - 1,
+      9,
+    );
+    // The row gets the same two formulas its siblings carry, so the Internal
+    // Summary can link to G14 like every other construction line.
+    expect(wb.formula("Costs Internal", "F14")).toBe("(D14*E14)+D14");
+    expect(wb.formula("Costs Internal", "G14")).toBe("F14*C14");
+    expect(wb.get("Costs Internal", "G14")).toBeCloseTo(result.costs.constructionPm * (1 + mLab) + fin.pmHours * fin.pmHourlyRate, 2);
     expect(wb.formula("Costs Internal", "G15")).toBe("SUM(G3:G13)"); // 14 excluded
   });
 
@@ -200,17 +220,28 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
     const labor = laborBreakdown(fin);
     expect(wb.get("Costs Internal", "K4")).toBeCloseTo(labor.blendedRate, 2);
     expect(wb.get("Costs Internal", "K5")).toBe(42);
-    expect(wb.get("Costs Internal", "E18")).toBe(fin.contingencyPct);
+    expect(wb.get("Costs Internal", "E18")).toBeCloseTo(
+      (1 + fin.contingencyPct) * (1 + project.commercial!.markupLaborPct) - 1,
+      9,
+    );
     // C18/D18 read the box and must not have been overwritten.
     expect(wb.formula("Costs Internal", "C18")).toBe("K5");
     expect(wb.formula("Costs Internal", "D18")).toBe("K4");
     expect(wb.formula("Costs Internal", "G20")).toBe("G15+G19");
   });
 
-  it("Costs Internal: labor contingency drops to zero when it is not applied to labor", () => {
+  it("Costs Internal: labor contingency drops out when it is not applied to labor", () => {
     const p = { ...project, financial: { ...fin, applyContingencyToLabor: false } };
     const plan = planRfcFill(p, computeEstimate(p), computeProposal(p, computeEstimate(p)));
-    expect(plan.writes.find((w) => w.sheet === "Costs Internal" && w.ref === "E18")?.value).toBe(0);
+    // Contingency gone, so E18 is the bare labour markup.
+    expect(plan.writes.find((w) => w.sheet === "Costs Internal" && w.ref === "E18")?.value).toBeCloseTo(
+      p.commercial!.markupLaborPct,
+      9,
+    );
+    // With no commercial section there is no markup to fold, and it is zero.
+    const bare = { ...p, commercial: undefined };
+    const barePlan = planRfcFill(bare, computeEstimate(bare), null);
+    expect(barePlan.writes.find((w) => w.sheet === "Costs Internal" && w.ref === "E18")?.value).toBe(0);
   });
 
   it("clears the Internal Summary sentinel, so the summary populates", () => {
@@ -222,18 +253,23 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
   });
 
   // ---- The Grand Total reconciliation -------------------------------------
-  // The Internal Summary ships the Design Invoice, construction PM and
-  // construction sales tax as hard zeros, and nothing else feeds them, so the
-  // Grand Total used to come out ~$47k short of the app's Total Cost.
+  // The Internal Summary ships the Design Invoice and construction PM as hard
+  // zeros, and nothing else feeds them, so the Grand Total used to come out
+  // ~$47k short of the app's Total Cost.
   it("Internal Summary: fills the rows nothing else feeds", () => {
     expect(wb.get("Internal Summary", "B9")).toBeCloseTo(fin.autoCadDesignCost, 2);
     expect(wb.get("Internal Summary", "B10")).toBeCloseTo(fin.electricalEngDesignCost, 2);
-    expect(wb.get("Internal Summary", "B11")).toBeCloseTo(fin.pmHours * fin.pmHourlyRate, 2);
+    // "Project Management" is zero: those hours ride the Construction PM row.
+    expect(wb.get("Internal Summary", "B11")).toBe(0);
     expect(wb.get("Internal Summary", "B12")).toBeCloseTo(fin.planCheckPermitFee, 2);
-    expect(wb.get("Internal Summary", "B25")).toBeCloseTo(result.costs.constructionPm, 2);
-    expect(wb.get("Internal Summary", "B27")).toBeCloseTo(result.costs.salesTaxOnConstruction, 2);
-    // Materials stays zero: the app folds it into "Wires, Conduits …".
-    expect(wb.get("Internal Summary", "B26")).toBe(0);
+    // Construction PM is a live link to its Costs Internal row, not a copy.
+    expect(wb.formula("Internal Summary", "B25")).toBe("'Costs Internal'!G14");
+    expect(wb.get("Internal Summary", "B25")).toBeCloseTo(Number(wb.get("Costs Internal", "G14")), 2);
+    // "Sales Tax on equipment" is held at zero: B7 already taxes the chargers.
+    expect(wb.get("Internal Summary", "B27")).toBe(0);
+    // Materials stays zero too — with construction materials tax off by
+    // default there is no unhomed pass-through fee to park on it.
+    expect(Number(wb.get("Internal Summary", "B26") ?? 0)).toBe(0);
     // The rows are inputs, so their discount and price formulas must survive.
     expect(wb.formula("Internal Summary", "D9")).toBe("(B9)-((B9)*C9)");
     expect(wb.formula("Internal Summary", "B8")).toBe("SUM(B9:B12)");
@@ -256,15 +292,21 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
     const B3 = hardware + (fin.chargerWarrantyCost + fin.fiveYearServiceCost) + fin.evolvCommissioningCost + B7;
     const D29 = B28 + B13 + B8 + B3;
 
-    // The one remaining difference is the sales-tax basis: the workbook taxes
-    // the discounted hardware (its own B7 formula, deliberately not touched),
-    // the cost engine taxes list. The cost engine keeps commercial inputs out
-    // of Total Cost by design — see costBuildup.test.ts, "never touches Total
-    // Cost". The app's Customer price already uses the workbook's basis.
-    const taxBasisDelta = c.equipmentPurchaseTax - B7;
-    expect(taxBasisDelta).toBeGreaterThan(0);
-    expect(D29).toBeCloseTo(c.totalCost - taxBasisDelta, 1);
+    // D29 "Grand Total" is now a LIST-price total, not a cost total: the
+    // Costs Internal E column loads by markup as well as contingency, so
+    // everything downstream of it is price. It should equal the cost
+    // buildup's list column exactly, with one substitution — the workbook
+    // taxes the DISCOUNTED hardware via its own untouched B7 formula, while
+    // the app taxes list.
+    const listTotal = proposal.costBuildup.rows.reduce((sum, r) => sum + r.list, 0);
+    const appHardwareTax = proposal.costBuildup.rows.find((r) => r.id === "salesTaxHardware")!.list;
+    expect(D29).toBeCloseTo(listTotal - appHardwareTax + B7, 1);
     expect(hardware).toBeGreaterThan(discounted);
+    // B8 + B25 together still hold the whole design invoice and the PM — at
+    // list now, since the E column marks up on the way through. Design and the
+    // plan check carry no markup, so only the PM differs from cost.
+    const listOf = (id: string) => proposal.costBuildup.rows.find((r) => r.id === id)!.list;
+    expect(g("B8") + g("B25")).toBeCloseTo(listOf("design") + listOf("planCheck") + listOf("constructionPm"), 2);
   });
 
   // The workbook has no markup column — the Proposal tab is pure formulas off
@@ -306,17 +348,30 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
     const D30 = rowsUsed.reduce((s, r) => s + customerPriceOf(r), 0);
 
     expect(D30).toBeCloseTo(proposal.costBuildup.customerPrice, 2);
+    // ... and the workbook's own Total After Discount cell agrees, so the
+    // download and the app quote the same price to the cent.
+    expect(Number(wb.get("Internal Summary", "D30"))).toBeCloseTo(proposal.costBuildup.customerPrice, 2);
 
-    // A marked-up construction line carries a NEGATIVE discount, and a
-    // pass-through line a positive one (it bills at base, without contingency).
+    // No negative discounts anywhere any more: the markup lives in the Costs
+    // Internal E column, so this column holds genuine discounts only. Marked-up
+    // construction the app does not discount reads a clean zero, and a
+    // pass-through line bills at base with nothing added or taken off.
     const wires = COSTS_INTERNAL_LABELS.indexOf("Wires, Conduits and Peripherals");
-    expect(Number(wb.get("Internal Summary", `C${14 + wires}`))).toBeLessThan(0);
+    expect(Number(wb.get("Internal Summary", `C${14 + wires}`))).toBe(0);
     const permits = COSTS_INTERNAL_LABELS.indexOf("Permits");
-    expect(Number(wb.get("Internal Summary", `C${14 + permits}`))).toBeGreaterThan(0);
+    expect(Number(wb.get("Internal Summary", `C${14 + permits}`))).toBe(0);
     expect(customerPriceOf(14 + permits)).toBeCloseTo(c.lines[permits].base, 2);
+    // Labour and PM keep the in-house discount, as a real positive discount.
+    expect(Number(wb.get("Internal Summary", "C28"))).toBeCloseTo(project.commercial!.discountInHousePct, 9);
+    expect(Number(wb.get("Internal Summary", "C25"))).toBeCloseTo(project.commercial!.discountInHousePct, 9);
+    for (let r = 9; r <= 28; r++) expect(Number(wb.get("Internal Summary", `C${r}`) ?? 0)).toBeGreaterThanOrEqual(0);
 
-    // Column B still shows internal cost, and the discount formulas survive.
-    expect(g("B25")).toBeCloseTo(c.constructionPm, 2);
+    // Column B shows list price now, and the discount formulas survive.
+    expect(g("B25")).toBeCloseTo(Number(wb.get("Costs Internal", "G14")), 2);
+    expect(g("B25")).toBeCloseTo(
+      c.constructionPm * (1 + project.commercial!.markupLaborPct) + fin.pmHours * fin.pmHourlyRate,
+      2,
+    );
     // D9 is the shared-formula master for the whole D9:D27 run (design AND
     // construction), so only it carries text; the run must survive intact.
     expect(wb.formula("Internal Summary", "D9")).toBe("(B9)-((B9)*C9)");

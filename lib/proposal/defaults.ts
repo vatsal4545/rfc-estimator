@@ -72,7 +72,10 @@ export function defaultCommercial(): CommercialInput {
     discountServicePct: 0.07,
     discountEvolvPct: 0,
     discountInHousePct: 0.07,
-    taxConstructionMaterials: true,
+    // Off: the cost engine levies no construction sales tax, so charging the
+    // customer one would be a price with no cost behind it. The RFC workbook
+    // has no row for it either — its only tax row is "Sales Tax on Chargers".
+    taxConstructionMaterials: false,
     passThroughLines: [...DEFAULT_PASS_THROUGH_LINES],
     utilityInterconnectFee: 0,
     additionalScope: 0,

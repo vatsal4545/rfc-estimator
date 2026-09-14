@@ -168,7 +168,9 @@ describe("Cost build-up — intake 2.9.0 policy on a real Quick Estimate project
     expect(commercial.discountServicePct).toBe(0.07);
     expect(commercial.discountEvolvPct).toBe(0);
     expect(commercial.discountInHousePct).toBe(0.07);
-    expect(commercial.taxConstructionMaterials).toBe(true);
+    // Off by default: the cost engine levies no construction sales tax, so
+    // billing one would be price with no cost behind it.
+    expect(commercial.taxConstructionMaterials).toBe(false);
     expect(commercial.passThroughLines).toEqual(["Permits", "Utility"]);
   });
 
@@ -198,13 +200,14 @@ describe("Cost build-up — intake 2.9.0 policy on a real Quick Estimate project
     );
   });
 
-  it("taxes construction materials at their marked-up price as its own row, and the toggle removes it", () => {
-    const materials = b.rows.filter((r) => r.group === "construction" && r.uplift === "materials");
+  it("taxes construction materials at their marked-up price as its own row, and the default leaves it off", () => {
+    // Default is off, so the buildup carries no construction tax row at all.
+    expect(b.rows.find((r) => r.id === "constructionTax")).toBeUndefined();
+    const on = computeCostBuildup(project.financial, estimate.costs, { ...commercial, taxConstructionMaterials: true });
+    const materials = on.rows.filter((r) => r.group === "construction" && r.uplift === "materials");
     const expected = materials.reduce((s, r) => s + r.price, 0) * project.financial.salesTaxPct;
-    expect(row("constructionTax").price).toBeCloseTo(expected, 6);
-    const off = computeCostBuildup(project.financial, estimate.costs, { ...commercial, taxConstructionMaterials: false });
-    expect(off.rows.find((r) => r.id === "constructionTax")).toBeUndefined();
-    expect(off.customerPrice).toBeCloseTo(b.customerPrice - expected, 6);
+    expect(on.rows.find((r) => r.id === "constructionTax")!.price).toBeCloseTo(expected, 6);
+    expect(on.customerPrice).toBeCloseTo(b.customerPrice + expected, 6);
   });
 
   it("never touches Total Cost: the estimate is identical with and without the commercial section", () => {

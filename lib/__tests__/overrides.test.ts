@@ -41,8 +41,10 @@ describe("override register — engine class", () => {
     expect(line(forced, "Main Distribution Switchgear").base).toBe(150000);
     expect(line(forced, "Main Distribution Switchgear").contingency).toBeCloseTo(15000, 6);
     for (const name of COST_LINE_NAMES) if (name !== "Main Distribution Switchgear") expect(line(forced, name).base).toBeCloseTo(line(plain, name).base, 6);
+    // Construction carries no sales tax, so the line moves Total Cost by its
+    // loaded delta and nothing more.
     const delta = 150000 * 1.1 - line(plain, "Main Distribution Switchgear").finalCost;
-    expect(forced.costs.totalCost).toBeCloseTo(plain.costs.totalCost + delta * (1 + 0.0725), 4);
+    expect(forced.costs.totalCost).toBeCloseTo(plain.costs.totalCost + delta, 4);
   });
 
   it("the site-works figure rescales the four civil lines to the typed total", () => {

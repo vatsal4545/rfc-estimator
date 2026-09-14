@@ -21,8 +21,7 @@ export function ResultsTab() {
         <div className="mt-1 text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">{money(costs.totalCost)}</div>
         <div className="mt-2 text-sm text-zinc-500">
           Electrical supply & construction {money(costs.electricalSupplyConstructionTotal)} · Labor{" "}
-          {money(costs.labor)} · Construction PM {money(costs.constructionPm)} · Sales tax{" "}
-          {money(costs.salesTaxOnConstruction)} · Equipment purchase{" "}
+          {money(costs.labor)} · Construction PM {money(costs.constructionPm)} · Equipment purchase{" "}
           {money(costs.equipmentPurchaseInvoice + costs.equipmentPurchaseTax)} · Design {money(costs.designInvoice)}
         </div>
         {activeOverrideCount(project) > 0 && (
@@ -139,7 +138,7 @@ export function ResultsTab() {
             </tr>
             <tr>
               <td className="py-1 text-zinc-500" colSpan={3}>
-                Sales tax on construction ({pct(project.financial.salesTaxPct)})
+                Sales tax on construction — not charged
               </td>
               <td className="py-1 text-right text-zinc-500">{money(costs.salesTaxOnConstruction)}</td>
             </tr>

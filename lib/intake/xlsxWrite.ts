@@ -24,6 +24,13 @@ export interface CellWrite {
   ref: string;
   value: WriteValue;
   /**
+   * Write a live formula instead of `value` — the A1 text without the leading
+   * "=", e.g. `'Costs Internal'!D14`. The cell is left with an <f> and no
+   * cached result; patchWorkbook's recalculation fills the <v> in, so every
+   * reader sees the answer and Excel keeps the link. `value` is ignored.
+   */
+  formula?: string;
+  /**
    * Replace the formula in the target cell with this literal value. Off by
    * default, and deliberately so: filling the intake must never clobber the
    * template's own math. The RFC/MSRP calculator fill opts in for the two
@@ -76,7 +83,10 @@ function numberText(n: number): string {
   return String(Number(n.toPrecision(15)));
 }
 
-function renderCell(ref: string, styleAttr: string, value: WriteValue): string {
+function renderCell(ref: string, styleAttr: string, value: WriteValue, formula?: string): string {
+  // A formula cell carries no <v>: recalculateWorkbook writes the result in,
+  // and it is the one thing that knows what the result is.
+  if (formula !== undefined && formula !== "") return `<c r="${ref}"${styleAttr}><f>${escapeXml(formula)}</f></c>`;
   if (value === null || value === "") return `<c r="${ref}"${styleAttr}/>`;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return `<c r="${ref}"${styleAttr}/>`;
@@ -183,12 +193,12 @@ export function patchSheetXml(xml: string, writes: CellWrite[]): { xml: string; 
         continue;
       }
       // renderCell rebuilds the <c> from scratch, so any <f> goes with it.
-      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value), hasFormula: false, sharedMaster: false });
+      out.push({ ...c, raw: renderCell(c.ref, c.styleAttr, w.value, w.formula), hasFormula: w.formula !== undefined, sharedMaster: false });
       written++;
     }
     for (const w of pending.values()) {
       const split = splitRef(w.ref)!;
-      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value), styleAttr: "", hasFormula: false, sharedMaster: false });
+      out.push({ ref: w.ref, colIdx: colIndex(split.col), raw: renderCell(w.ref, "", w.value, w.formula), styleAttr: "", hasFormula: w.formula !== undefined, sharedMaster: false });
       written++;
     }
     out.sort((a, b) => a.colIdx - b.colIdx);

@@ -1451,15 +1451,19 @@ async function main() {
       { formula: "Estimate!B18" }, // Utility ← application + transformer pad (GPR is in the Wires row, like the app)
       { formula: "Estimate!B16" }, // Construction Equipment ← rentals
     ],
-    contingency: { formula: "ContingencyPct" },
+    // This standalone template has no commercial section, so the loading
+    // column is plain contingency — there is no markup to fold in.
+    contingency: Array.from({ length: 11 }, () => ({ formula: "ContingencyPct" })),
     laborContingency: { formula: "ContingencyPct" },
     // Blended daily rate: with an itemized labor breakdown on the Intake the
     // sheet's rate × days × contingency chain still equals LaborBase loaded.
     dailyRate: { formula: "IF(LaborDays>0,LaborBase/LaborDays,0)" },
     businessDays: { formula: "LaborDays" },
-    // Design invoice minus the AHJ plan check (B38, permitting-side):
-    // site plan + SLD + CPM hours × rate.
-    constructionPm: { formula: "Estimate!B35+Estimate!B36+Estimate!B37" },
+    // The CEO-basis construction PM alone. The site plan (B35) and SLD (B36)
+    // are their own Design Invoice lines and are NOT repeated here — see
+    // constructionPmRowCost.
+    constructionPm: { formula: "Estimate!B37" },
+    constructionPmLoading: 0,
   });
 
   // ------------------------------------------------------------------ ADA

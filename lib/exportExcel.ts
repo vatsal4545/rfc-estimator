@@ -13,7 +13,7 @@ import { laborBreakdown } from "./calc/costs";
 import { INSTALL_METHOD_INFO, effectiveInstallMethod, surfaceRouteFt } from "./calc/install";
 import { GEAR_CATALOG } from "./calc/tables";
 import type { EstimateResult, GearSelection, Project } from "./calc/types";
-import { COSTS_INTERNAL_TAB_COLOR, fillCostsInternal } from "./costsInternalSheet";
+import { COSTS_INTERNAL_TAB_COLOR, constructionPmRowCost, costsInternalLoading, fillCostsInternal } from "./costsInternalSheet";
 import { computeExisting, keepsExistingService, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS } from "./existing";
 import { fillModelSheets } from "./exportModel";
 import { computeInterconnection } from "./interconnection";
@@ -86,29 +86,45 @@ export async function buildEstimateWorkbook(
   const refs = fillCostDetail(costs, project, result);
   fillSummary(summary, project, result, refs);
   const fin = project.financial;
+  const loading = costsInternalLoading(result.costs, fin, project.commercial);
   fillCostsInternal(costsInternal, {
     // One CellSource per engine cost line, in engine order (matches the labels).
     lines: result.costs.lines.map((line, i) => ({
       formula: `'Cost Detail'!B${refs.lineStartRow + i}`,
       cached: line.base,
     })),
-    contingency: { formula: "'Cost Detail'!$B$4", cached: fin.contingencyPct },
+    // The loading column carries contingency AND the commercial markup,
+    // compounded, so F/G land on the list price. Contingency stays a live
+    // reference to the Cost Detail input; the markup is a literal factor.
+    contingency: result.costs.lines.map((_line, i) => {
+      // A pass-through line loads by nothing at all — no contingency, no
+      // markup — so it is a hard zero, NOT a formula off the contingency
+      // input, which would start loading it the moment that input changed.
+      if (loading.lines[i] === 0) return 0;
+      return {
+        formula: loading.includesMarkup
+          ? `(1+'Cost Detail'!$B$4)*${1 + project.commercial!.markupMaterialsPct}-1`
+          : "'Cost Detail'!$B$4",
+        cached: loading.lines[i],
+      };
+    }),
     laborContingency: {
-      formula: "IF('Cost Detail'!$B$8,'Cost Detail'!$B$4,0)",
-      cached: (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0,
+      formula: loading.includesMarkup
+        ? `(1+IF('Cost Detail'!$B$8,'Cost Detail'!$B$4,0))*${1 + (project.commercial?.markupLaborPct ?? 0)}-1`
+        : "IF('Cost Detail'!$B$8,'Cost Detail'!$B$4,0)",
+      cached: loading.labor,
     },
     dailyRate: { formula: "'Cost Detail'!$B$6", cached: laborBreakdown(fin).blendedRate },
     businessDays: { formula: "'Cost Detail'!$B$7", cached: fin.laborBusinessDays },
-    // Site plan + SLD + PM hours×rate — everything on the Design invoice
-    // except the plan check / permit fee (permitting-side).
     // Construction PM row (kept outside the G15 subtotal like the source
-    // sheet): the CEO-basis % of loaded labour plus the design-side fees
-    // except the AHJ plan check.
+    // sheet): the CEO-basis % of loaded labour plus the manual design /
+    // permitting PM hours. See constructionPmRowCost.
     constructionPm: {
-      formula: `${refs.constructionPm}+'Cost Detail'!D${refs.designStartRow}+'Cost Detail'!D${refs.designStartRow + 1}+'Cost Detail'!D${refs.designStartRow + 2}`,
-      cached:
-        result.costs.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
+      formula: `${refs.constructionPm}+'Cost Detail'!D${refs.designStartRow + 2}`,
+      cached: constructionPmRowCost(result.costs, fin),
     },
+    constructionPmLoading: loading.constructionPm,
+    includesMarkup: loading.includesMarkup,
   });
   fillIntake(intake, project, result);
   fillTakeoff(takeoff, result);
@@ -238,8 +254,10 @@ function fillCostDetail(ws: WS, project: Project, result: EstimateResult): CostR
   ws.getCell(row, 4).value = f(`D${laborRow}*$B$11`, c.constructionPm);
   row += 1;
   const taxRow = row;
-  ws.getCell(row, 1).value = "Sales tax on construction";
-  ws.getCell(row, 4).value = f(`D${subRow}*$B$5`, c.salesTaxOnConstruction);
+  // Not charged — see computeCosts. A literal, not a live formula, or the
+  // sheet would recompute a tax the engine does not levy.
+  ws.getCell(row, 1).value = "Sales tax on construction (not charged)";
+  ws.getCell(row, 4).value = c.salesTaxOnConstruction;
   row += 2;
 
   // Equipment purchase invoice.
@@ -362,7 +380,7 @@ function fillSummary(ws: WS, project: Project, result: EstimateResult, refs: Cos
     ["Electrical supply & construction", refs.constructionSubtotal, c.electricalSupplyConstructionTotal],
     ["Labor", refs.labor, c.labor],
     ["Construction PM (% of loaded labor)", refs.constructionPm, c.constructionPm],
-    ["Sales tax on construction", refs.salesTax, c.salesTaxOnConstruction],
+    ["Sales tax on construction (not charged)", refs.salesTax, c.salesTaxOnConstruction],
     ["Equipment purchase invoice (incl. tax)", refs.equipSubtotal, c.equipmentPurchaseInvoice + c.equipmentPurchaseTax],
     ["Design invoice", refs.designSubtotal, c.designInvoice],
   ];

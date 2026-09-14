@@ -85,6 +85,10 @@ export const COSTS_INTERNAL = {
   qty: "C",
   individualCost: "D",
   contingency: "E",
+  /** F — Final Cost, the loaded (= list) figure. */
+  finalCost: "F",
+  /** G — Total, Final Cost x Quantity. What the Internal Summary links to. */
+  total: "G",
   /** E18 — the labor row's contingency. */
   laborContingency: "E18",
   /** K4 — labor daily cost, read by D18. */
@@ -110,9 +114,8 @@ export const INTERNAL_SUMMARY_SENTINEL = 88919.7;
 
 /**
  * Internal Summary rows the workbook ships as hard zeros and nothing else
- * feeds. Without these the Grand Total is short by the whole Design Invoice,
- * the construction sales tax and the construction PM — the app counts all
- * three in its Total Cost.
+ * feeds. Without these the Grand Total is short by the whole Design Invoice
+ * and the construction PM — the app counts both in its Total Cost.
  *
  * "Materials" is deliberately left alone: the app has no separate materials
  * line, it is already inside "Wires, Conduits and Peripherals".
@@ -124,7 +127,12 @@ export const INTERNAL_SUMMARY = {
   planCheckPermitFees: "B12",
   constructionPm: "B25",
   materials: "B26",
-  salesTaxOnConstruction: "B27",
+  /**
+   * B27 "Sales Tax on equipment". Held at zero by the fill on purpose: tax on
+   * chargers already has its own row (B7), so this row would double it. The
+   * app's construction sales tax rides the "Materials" row instead.
+   */
+  salesTaxOnEquipment: "B27",
 } as const;
 
 /**
@@ -151,7 +159,6 @@ export const INTERNAL_SUMMARY_DISCOUNT = {
   lineColumn: "C",
   constructionPm: "C25",
   materials: "C26",
-  salesTaxOnConstruction: "C27",
   labor: "C28",
 } as const;
 
@@ -231,6 +238,8 @@ export const RFC_LANDMARKS: { sheet: string; ref: string; expect: string; match?
   { sheet: RFC_SHEETS.costs, ref: "D2", expect: "Individual Cost" },
   { sheet: RFC_SHEETS.costs, ref: "E2", expect: "Contingency" },
   { sheet: RFC_SHEETS.costs, ref: "B14", expect: "Construction PM" },
+  { sheet: RFC_SHEETS.internalSummary, ref: "A25", expect: "Construction PM" },
+  { sheet: RFC_SHEETS.internalSummary, ref: "A27", expect: "Sales Tax on equipment" },
   { sheet: RFC_SHEETS.costs, ref: "B17", expect: "ZERO IMPACT BUILDERS COSTS" },
   { sheet: RFC_SHEETS.costs, ref: "B18", expect: "Labor" },
   { sheet: RFC_SHEETS.costs, ref: "J5", expect: "Total Business Days" },

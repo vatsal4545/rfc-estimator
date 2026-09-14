@@ -122,7 +122,12 @@ export function computeCosts(
   const labor =
     laborBreakdown(financial).base *
     ((financial.applyContingencyToLabor ?? true) ? 1 + financial.contingencyPct : 1);
-  const salesTaxOnConstruction = electricalSupplyConstructionTotal * financial.salesTaxPct;
+  // Construction sales tax is deliberately not charged: the RFC workbook's
+  // only tax rows are "Sales Tax on Chargers" (B7) and "Sales Tax on
+  // equipment" (B27, held at zero), so a construction tax here had no home on
+  // the Internal Summary and made the app and the export disagree. The sales
+  // tax rate still applies to charger hardware below.
+  const salesTaxOnConstruction = 0;
   // Construction PM on the CEO basis (intake 2.9.0, Construction!B10): a share
   // of the loaded labour line. Cost, not price — the 20% labour markup lives
   // in the proposal layer. Not taxed, outside the construction subtotal, and

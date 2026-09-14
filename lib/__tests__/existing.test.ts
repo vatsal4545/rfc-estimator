@@ -278,7 +278,8 @@ describe("removal scope reaches Total Cost and the historical basis reaches the 
     expect(dump(est).base).toBeCloseTo(dump(plain).base + 5665, 6);
     expect(est.peripherals.lines.demolition).toHaveLength(6);
     for (const l of est.costs.lines) if (l.name !== "Dump / Waste") expect(l.base).toBeCloseTo(plain.costs.lines.find((x) => x.name === l.name)!.base, 6);
-    expect(est.costs.totalCost).toBeCloseTo(plain.costs.totalCost + 5665 * 1.1 * (1 + before.financial.salesTaxPct), 4);
+    // Contingency only — construction is not sales-taxed.
+    expect(est.costs.totalCost).toBeCloseTo(plain.costs.totalCost + 5665 * 1.1, 4);
     // Idempotent, and a greenfield section clears the items again.
     expect(applyRemovalScope(withExisting)).toBe(withExisting);
     const cleared = applyRemovalScope({ ...withExisting, existing: defaultExisting() });

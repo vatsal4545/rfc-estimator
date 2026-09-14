@@ -81,7 +81,7 @@ export function FinancialsTab() {
           <Field label="Labor — business days">
             <input type="number" className={inputCls} value={f.laborBusinessDays} onChange={(e) => update("laborBusinessDays", Number(e.target.value))} />
           </Field>
-          <Field label="Sales tax %" hint="Applied to the fully-loaded construction subtotal">
+          <Field label="Sales tax %" hint="Charger hardware only — construction is not taxed">
             <input type="number" step="0.01" className={inputCls} value={fractionToPct(f.salesTaxPct)} onChange={(e) => update("salesTaxPct", pctToFraction(Number(e.target.value)))} />
           </Field>
           <Field

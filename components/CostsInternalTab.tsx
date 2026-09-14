@@ -1,7 +1,7 @@
 "use client";
 
 import { laborBreakdown } from "@/lib/calc/costs";
-import { COSTS_INTERNAL_LABELS } from "@/lib/costsInternalSheet";
+import { COSTS_INTERNAL_LABELS, constructionPmRowCost, costsInternalLoading } from "@/lib/costsInternalSheet";
 import { money, num } from "@/lib/format";
 import { useProject } from "./ProjectContext";
 
@@ -19,8 +19,9 @@ const BAND = "#D9D9D9";
 const cell = "border border-zinc-300 px-2 py-1 text-center whitespace-nowrap";
 const labelCell = "border border-zinc-300 px-2 py-1 text-left font-bold";
 
-function pct0(n: number): string {
-  return `${Math.round(n * 100)}%`;
+/** The loading column runs to a tenth once markup is folded in (e.g. 34.4%). */
+function pct1(n: number): string {
+  return `${(n * 100).toFixed(1).replace(/\.0$/, "")}%`;
 }
 
 export function CostsInternalTab() {
@@ -28,22 +29,31 @@ export function CostsInternalTab() {
   const fin = project.financial;
   const c = result.costs;
 
-  const contingency = fin.contingencyPct;
-  const laborContingency = (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0;
+  // The loading column carries contingency AND the commercial markup,
+  // compounded, so Final Cost / Total land on the list price — the same one
+  // presentation the Excel export uses. See costsInternalLoading.
+  const loading = costsInternalLoading(c, fin, project.commercial);
   const days = fin.laborBusinessDays;
   // Blended daily rate: with an itemized labor breakdown (Financials tab)
   // this is base / schedule-days, so the sheet's rate x days x contingency
   // chain still ties to the engine's labor cost.
   const labor = laborBreakdown(fin);
   const rate = labor.blendedRate;
-  // Construction PM row: the CEO-basis construction PM (% of loaded labour)
-  // plus the design-side fees except the AHJ plan check — everything the
-  // source layout keeps outside the G15 construction subtotal.
-  const constructionPm =
-    c.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
-  const laborLoaded = rate * (1 + laborContingency) * days;
+  // Construction PM row: the CEO-basis PM plus the manual design/permitting
+  // PM hours. The auto-calculated design fees stay on the Design Invoice.
+  const constructionPm = constructionPmRowCost(c, fin);
+  const constructionPmLoaded = constructionPm * (1 + loading.constructionPm);
+  const laborLoaded = rate * (1 + loading.labor) * days;
+  const lineLoaded = c.lines.map((l, i) => l.base * (1 + loading.lines[i]));
+  const constructionTotal = lineLoaded.reduce((s, x) => s + x, 0);
 
-  const headers = ["Quantity", "Individual Cost", "Contingency", "Final Cost", "Total"];
+  const headers = [
+    "Quantity",
+    "Individual Cost",
+    loading.includesMarkup ? "Contingency + markup" : "Contingency",
+    loading.includesMarkup ? "List Price" : "Final Cost",
+    "Total",
+  ];
 
   return (
     <div className="slim-scroll overflow-x-auto">
@@ -77,9 +87,9 @@ export function CostsInternalTab() {
                     </td>
                     <td className={cell}>1</td>
                     <td className={cell}>{money(line.base)}</td>
-                    <td className={cell}>{pct0(contingency)}</td>
-                    <td className={cell}>{money(line.finalCost)}</td>
-                    <td className={cell}>{money(line.finalCost)}</td>
+                    <td className={cell}>{pct1(loading.lines[i])}</td>
+                    <td className={cell}>{money(lineLoaded[i])}</td>
+                    <td className={cell}>{money(lineLoaded[i])}</td>
                   </tr>
                 ))}
                 {/* Construction PM: shown here, summed on the Design invoice — not in the subtotal. */}
@@ -87,13 +97,13 @@ export function CostsInternalTab() {
                   <td className={labelCell} style={{ backgroundColor: CATEGORY }}>Construction PM</td>
                   <td className={cell}>1</td>
                   <td className={cell}>{money(constructionPm)}</td>
-                  <td className={cell}>0%</td>
-                  <td className={cell}>{money(constructionPm)}</td>
-                  <td className={cell}>{money(constructionPm)}</td>
+                  <td className={cell}>{pct1(loading.constructionPm)}</td>
+                  <td className={cell}>{money(constructionPmLoaded)}</td>
+                  <td className={cell}>{money(constructionPmLoaded)}</td>
                 </tr>
                 <tr style={{ backgroundColor: BAND }} className="font-bold">
                   <td className="border border-zinc-300 px-2 py-1" colSpan={5} />
-                  <td className={cell}>{money(c.electricalSupplyConstructionTotal)}</td>
+                  <td className={cell}>{money(constructionTotal)}</td>
                 </tr>
               </tbody>
             </table>
@@ -110,8 +120,8 @@ export function CostsInternalTab() {
                   <td className={labelCell} style={{ backgroundColor: CATEGORY, minWidth: 340 }}>Labor</td>
                   <td className={cell} style={{ minWidth: 70 }}>{num(days)}</td>
                   <td className={cell} style={{ minWidth: 110 }}>{money(rate)}</td>
-                  <td className={cell} style={{ minWidth: 110 }}>{pct0(laborContingency)}</td>
-                  <td className={cell} style={{ minWidth: 110 }}>{money(rate * (1 + laborContingency))}</td>
+                  <td className={cell} style={{ minWidth: 110 }}>{pct1(loading.labor)}</td>
+                  <td className={cell} style={{ minWidth: 110 }}>{money(rate * (1 + loading.labor))}</td>
                   <td className={cell} style={{ minWidth: 110 }}>{money(laborLoaded)}</td>
                 </tr>
                 <tr style={{ backgroundColor: BAND }} className="font-bold">
@@ -123,7 +133,7 @@ export function CostsInternalTab() {
                     Total
                   </td>
                   <td className={`${cell} font-bold text-white`} style={{ backgroundColor: BANNER }}>
-                    {money(c.electricalSupplyConstructionTotal + laborLoaded)}
+                    {money(constructionTotal + laborLoaded)}
                   </td>
                 </tr>
               </tbody>

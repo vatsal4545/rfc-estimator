@@ -15,7 +15,7 @@
 import { HARDWARE_ALLOWANCE_BASIS } from "../calc/autoplan";
 import { laborBreakdown } from "../calc/costs";
 import type { EstimateResult, Project } from "../calc/types";
-import { COSTS_INTERNAL_LABELS } from "../costsInternalSheet";
+import { COSTS_INTERNAL_LABELS, constructionPmRowCost, costsInternalLoading, designPmHoursCost } from "../costsInternalSheet";
 import type { CellWrite } from "../intake/xlsxWrite";
 import type { WorkbookCells } from "../intake/xlsx";
 import type { ProposalResult } from "../proposal/types";
@@ -130,6 +130,11 @@ export function planRfcFill(
     if (typeof value === "string" && value.trim() === "") return;
     if (typeof value === "number" && !Number.isFinite(value)) return;
     writes.push(overwriteFormula ? { sheet, ref, value, overwriteFormula } : { sheet, ref, value });
+  };
+
+  /** A live formula (A1 text, no leading "="), so the cell tracks its source. */
+  const putFormula = (sheet: string, ref: string, formula: string, overwriteFormula = false) => {
+    writes.push({ sheet, ref, value: null, formula, ...(overwriteFormula ? { overwriteFormula } : {}) });
   };
 
   // ---- 1 · Equipment → INPUT SHEET -----------------------------------------
@@ -290,6 +295,10 @@ export function planRfcFill(
   const contingency = fin.contingencyPct;
   const laborContingency = (fin.applyContingencyToLabor ?? true) ? fin.contingencyPct : 0;
   const labor = laborBreakdown(fin);
+  // The E column carries contingency AND the commercial markup, compounded, so
+  // F/G land on the list price and the Internal Summary's discount column is
+  // left holding genuine discounts only. See costsInternalLoading.
+  const loading = costsInternalLoading(costs, fin, project.commercial);
 
   if (costs.lines.length !== COSTS_INTERNAL_LABELS.length) {
     warnings.push(
@@ -301,19 +310,25 @@ export function planRfcFill(
     const r = COSTS_INTERNAL.firstLineRow + i;
     put(RFC_SHEETS.costs, `${COSTS_INTERNAL.qty}${r}`, 1);
     // Individual Cost holds a CPM Calcs formula in the blank template; the
-    // app's own figure supersedes it. No hidden markup — the only loading is
-    // the visible Contingency column, exactly as the app's tab shows.
+    // app's own figure supersedes it. It stays raw cost — every loading the
+    // sheet applies is visible in the Contingency column beside it.
     put(RFC_SHEETS.costs, `${COSTS_INTERNAL.individualCost}${r}`, costs.lines[i].base, true);
-    put(RFC_SHEETS.costs, `${COSTS_INTERNAL.contingency}${r}`, contingency);
+    put(RFC_SHEETS.costs, `${COSTS_INTERNAL.contingency}${r}`, loading.lines[i]);
   }
 
   // Construction PM — displayed, but outside SUM(G3:G13), as in the app.
-  const constructionPm =
-    costs.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
+  const constructionPm = constructionPmRowCost(costs, fin);
+  /** The design PM hours the Construction PM row absorbs from the Design Invoice. */
+  const pmHoursCost = designPmHoursCost(fin);
   const pmRow = COSTS_INTERNAL.constructionPmRow;
   put(RFC_SHEETS.costs, `${COSTS_INTERNAL.qty}${pmRow}`, 1);
   put(RFC_SHEETS.costs, `${COSTS_INTERNAL.individualCost}${pmRow}`, constructionPm, true);
-  put(RFC_SHEETS.costs, `${COSTS_INTERNAL.contingency}${pmRow}`, 0);
+  put(RFC_SHEETS.costs, `${COSTS_INTERNAL.contingency}${pmRow}`, loading.constructionPm);
+  // The template ships row 14 with F and G empty, so the row alone of the
+  // eleven has no loaded total. Give it the same two formulas its siblings
+  // carry, and the Internal Summary can link to G14 like every other line.
+  putFormula(RFC_SHEETS.costs, `${COSTS_INTERNAL.finalCost}${pmRow}`, `(${COSTS_INTERNAL.individualCost}${pmRow}*${COSTS_INTERNAL.contingency}${pmRow})+${COSTS_INTERNAL.individualCost}${pmRow}`, true);
+  putFormula(RFC_SHEETS.costs, `${COSTS_INTERNAL.total}${pmRow}`, `${COSTS_INTERNAL.finalCost}${pmRow}*${COSTS_INTERNAL.qty}${pmRow}`, true);
 
   // Labor. C18 and D18 read K5 and K4, so the box drives the row; K6 and K7
   // derive from it too. K5 pulls business days from 'INPUT SHEET CPM' in the
@@ -321,32 +336,50 @@ export function planRfcFill(
   // Calcs figures above.
   put(RFC_SHEETS.costs, COSTS_INTERNAL.laborDailyRate, labor.blendedRate);
   put(RFC_SHEETS.costs, COSTS_INTERNAL.laborBusinessDays, fin.laborBusinessDays, true);
-  put(RFC_SHEETS.costs, COSTS_INTERNAL.laborContingency, laborContingency);
+  put(RFC_SHEETS.costs, COSTS_INTERNAL.laborContingency, loading.labor);
 
   // ---- The Internal Summary rows nothing else feeds ------------------------
   // Costs Internal only carries the eleven construction lines and labor. The
   // Design Invoice, the construction sales tax and the construction PM are
   // part of the app's Total Cost but ship as hard zeros here, so the Grand
   // Total would come out short by all three.
-  const designComponents = fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate;
-  if (Math.abs(costs.designAndEngineering - designComponents) < 0.005) {
+  //
+  // The design PM hours are the exception: they ride the Construction PM row
+  // (D14) now, so B11 is held at zero. They are on the sheet exactly once and
+  // B8 + B25 still sums to the app's design invoice plus construction PM.
+  const autoDesign = fin.autoCadDesignCost + fin.electricalEngDesignCost;
+  if (Math.abs(costs.designAndEngineering - (autoDesign + pmHoursCost)) < 0.005) {
     put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.autoCadDesign, fin.autoCadDesignCost);
     put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.electricalEngDesign, fin.electricalEngDesignCost);
-    put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.designProjectManagement, fin.pmHours * fin.pmHourlyRate);
   } else {
     // The override register replaced design with one typed figure, and the
     // workbook has no single design line to carry it. Put it on the first row
     // so the invoice total is right, and say so rather than splitting it.
-    put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.autoCadDesign, costs.designAndEngineering);
+    put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.autoCadDesign, Math.max(0, costs.designAndEngineering - pmHoursCost));
     put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.electricalEngDesign, 0);
-    put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.designProjectManagement, 0);
     warnings.push(
       `Design and engineering is overridden to $${costs.designAndEngineering.toLocaleString("en-US", { maximumFractionDigits: 2 })} in the register, so it went onto the Internal Summary's "AutoCad Design Services" row whole — the workbook has no single design line. The Design Invoice total is correct; its three-way split is not.`,
     );
   }
+  // "Project Management" (B11) is the design PM hours, which the Construction
+  // PM row carries. Zero here, or every one of those hours lands twice.
+  put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.designProjectManagement, 0);
   put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.planCheckPermitFees, fin.planCheckPermitFee);
-  put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.constructionPm, costs.constructionPm);
-  put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.salesTaxOnConstruction, costs.salesTaxOnConstruction);
+
+  // Construction PM links to its Costs Internal row rather than being copied:
+  // the two sheets must never disagree, and a literal here goes stale the
+  // moment anyone edits 'Costs Internal'!D14 by hand.
+  putFormula(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.constructionPm, `'${RFC_SHEETS.costs}'!${COSTS_INTERNAL.total}${COSTS_INTERNAL.constructionPmRow}`);
+  if (pmHoursCost > 0.005) {
+    warnings.push(
+      `The ${fin.pmHours}h x $${fin.pmHourlyRate}/h of design / permitting PM (${pmHoursCost.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })}) is on the "Construction PM" row, matching 'Costs Internal'!${COSTS_INTERNAL.individualCost}${COSTS_INTERNAL.constructionPmRow}, so the Internal Summary's "Project Management" row (B11) reads zero rather than counting those hours a second time.`,
+    );
+  }
+
+  // "Sales Tax on equipment" (B27) is held at zero on purpose — tax on
+  // chargers already has its own row at B7, and the app's construction sales
+  // tax is not equipment tax. Its discount cell (C27) is left alone too.
+  put(RFC_SHEETS.internalSummary, INTERNAL_SUMMARY.salesTaxOnEquipment, 0);
 
   // ---- Customer price: the Applied Discount column -------------------------
   // D = B − B×C on every row, so writing C aligns the workbook's "Customer
@@ -375,22 +408,35 @@ export function planRfcFill(
     putFactor(INTERNAL_SUMMARY_DISCOUNT.salesTaxHardware, hardwarePrice * WORKBOOK_HARDWARE_TAX_RATE, priceOf("salesTaxHardware"));
     // One factor across the three design rows, so their D's sum to the price
     // whatever the split between AutoCAD, engineering and PM hours.
+    // The factor is taken against the whole design line, PM hours included;
+    // the PM-hours share of the price then rides the Construction PM row with
+    // the hours themselves. Scaling base and target together leaves the factor
+    // unchanged, so the same number is right on every design row.
     const designFactor = factor(costs.designAndEngineering, priceOf("design"));
     if (designFactor !== undefined) {
       for (const ref of INTERNAL_SUMMARY_DISCOUNT.design) put(RFC_SHEETS.internalSummary, ref, designFactor);
     }
+    /** The design price that moved to the Construction PM row with the hours. */
+    const pmHoursPrice = designFactor === undefined ? 0 : pmHoursCost * (1 - designFactor);
     putFactor(INTERNAL_SUMMARY_DISCOUNT.planCheck, fin.planCheckPermitFee, priceOf("planCheck"));
+    // Column B now holds the LIST price (the E column loaded cost by markup as
+    // well as contingency), so each factor comes out as the row's genuine
+    // discount — zero where the app discounts nothing.
     for (let i = 0; i < lineCount; i++) {
       const line = costs.lines[i];
-      putFactor(`${INTERNAL_SUMMARY_DISCOUNT.lineColumn}${INTERNAL_SUMMARY_DISCOUNT.firstLineRow + i}`, line.finalCost, priceOf(`line:${line.name}`));
+      const list = line.base * (1 + loading.lines[i]);
+      putFactor(`${INTERNAL_SUMMARY_DISCOUNT.lineColumn}${INTERNAL_SUMMARY_DISCOUNT.firstLineRow + i}`, list, priceOf(`line:${line.name}`));
     }
-    putFactor(INTERNAL_SUMMARY_DISCOUNT.constructionPm, costs.constructionPm, priceOf("constructionPm"));
-    putFactor(INTERNAL_SUMMARY_DISCOUNT.salesTaxOnConstruction, costs.salesTaxOnConstruction, priceOf("constructionTax"));
-    putFactor(INTERNAL_SUMMARY_DISCOUNT.labor, costs.labor, priceOf("labor"));
+    // B25 is the Costs Internal PM row's Total, which carries the design PM
+    // hours as well as the CEO-basis PM, both already marked up by the E
+    // column — so the factor left here is just the in-house discount.
+    putFactor(INTERNAL_SUMMARY_DISCOUNT.constructionPm, constructionPm * (1 + loading.constructionPm), (priceOf("constructionPm") ?? 0) + pmHoursPrice);
+    putFactor(INTERNAL_SUMMARY_DISCOUNT.labor, (costs.labor / (1 + laborContingency)) * (1 + loading.labor), priceOf("labor"));
 
     // Pass-through fees the app bills but the Internal Summary has no row for.
     // They go on the spare "Materials" row at cost, or D30 would be short.
-    const unhomed = ["interconnect", "lineExtension", "additional"]
+    // Construction sales tax is one of them now that B27 is held at zero.
+    const unhomed = ["interconnect", "lineExtension", "additional", "constructionTax"]
       .map((id) => buildup.rows.find((r) => r.id === id))
       .filter((r): r is NonNullable<typeof r> => r !== undefined);
     if (unhomed.length > 0) {
@@ -410,7 +456,7 @@ export function planRfcFill(
     }
 
     warnings.push(
-      `The Internal Summary's "Applied Discount" column now carries the app's full markup-and-discount factor, so "Customer Price" (D) and Total After Discount (D30) equal the app's Customer price of ${buildup.customerPrice.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })}. Entries are negative where the app marks a line up — the workbook has no markup column of its own. Column B still shows internal cost.`,
+      `Costs Internal's "Contingency" column carries the commercial markup as well as contingency, so its Final Cost / Total columns — and the Internal Summary's "Price" column that reads them — are LIST price, not cost. "Individual Cost" (column D) is still raw cost. That leaves "Applied Discount" holding genuine discounts only, and Total After Discount (D30) equal to the app's Customer price of ${buildup.customerPrice.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })}.`,
     );
   } else {
     leftBlank.push(`${RFC_SHEETS.internalSummary}: the Applied Discount column (no Commercial inputs, so there is no customer price to align to)`);

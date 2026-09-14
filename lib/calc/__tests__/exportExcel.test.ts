@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
+import { constructionPmRowCost, costsInternalLoading } from "../../costsInternalSheet";
 import { buildEstimateWorkbook, estimateWorkbookBuffer } from "../../exportExcel";
 import { buildQuickProject, defaultQuickInput } from "../autoplan";
 import { defaultProject } from "../defaults";
@@ -127,14 +128,13 @@ describe("Excel export", () => {
     // Individual Cost reads the Cost Detail bases; contingency reads the input block.
     expect((ws.getCell("D3").value as ExcelJS.CellFormulaValue).formula).toBe("'Cost Detail'!B13");
     expect((ws.getCell("E3").value as ExcelJS.CellFormulaValue).formula).toBe("'Cost Detail'!$B$4");
-    // Construction PM row = CEO-basis PM (% of loaded labour) + the design
-    // invoice minus the AHJ plan check, at 0% contingency, excluded from the
-    // G15 construction subtotal.
+    // Construction PM row = CEO-basis PM (% of loaded labour) + the manual
+    // design / permitting PM hours, at 0% contingency, excluded from the G15
+    // construction subtotal. The auto-calculated design fees are NOT here —
+    // they are their own Design Invoice lines.
     const fin = project.financial;
-    expect(cellNumber(ws.getCell("D14").value)).toBeCloseTo(
-      result.costs.constructionPm + fin.autoCadDesignCost + fin.electricalEngDesignCost + fin.pmHours * fin.pmHourlyRate,
-      2,
-    );
+    expect(cellNumber(ws.getCell("D14").value)).toBeCloseTo(constructionPmRowCost(result.costs, fin), 2);
+    expect(cellNumber(ws.getCell("D14").value)).toBeCloseTo(result.costs.constructionPm + fin.pmHours * fin.pmHourlyRate, 2);
     expect(ws.getCell("E14").value).toBe(0);
     expect((ws.getCell("G15").value as ExcelJS.CellFormulaValue).formula).toBe("SUM(G3:G13)");
     // Money ties: G15 = construction total, G18/G19 = labor, G20 = both.
@@ -187,6 +187,43 @@ describe("Excel export — proposal sheets", () => {
   const project = { ...base, commercial: defaultCommercial() };
   const result = computeEstimate(project);
   const proposal = computeProposal(project, result)!;
+
+  // The markup lives in the Costs Internal loading column, not in the Internal
+  // Summary's discount column — one presentation of the same money. All three
+  // surfaces (app tab, this export, the RFC fill) read costsInternalLoading,
+  // so asserting each against it is what keeps them from drifting apart.
+  it("Costs Internal folds the commercial markup into the loading column", async () => {
+    const wb = await buildEstimateWorkbook(project, result);
+    const ws = wb.getWorksheet("Costs Internal")!;
+    const c = project.commercial!;
+    const cont = project.financial.contingencyPct;
+    const loading = costsInternalLoading(result.costs, project.financial, c);
+
+    // The headers say what the columns actually hold now.
+    expect(ws.getCell("E2").value).toBe("Contingency + markup");
+    expect(ws.getCell("F2").value).toBe("List Price");
+
+    result.costs.lines.forEach((line, i) => {
+      const r = 3 + i;
+      const passThrough = c.passThroughLines.includes(line.name);
+      expect(loading.lines[i]).toBeCloseTo(passThrough ? 0 : (1 + cont) * (1 + c.markupMaterialsPct) - 1, 12);
+      // Full precision: 0.344 rounded to 0.34 would move every price below it
+      // by half a percent, and cached values are what non-Excel readers see.
+      expect(cellNumber(ws.getCell(`E${r}`).value)).toBeCloseTo(loading.lines[i], 12);
+      // A pass-through line is a hard zero, NOT a formula off the contingency
+      // input — it has to stay zero however that input is changed in Excel.
+      if (passThrough) expect(ws.getCell(`E${r}`).value).toBe(0);
+      // D stays raw cost; F and G are the list price.
+      expect(cellNumber(ws.getCell(`D${r}`).value)).toBeCloseTo(line.base, 2);
+      expect(cellNumber(ws.getCell(`G${r}`).value)).toBeCloseTo(line.base * (1 + loading.lines[i]), 2);
+    });
+    expect(cellNumber(ws.getCell("E18").value)).toBeCloseTo((1 + cont) * (1 + c.markupLaborPct) - 1, 12);
+    // The Construction PM row blends a marked-up CEO PM with un-marked-up
+    // design hours, so it sits strictly between the two.
+    expect(loading.constructionPm).toBeGreaterThan(0);
+    expect(loading.constructionPm).toBeLessThan(c.markupLaborPct);
+    expect(cellNumber(ws.getCell("E14").value)).toBeCloseTo(loading.constructionPm, 12);
+  });
 
   it("appends Cost Buildup and Business Model after Assumptions, tied to the proposal", async () => {
     const wb = await buildEstimateWorkbook(project, result);
