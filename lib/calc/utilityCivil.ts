@@ -81,7 +81,22 @@ export function utilityCivilRegime(utility: string): { regime: UtilityCivilRegim
  * transformer is likely — DC fast charging; a Level 2-only site usually
  * lands on the existing service.
  */
-export function utilityCivilFor(utility: string, counts: UtilityCivilCounts, feederByUtility = false): UtilityCivilResult {
+export function utilityCivilFor(utility: string, counts: UtilityCivilCounts, feederByUtility = false, existingService = false): UtilityCivilResult {
+  const rule = utilityCivilRule(utility, counts, feederByUtility);
+  if (!existingService) return rule;
+  // Added load to an existing service: the utility sets no new transformer,
+  // so there is no pad to pour, no cable well under it and no pull boxes on
+  // a new lateral. The service box at our point of connection stays.
+  return {
+    ...rule,
+    transformerPadCost: 0,
+    cableWellCost: 0,
+    pullBoxQty: 0,
+    basis: `Added load to the existing service — no new transformer, so no pad, cable well or pull boxes; the service box at our point of connection is ours. (${rule.basis})`,
+  };
+}
+
+function utilityCivilRule(utility: string, counts: UtilityCivilCounts, feederByUtility: boolean): UtilityCivilResult {
   const { regime, label } = utilityCivilRegime(utility);
   const newTransformer = counts.nDCFC > 0;
   const anyChargers = counts.nDCFC + counts.nL2 > 0;

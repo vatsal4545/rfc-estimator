@@ -98,7 +98,12 @@ export function PeripheralsTab() {
   }
 
   const customItems = p.customItems ?? [];
-  const civilRule = utilityCivilFor(project.setup.utility, result.rollups, (project.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility"));
+  const civilRule = utilityCivilFor(
+    project.setup.utility,
+    result.rollups,
+    (project.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility"),
+    project.intake?.interconnection?.serviceType === "Added load to existing service",
+  );
   const civilLines = result.peripherals.lines.civil;
   const concreteLine = civilLines.find((c) => c.name.startsWith("Concrete ("));
   const asphaltLine = civilLines.find((c) => c.name === "Asphalt paving — parking stalls");

@@ -522,7 +522,8 @@ export function buildQuickProject(
 
   // --- Civil / peripherals -------------------------------------------------
   const feederByUtility = (base.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility");
-  const civil = utilityCivilFor(p.setup.utility, counts, feederByUtility);
+  const existingService = base.intake?.interconnection?.serviceType === "Added load to existing service";
+  const civil = utilityCivilFor(p.setup.utility, counts, feederByUtility, existingService);
   const gprDays = input.includePrivateScan && trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / RATE_CARD.gprFtPerDay)) : 0;
   const customItems = (p.peripherals.customItems ?? []).filter((c) => c.name !== GPR_ITEM_NAME);
   if (gprDays > 0) {

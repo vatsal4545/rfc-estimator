@@ -41,6 +41,15 @@ describe("customer-furnished utility substructures", () => {
     expect(utilityCivilFor("", { nDCFC: 0, nL2: 0 }).serviceBoxQty).toBe(0);
   });
 
+  it("an added load to the existing service has no new transformer: no pad, well or pull boxes on any utility, the service box stays", () => {
+    for (const u of ["SMUD — Sacramento Municipal Utility District", "SDG&E — San Diego Gas & Electric", "SCE — Southern California Edison", "LADWP — Los Angeles Dept of Water & Power", ""]) {
+      const r = utilityCivilFor(u, dc, false, true);
+      expect(r, u).toMatchObject({ transformerPadCost: 0, cableWellCost: 0, pullBoxQty: 0, serviceBoxQty: 1 });
+      expect(r.basis).toMatch(/existing service/);
+    }
+    expect(utilityCivilFor("SMUD — Sacramento Municipal Utility District", dc, false, false).transformerPadCost).toBeGreaterThan(0);
+  });
+
   it("Build writes the rule onto the peripherals and the Utility and hardware lines carry it", () => {
     const base: Project = { ...defaultProject(), setup: { ...defaultProject().setup, utility: "SMUD — Sacramento Municipal Utility District" } };
     const quick = { ...defaultQuickInput(), lines: [{ loadTypeId: "DCFC 360kW Dual", count: 4 }, { loadTypeId: "L2 Dual 40A", count: 2 }] };

@@ -76,7 +76,7 @@ export function ElectricalSection() {
     return i < 0 ? "—" : String(i + 1);
   };
   const cabinets = input.lines.some((l) => l.count > 0 && l.loadTypeId.startsWith("Power cabinet"));
-  const civil = utilityCivilFor(s.utility, result.rollups, feederByUtility);
+  const civil = utilityCivilFor(s.utility, result.rollups, feederByUtility, project.intake?.interconnection?.serviceType === "Added load to existing service");
 
   return (
     <div>
