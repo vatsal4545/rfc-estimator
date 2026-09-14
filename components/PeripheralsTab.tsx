@@ -117,7 +117,6 @@ export function PeripheralsTab() {
 
   return (
     <div>
-      <MaterialRatesSection />
       <Section title="A. Electrical gear" subtitle="Unit cost is looked up from the gear catalog; override if you have a live quote.">
         <label className="mb-3 flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-0.5" checked={!!p.existingSwitchgear} onChange={(e) => updateP("existingSwitchgear", e.target.checked || undefined)} />
@@ -704,6 +703,9 @@ export function PeripheralsTab() {
           + Add rental line
         </button>
       </Section>
+
+      {/* Reference rates last: the per-foot conductor and conduit prices are edited rarely, the counts above every day. */}
+      <MaterialRatesSection />
     </div>
   );
 }
