@@ -1,5 +1,7 @@
 # RFC Estimator
 
+Dated decisions about the CEO handoff (what goes to the Overrides tab, sales tax, template fixes) are in [docs/DECISIONS.md](docs/DECISIONS.md).
+
 Turnkey cost-estimating app for EV charging (EVCS) projects — the successor to the
 RFC_V18 spreadsheets. Describe a site (charger models × counts, terrain, services)
 and it derives everything: NEC wire/conduit sizing, panel schedules, switchgear and
