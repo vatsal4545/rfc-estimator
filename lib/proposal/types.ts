@@ -117,9 +117,11 @@ export interface IntakeInput {
   revisionNotes?: string;
   /**
    * Whether the filled intake carries the estimator's construction and
-   * engineering figures in its Overrides register (default true) — the
-   * CEO's engine then prices the job on the estimator's numbers while the
-   * intake's own derivation stays visible beside them.
+   * engineering figures in its Overrides register. Default FALSE: the CEO
+   * prices the job from the intake's own derivation and wants the Overrides
+   * tab left to what was typed there; only the register's own entries and the
+   * Commercial tab's pass-throughs travel. Tick it on the handoff tab to send
+   * the estimator's figures as overrides, with reasons.
    */
   carryEstimatorOverrides?: boolean;
   /** Site facts the intake records and the estimator does not model — carried through a round trip as typed (Electrical!B8, B9, B150). */

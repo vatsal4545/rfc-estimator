@@ -52,7 +52,7 @@ export function HandoffSection() {
 
   const filled = sections.reduce((t, s) => t + s.filled, 0);
   const total = sections.reduce((t, s) => t + s.total, 0);
-  const carry = it.carryEstimatorOverrides ?? true;
+  const carry = it.carryEstimatorOverrides ?? false;
   const bySheet = Object.entries(
     plan.writes.reduce<Record<string, number>>((acc, w) => {
       acc[w.sheet] = (acc[w.sheet] ?? 0) + 1;
@@ -112,14 +112,14 @@ export function HandoffSection() {
 
       <Section
         title="What travels into the CEO's override register"
-        subtitle="The intake derives its own electrical and civil costs from distances and RefData rates. A row in its Overrides tab forces that figure to a typed one — with the reason beside it — and the CEO's engine reports every active override on the model summary. So the estimator's construction and engineering numbers land there: in force, never hidden."
+        subtitle="The intake derives its own electrical and civil costs from distances and RefData rates, and the CEO prices the job from that derivation — so by default the Overrides tab is left to what was typed there (the register's own entries and the Commercial tab's pass-throughs). Tick the box to send the estimator's construction and engineering figures as overrides instead; each lands with its reason and the CEO's engine reports every active override."
       >
         <label className="mb-3 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
           <input type="checkbox" className="h-4 w-4" checked={carry} onChange={(e) => update("carryEstimatorOverrides", e.target.checked)} />
-          Carry the estimator&apos;s construction and engineering figures (rows 9–16, the frame and the branch breaker) into the register
+          Carry the estimator&apos;s construction and engineering figures (rows 9–16, the frame and the branch breaker) into the register — off by default
         </label>
         {plan.overrides.length === 0 ? (
-          <div className="text-sm text-zinc-500">Nothing to carry — the CEO&apos;s engine will price the job from the intake&apos;s own derivation.</div>
+          <div className="text-sm text-zinc-500">Nothing goes to the Overrides tab — the CEO&apos;s engine prices the job from the intake&apos;s own derivation.</div>
         ) : (
           <div className={tableWrapCls}>
             <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">

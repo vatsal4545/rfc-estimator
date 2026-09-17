@@ -198,12 +198,13 @@ so the template's formulas, live checks, dropdowns, comments and defined
 names survive and every green check recalculates on open. The cell map is
 `lib/intake/cells.ts`; the plan (which cell gets which value) is
 `lib/intake/plan.ts`; `fillIntake.ts` refuses a template whose version or
-content hash the map was not written for. The estimator's construction and
-engineering figures (cost-line bases before contingency and markup, D&E, the
-frame, the branch breaker) land in the intake's **Overrides register** with
-their reasons (`lib/intake/handoff.ts`), so the CEO's engine prices the job on
-the estimator's numbers while the intake's own derivation stays visible beside
-them. The handoff tab previews exactly those rows, lists the blue cells left
+content hash the map was not written for. By default nothing is written to the intake's **Overrides register**: the CEO
+prices the job from the intake's own derivation, so only entries typed on the
+app's Overrides tab and the Commercial tab's pass-throughs travel. Ticking the
+handoff tab's checkbox sends the estimator's construction and engineering
+figures (cost-line bases before contingency and markup, D&E, the frame, the
+branch breaker) into the register with their reasons (`lib/intake/handoff.ts`)
+instead. The handoff tab previews exactly those rows, lists the blue cells left
 for a human (trench depth, DC dispenser runs, drawing-set counts…), and shows
 how complete each section is. `lib/intake/__tests__/fillIntake.test.ts` fills
 a Best Western-shaped project, re-imports the result and ties the carried

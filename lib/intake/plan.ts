@@ -144,7 +144,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Version", VERSION_CELLS.dateCompleted, today);
   put("Version", VERSION_CELLS.completedBy, it?.completedBy?.trim() || s.cpm);
   put("Version", VERSION_CELLS.projectReference, it?.projectReference);
-  const generated = `Filled by the RFC Estimator on ${today}${s.clientName ? ` for ${s.clientName}` : ""}. Construction and engineering figures are the estimator's — see the Overrides tab.`;
+  const carryForNotes = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
+  const generated = `Filled by the RFC Estimator on ${today}${s.clientName ? ` for ${s.clientName}` : ""}.${carryForNotes ? " Construction and engineering figures are the estimator's — see the Overrides tab." : ""}`;
   const revisionNotes = [it?.revisionNotes?.trim(), generated].filter(Boolean).join(" ");
   put("Version", VERSION_CELLS.revisionNotes, revisionNotes);
   // The Revisions tab: the file's own history as imported, then this issue —
@@ -738,13 +739,14 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   }
 
   // ---- Overrides ------------------------------------------------------------
-  const carry = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? true;
+  // Off by default: the CEO prices the job from the intake's own derivation and wants the Overrides tab left to what was typed there.
+  const carry = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
   const overrides = estimatorOverrideRows(project, result, proposal, carry);
   for (const o of overrides) {
     put("Overrides", `${OVERRIDE_COLS.value}${o.row}`, o.value);
     put("Overrides", `${OVERRIDE_COLS.reason}${o.row}`, o.reason);
   }
-  if (!carry) warnings.push("Estimator figures NOT carried into the override register — the CEO's engine will price construction from the intake's own derivation.");
+  if (!carry) leftBlank.push("Estimator figures NOT carried into the override register — the CEO's engine will price construction from the intake's own derivation.");
 
   return { writes, fileVersion, overrides, leftBlank, warnings };
 }

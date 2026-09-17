@@ -298,7 +298,21 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Existing", "C150")).toBe(0.85);
   });
 
-  it("Overrides tab carries the estimator's construction figures with reasons, and the register's own entries win their rows", () => {
+  it("Overrides tab: by default only the register's own entries travel — the CEO prices from the intake's derivation", () => {
+    expect(wb.get("Overrides", "B9")).toBeNull();
+    expect(wb.get("Overrides", "B10")).toBeNull();
+    expect(wb.get("Overrides", "B16")).toBeNull();
+    expect(wb.get("Overrides", "B19")).toBe(3200); // typed on the app's register
+    expect(wb.get("Overrides", "B22")).toBe(1400);
+    expect(report.overrides.map((o) => o.row)).toEqual([19, 22]);
+    expect(String(wb.get("Version", "B14"))).not.toMatch(/Overrides tab/);
+  });
+
+  it("Overrides tab carries the estimator's construction figures with reasons when asked, and the register's own entries win their rows", async () => {
+    const carried = await fillIntakeWorkbook(template, project, result, proposal, { today: "2026-09-02", carryOverrides: true });
+    const wb = await readWorkbook(carried.bytes);
+    const report = carried.report;
+    expect(String(wb.get("Version", "B14"))).toMatch(/see the Overrides tab/);
     expect(wb.get("Overrides", "B9")).toBeCloseTo(base("Wires, Conduits & Electrical Peripherals"), 2);
     expect(String(wb.get("Overrides", "D9"))).toMatch(/^RFC Estimator take-off/);
     expect(wb.get("Overrides", "B10")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
@@ -345,17 +359,14 @@ describe("filling the CEO's intake from a project", async () => {
     expect(p.existing!.projectType).toBe("replace");
     expect(p.existing!.history).toHaveLength(3);
     expect(p.existing!.revenueBasis).toBe("historical");
+    // Only the register's own entries came back — the estimator's figures were not written to the Overrides tab.
     const keys = (p.overrides ?? []).map((o) => o.key);
-    expect(keys).toEqual(expect.arrayContaining(["switchgearA", "kwhPerDay", "line:Wires, Conduits & Electrical Peripherals", "line:Main Distribution Switchgear", "siteWorks", "line:Dump / Waste", "line:Permits", "line:Utility", "line:Construction Equipment", "design"]));
-    // The carried figures are in force on the re-imported estimate: the same construction bases, to the cent.
+    expect(keys).toEqual(["switchgearA", "kwhPerDay"]);
+    // With nothing carried in the register, the re-imported estimate is the estimator's own re-derivation from the
+    // intake's inputs (typed distances, conductors and quantities) — the frame override still lands.
     const again = computeEstimate(p);
-    const againBase = (name: string) => again.costs.lines.find((l) => l.name === name)!.base;
-    expect(againBase("Wires, Conduits & Electrical Peripherals")).toBeCloseTo(base("Wires, Conduits & Electrical Peripherals"), 2);
-    expect(againBase("Main Distribution Switchgear") + againBase("Electrical Sub-Panels, Transformers, Breakers")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
-    expect(againBase("Dump / Waste")).toBeCloseTo(base("Dump / Waste"), 2);
-    expect(againBase("Construction Equipment")).toBeCloseTo(base("Construction Equipment"), 2);
-    expect(again.costs.designAndEngineering).toBeCloseTo(result.costs.designAndEngineering, 2);
     expect(again.panel.bus480?.suggestedBusA).toBe(3200);
+    expect(again.costs.totalCost).toBeGreaterThan(0);
   });
 
   it("refuses a template the cell map was not written for", async () => {
@@ -384,7 +395,8 @@ describe("filling the CEO's intake from a project", async () => {
     expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.6.0-rev-b.xlsx");
     const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
-    expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(true);
+    expect(plan.leftBlank.some((w) => /NOT carried/.test(w))).toBe(true);
+    expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(false);
   });
 });
 

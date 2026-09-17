@@ -150,7 +150,8 @@ describe.each(SCENARIOS)("scenario: $name", (sc) => {
   });
 
   it("fills the CEO's intake with the utility, the schedule and the substructures", async () => {
-    const { bytes, report } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, proposal, { today: "2026-09-03" });
+    // carryOverrides on: this test reads the substructure wording from the override reason.
+    const { bytes, report } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, proposal, { today: "2026-09-03", carryOverrides: true });
     expect(report.refused).toEqual([]);
     const wb = await readWorkbook(bytes);
     expect(wb.get("Project", "B26")).toBe(sc.utility);
