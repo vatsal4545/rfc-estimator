@@ -126,3 +126,18 @@ material is set to match.
 **Verified.** 458 tests; Hilton Rev C (3.6.0 file) imports, fills a 3.7.0
 with both feeders OK against Jesse's schedule rows, 2,190 formulas recalc
 with zero errors, and import → fill → import → fill is stable to the cent.
+
+## 2026-09-18 — Intake 3.7.2 (the CEO's own repair)
+
+**Fact of the template.** 3.7.1 corrected the block I From/To dropdown
+validations (stored with a leading "=", which Excel reported as corrupt
+content) and renamed the SDG&E EV-HP picker entries to the rate library's
+exact names, adding EV-HP Primary. 3.7.2 restored the nine closing brackets
+missing since 3.6.0 at the source. Content hash b83387921f8472c2. No row,
+label or formula address moved from 3.7.0.
+
+**Behaviour.** The app's template copies are the CEO's file byte for byte —
+the local parenthesis repair kept since 3.6.0 is retired, and the oracle test
+asserts the published file is clean. Nothing else changed; refdata and the
+importer fixture were regenerated. Commit f138479, deployed from the Vercel
+CLI (the Git integration left a deployment in "Initializing" all afternoon).
