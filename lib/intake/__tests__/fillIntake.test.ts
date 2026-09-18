@@ -18,7 +18,7 @@ import { projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 import { patchWorkbook } from "../xlsxWrite";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
 
 /** Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, manual tariff, a deal structure, two register entries. */
 function bwProject(): Project {
@@ -131,7 +131,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("writes without a refusal and reports what it did", () => {
     expect(report.refused).toEqual([]);
-    expect(report.templateVersion).toBe("3.7.0");
+    expect(report.templateVersion).toBe("3.7.2");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
     expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Revisions", "Version"]);
@@ -145,7 +145,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Version", "B12")).toBe("Test CPM");
     expect(wb.get("Version", "B13")).toBe("BW-TEST-001");
     expect(wb.get("Version", "B14")).toMatch(/^Second issue after the site walk\. Filled by the RFC Estimator on 2026-09-02 for Best Western Hawthorne/);
-    expect(wb.get("Version", "B4")).toBe("3.7.0"); // untouched
+    expect(wb.get("Version", "B4")).toBe("3.7.2"); // untouched
     expect(wb.get("Project", "B5")).toBe("Best Western Hawthorne");
     expect(wb.get("Project", "B6")).toBe("Mohammad Noorali");
     expect(wb.get("Project", "B12")).toBe("Best Western Hawthorne");
@@ -386,7 +386,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("refuses a template the cell map was not written for", async () => {
     const doctored = await patchWorkbook(template, [{ sheet: "Version", ref: "B4", value: "3.3.0" }]);
-    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.7\.0/);
+    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.7\.2/);
     expect(() => verifyIntakeTemplate({ sheetNames: [], has: () => false, get: () => null, formula: () => undefined, cells: () => new Map() })).toThrow();
   });
 
@@ -407,7 +407,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(conduitToIntake('1-1/4"')).toBe('(1 1/4")');
     expect(conduitToIntake('3"')).toBe('(3") ');
     expect(conduitToIntake('2-1/2"')).toBe('(2 1/2")');
-    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.7.0-rev-b.xlsx");
+    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.7.2-rev-b.xlsx");
     const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.leftBlank.some((w) => /NOT carried/.test(w))).toBe(true);
@@ -501,12 +501,12 @@ describe("custom rental lines and the intake's 14 fixed rental rows", async () =
   });
 });
 
-// Intake 3.7.0 block I — the distribution feeders between the items on the
+// Intake 3.7.2 block I — the distribution feeders between the items on the
 // schedule. The sheet prices this block into the Pricing tab's wire line, so
 // the estimator's feeder segments must land here: the chain's guessed pair
 // on a project built in the app, the engineer's typed rows on an import.
-describe("block I — distribution feeders (intake 3.7.0)", async () => {
-  const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.0.xlsx");
+describe("block I — distribution feeders (intake 3.7.2)", async () => {
+  const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.2.xlsx");
   const template = readFileSync(TEMPLATE);
 
   it("writes the chain's switchgear → transformer → sub-panel pair against the names block E used, at the estimator's floor and conductor", async () => {

@@ -91,13 +91,10 @@ describe("the engine reproduces what Excel computed", () => {
     // template has regressed — and at 3.6.0 as published it did: the nine
     // Electrical and Construction formulas the release wrapped in a new outer
     // IF for the add-load project type were each saved one closing parenthesis
-    // short (Electrical!N160, B211–B214, C211–C213, Construction!B66), and
-    // 3.7.0 as published still carries them that way. The app's copies carry
-    // the CEO's own corrected text for those nine cells (the published text
-    // plus its missing parenthesis — identical to what his engine wrote into
-    // the Hilton Rev B file), so this is clean again; the published file is
-    // not. scripts/make-intake-sample.py and the template swap notes in
-    // docs/DECISIONS.md say how the copies are repaired.
+    // short (Electrical!N160, B211–B214, C211–C213, Construction!B66), and so
+    // was 3.7.0. The app's copies carried the CEO's own corrected text for
+    // those nine cells until 3.7.2, whose published file is clean — this
+    // template copy is his file, byte for byte.
     expect(warnings.map((w) => `${w.sheet}!${w.ref}: ${w.message}`)).toEqual([]);
   });
 });

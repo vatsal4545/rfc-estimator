@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.7.0 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.7.2 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -9,16 +9,17 @@ import { DESIGN_UNIT_RATES } from "../calc/designFees";
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.7.0",
+  version: "3.7.2",
   /**
    * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
-   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0 and 3.7.0 — so it is not
-   * a reliable content digest. The version string is what actually gates a fill.
+   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0, 3.7.0 and 3.7.2 — so it
+   * is not a reliable content digest. The version string is what actually
+   * gates a fill.
    */
-  contentHash: "a9ba811854921b2d",
-  file: "EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx",
+  contentHash: "b83387921f8472c2",
+  file: "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -94,7 +95,8 @@ export const EQUIPMENT_TABLE = {
  * (auto, from the Existing tab), block H the site's conductor sizing table
  * (auto) and, since 3.7.0, block I the distribution feeders between the items
  * on the schedule. 3.5.0 moved nothing — it locked every non-blue cell; 3.6.0
- * and 3.7.0 only appended.
+ * and 3.7.0 only appended; 3.7.1–3.7.2 repaired dropdowns and the nine
+ * unbalanced formulas without moving a cell.
  */
 export const ELECTRICAL_CELLS = {
   // Block A — sizing basis

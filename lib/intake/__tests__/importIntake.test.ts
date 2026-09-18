@@ -11,8 +11,8 @@ import { defaultCommercial } from "../../proposal/defaults";
 import { importIntakeFile, looksLikeIntake, projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.0.xlsx");
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.2.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
 
 describe("importing a completed intake workbook", async () => {
   const base = { ...defaultProject(), commercial: defaultCommercial() };
@@ -22,8 +22,8 @@ describe("importing a completed intake workbook", async () => {
   const proposal = computeProposal(project, estimate)!;
 
   it("recognises the workbook and records its version", () => {
-    expect(report.templateVersion).toBe("3.7.0");
-    expect(report.contentHash).toBe("a9ba811854921b2d");
+    expect(report.templateVersion).toBe("3.7.2");
+    expect(report.contentHash).toBe("b83387921f8472c2");
     expect(report.fileVersion).toBe("Rev A");
     expect(report.completedBy).toBe("Test CPM");
     expect(report.dateCompleted).toBe("2026-09-02");
@@ -57,7 +57,7 @@ describe("importing a completed intake workbook", async () => {
     expect(it.projectReference).toBe("BW-TEST-001");
     expect(it.county).toBe("Los Angeles");
     expect(it.cca).toBe("Clean Power Alliance");
-    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.7\.0 Rev A completed by Test CPM on 2026-09-02/);
+    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.7\.2 Rev A completed by Test CPM on 2026-09-02/);
   });
 
   it("Equipment and Electrical → Quick Estimate lines, distances, materials and gear", () => {
@@ -90,7 +90,7 @@ describe("importing a completed intake workbook", async () => {
     expect(project.intake!.distributionSchedule).toHaveLength(2);
     expect(project.intake!.distributionSchedule![0]).toMatchObject({ item: "EVSE disconnects", type: "EVSE disconnect", qty: 4, volts: 480, ratingA: 600, fedFrom: "MSB", quotedCost: 12000 });
     expect(project.intake!.distributionSchedule![1]).toMatchObject({ item: "EV distribution panel", type: "Panelboard", ratingA: 400, quotedCost: null });
-    // Block I (3.7.0): the feeders between the items, resolved against the schedule and handed to the engine in the sheet's material.
+    // Block I (3.7.2): the feeders between the items, resolved against the schedule and handed to the engine in the sheet's material.
     const feeders = project.setup.serviceChain!.feeders!;
     expect(feeders).toEqual([
       { from: "Existing MSB", to: "EV distribution panel", distanceFt: 60, voltage: 480, phases: 3, ratingA: 400 },
@@ -196,7 +196,7 @@ describe("importing a completed intake workbook", async () => {
     expect(x.connectors.chademo).toEqual({ onExisting: true, onNew: false, fleetShare: 0.03 });
     expect(x.removal).toMatchObject({ cabinets: 4, pads: 4, bollards: 8, signs: 4, disposalLoads: 2, recycling: "Yes", hazmat: "No", temporaryCharging: "No", protectionDays: 5 });
     expect(x.revenueBasis).toBe("historical");
-    // Section I (3.7.0): the capacity inputs travel; the verdict rests on the measured peak.
+    // Section I (3.7.2): the capacity inputs travel; the verdict rests on the measured peak.
     expect(x.capacity).toEqual({ peakDemandKw: 320, gearSpaceForFeeder: "Yes", utilityNotified: "Yes" });
     // Removal priced into Dump / Waste; the model runs on history × uplifts.
     expect(project.peripherals.demolitionItems).toHaveLength(6);
