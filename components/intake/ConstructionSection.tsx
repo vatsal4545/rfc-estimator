@@ -6,6 +6,7 @@ import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
 import type { EquipmentRentalItem } from "@/lib/calc/types";
+import { intakeRentalRow } from "@/lib/intake/cells";
 import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
 import type { StickyPath } from "@/lib/intake/rebuild";
 import { defaultCommercial } from "@/lib/proposal/defaults";
@@ -202,7 +203,14 @@ export function ConstructionSection() {
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {result.equipment.items.map((item, idx) => (
                 <tr key={`${item.name}-${idx}`} className={item.qty > 0 ? "" : "text-zinc-400"}>
-                  <td className={td}>{item.name}</td>
+                  <td className={td}>
+                    {item.name}
+                    {!intakeRentalRow(item.name) && item.qty > 0 && !item.excluded && (
+                      <div className="text-[11px] text-amber-600" title="The intake's rental table has 14 fixed rows; rename this line on the Peripherals tab to one of them to carry it.">
+                        Not on the intake
+                      </div>
+                    )}
+                  </td>
                   <td className={tdNum}>
                     {item.name === AUTO_QTY_ITEM ? (
                       <span title="Follows the open trench: longest run × 2 + 60 ft">{num(item.qty)} ft (auto)</span>

@@ -46,6 +46,7 @@ import {
   DESIGN_SET_RATES,
   PROJECT_CELLS,
   RENTAL_ROW_NAMES,
+  intakeRentalRow,
   RENTAL_TABLE,
   REVENUE_CELLS,
   SCOPE_ROWS,
@@ -137,6 +138,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const m = modelInputsOf(c);
   const x = project.existing;
   const ic = { ...defaultInterconnection(), ...it?.interconnection };
+  // Off by default: the CEO prices the job from the intake's own derivation and wants the Overrides tab left to what was typed there.
+  const carry = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
 
   // ---- Version ------------------------------------------------------------
   const fileVersion = it?.fileVersion?.trim() || "Rev A";
@@ -144,8 +147,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Version", VERSION_CELLS.dateCompleted, today);
   put("Version", VERSION_CELLS.completedBy, it?.completedBy?.trim() || s.cpm);
   put("Version", VERSION_CELLS.projectReference, it?.projectReference);
-  const carryForNotes = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
-  const generated = `Filled by the RFC Estimator on ${today}${s.clientName ? ` for ${s.clientName}` : ""}.${carryForNotes ? " Construction and engineering figures are the estimator's — see the Overrides tab." : ""}`;
+  const generated = `Filled by the RFC Estimator on ${today}${s.clientName ? ` for ${s.clientName}` : ""}.${carry ? " Construction and engineering figures are the estimator's — see the Overrides tab." : ""}`;
   const revisionNotes = [it?.revisionNotes?.trim(), generated].filter(Boolean).join(" ");
   put("Version", VERSION_CELLS.revisionNotes, revisionNotes);
   // The Revisions tab: the file's own history as imported, then this issue —
@@ -603,7 +605,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Construction", CONSTRUCTION_CELLS.eeSets, sets(f.electricalEngDesignCost, DESIGN_SET_RATES.ee));
   leftBlank.push("Construction B32/B33 drawing-set counts — written only where the estimator's design fee is a whole number of the template's sets; the D&E total travels as override row 16 regardless.");
   const round4 = (n: number) => Math.round(n * 10000) / 10000;
-  const rentalRowOf = (i: { name: string }) => RENTAL_ROW_NAMES.find((rr) => (rr.estimator ?? rr.label).toLowerCase() === i.name.toLowerCase() || rr.label.toLowerCase() === i.name.toLowerCase());
+  const rentalRowOf = (i: { name: string }) => intakeRentalRow(i.name);
   for (const rr of RENTAL_ROW_NAMES) {
     const item = result.equipment.items.find((i) => rentalRowOf(i)?.row === rr.row);
     if (!item) continue;
@@ -614,8 +616,16 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     put("Construction", `${RENTAL_TABLE.days}${rr.row}`, perWeek ? round4(item.durationValue * 7) : item.durationValue);
     put("Construction", `${RENTAL_TABLE.include}${rr.row}`, yn(item.qty > 0 && !item.excluded));
   }
-  const unmappedRentals = result.equipment.items.filter((i) => i.qty > 0 && !rentalRowOf(i)).map((i) => i.name);
-  if (unmappedRentals.length) warnings.push(`Rental(s) with no intake row: ${unmappedRentals.join(", ")} — carried inside override row 15 only.`);
+  const unmappedRentals = result.equipment.items.filter((i) => i.qty > 0 && !i.excluded && !rentalRowOf(i)).map((i) => i.name);
+  if (unmappedRentals.length)
+    warnings.push(
+      `Rental line(s) NOT on the intake: ${unmappedRentals.join(", ")} — the intake's rental table has 14 fixed rows (${RENTAL_ROW_NAMES.map((rr) => rr.estimator ?? rr.label).join(", ")}) and no free one. Rename the line to one of those on the Peripherals tab to carry it${carry ? "; its money still travels inside override row 15" : ""}.`,
+    );
+  // Two lines on one row (a custom line named like a standard one): the sheet gets the first; say so.
+  for (const rr of RENTAL_ROW_NAMES) {
+    const onRow = result.equipment.items.filter((i) => i.qty > 0 && !i.excluded && rentalRowOf(i)?.row === rr.row);
+    if (onRow.length > 1) warnings.push(`${onRow.length} rental lines map to intake row ${rr.row} (${rr.label}): only "${onRow[0].name}" was written — merge them on the Peripherals tab.`);
+  }
   put("Construction", CONSTRUCTION_CELLS.markupMaterials, c?.markupMaterialsPct);
   const feeAmount = (row: number, amount: number) => {
     put("Construction", `${FEE_COLS.qty}${row}`, amount > 0 ? 1 : 0);
@@ -739,8 +749,6 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   }
 
   // ---- Overrides ------------------------------------------------------------
-  // Off by default: the CEO prices the job from the intake's own derivation and wants the Overrides tab left to what was typed there.
-  const carry = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
   const overrides = estimatorOverrideRows(project, result, proposal, carry);
   for (const o of overrides) {
     put("Overrides", `${OVERRIDE_COLS.value}${o.row}`, o.value);

@@ -2,6 +2,7 @@
 
 import { ADA_UNIT_COST, BOLLARD_RULE, adaStallBreakdown } from "@/lib/calc/autoplan";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
+import { INTAKE_RENTAL_NAMES, intakeRentalRow } from "@/lib/intake/cells";
 import { CIVIL_RATES, DISCONNECT_RATES, peripheralPriceOverrideCount, resetPeripheralPrices } from "@/lib/calc/peripherals";
 import { GEAR_CATALOG } from "@/lib/calc/tables";
 import { money, num } from "@/lib/format";
@@ -633,11 +634,24 @@ export function PeripheralsTab() {
                     {item.name === AUTO_QTY_ITEM ? (
                       item.name
                     ) : (
-                      <input
-                        className={`${inputCls} w-40`}
-                        value={item.name}
-                        onChange={(e) => updateEquip(idx, { name: e.target.value })}
-                      />
+                      <>
+                        <input
+                          className={`${inputCls} w-40`}
+                          list="intake-rental-names"
+                          value={item.name}
+                          onChange={(e) => updateEquip(idx, { name: e.target.value })}
+                        />
+                        {(() => {
+                          const row = intakeRentalRow(item.name);
+                          return row ? (
+                            <div className="mt-0.5 text-[11px] text-zinc-500">Intake row {row.row} · {row.label}</div>
+                          ) : (
+                            <div className="mt-0.5 text-[11px] text-amber-600" title="The intake's rental table has 14 fixed rows and no free one. Pick one of its names to carry this line onto the sheet.">
+                              Not on the intake — pick a name from the list
+                            </div>
+                          );
+                        })()}
+                      </>
                     )}
                   </td>
                   <td className="px-3 py-2">
@@ -699,9 +713,17 @@ export function PeripheralsTab() {
             </tfoot>
           </table>
         </div>
-        <button onClick={addEquip} className="mt-3 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
-          + Add rental line
-        </button>
+        <datalist id="intake-rental-names">
+          {INTAKE_RENTAL_NAMES.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button onClick={addEquip} className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700">
+            + Add rental line
+          </button>
+          <span className="text-xs text-zinc-500">The CEO&apos;s intake has 14 fixed rental rows. A line named after one of them lands on that row when the intake is downloaded; any other name stays in the app only.</span>
+        </div>
       </Section>
 
       {/* Reference rates last: the per-foot conductor and conduit prices are edited rarely, the counts above every day. */}

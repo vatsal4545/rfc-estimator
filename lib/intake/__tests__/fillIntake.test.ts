@@ -462,3 +462,26 @@ describe("filling the intake for an add-load site (3.6.0 project type)", async (
     expect(back.project.peripherals.demolitionItems).toBeUndefined();
   });
 });
+
+describe("custom rental lines and the intake's 14 fixed rental rows", async () => {
+  const project = bwProject();
+  project.equipment = [
+    ...project.equipment,
+    { name: "Generator rental", qty: 1, rate: 220, rateBasis: "per day", durationValue: 3, delivery: 0 },
+    { name: "Scissor lift 26 ft", qty: 2, rate: 310, rateBasis: "per day", durationValue: 5, delivery: 0 },
+  ];
+  const result = computeEstimate(project);
+  const proposal = computeProposal(project, result)!;
+  const { bytes, report } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, proposal, { today: "2026-09-18" });
+  const wb = await readWorkbook(bytes);
+
+  it("a line named after one of the intake's rows lands on that row; any other name is reported as not on the sheet", () => {
+    expect(wb.get("Construction", "A50")).toBe("Generator rental"); // the template's own locked label
+    expect(wb.get("Construction", "B50")).toBe(1);
+    expect(wb.get("Construction", "C50")).toBe(220);
+    expect(wb.get("Construction", "D50")).toBe(3);
+    expect(wb.get("Construction", "E50")).toBe("Y");
+    expect(report.warnings.some((w) => /NOT on the intake: Scissor lift 26 ft/.test(w))).toBe(true);
+    expect(report.warnings.some((w) => /override row 15/.test(w))).toBe(false); // nothing goes to Overrides by default
+  });
+});

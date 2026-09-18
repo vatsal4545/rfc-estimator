@@ -62,3 +62,19 @@ construction.
   schedule verbatim, revision history, rentals at typed rates, and every
   intake-typed construction field pinned sticky through rebuilds. Commit
   57b03ee.
+
+## 2026-09-18 — Custom rental lines and the intake's rental table
+
+**Fact of the template.** The intake's rental table (Construction rows 39–52)
+has 14 fixed rows whose names are locked cells: Fencing, Mini x, Dump Truck,
+Forklift, Trench Plates, Storage container, Portable restroom, Low boi, Saw
+cutter, Jack hammer, Compactor, Generator rental, Dump trailer rental,
+Equipment protection. Only quantity, unit cost, days and the include flag are
+editable. There is no free row.
+
+**Behaviour.** A rental line added on the Peripherals tab lands on the sheet
+only when its name is one of those 14 (matched case-insensitively against the
+estimator's item name or the template's label). Any other name stays in the
+app; the fill's report names it, and the Peripherals and Construction tabs
+show "Not on the intake" beside it, with a picker of the 14 names. Two lines
+on one row: the first is written and the report says so.

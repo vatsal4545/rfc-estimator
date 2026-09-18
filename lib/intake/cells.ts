@@ -615,3 +615,13 @@ export const RENTAL_ROW_NAMES: { row: number; label: string; estimator?: string 
   { row: 51, label: "Dump trailer rental" },
   { row: 52, label: "Equipment protection" },
 ];
+
+/** The intake row a rental line lands on — matched by the estimator's item name or the template's own label, case-insensitively. Undefined: the sheet has no row for it. */
+export function intakeRentalRow(name: string): { row: number; label: string; estimator?: string } | undefined {
+  const n = name.trim().toLowerCase();
+  if (!n) return undefined;
+  return RENTAL_ROW_NAMES.find((rr) => (rr.estimator ?? "").toLowerCase() === n || rr.label.toLowerCase() === n);
+}
+
+/** Every name the intake's rental table accepts (its 14 fixed rows), for a name picker: the estimator's spelling where it has one, else the template's label. */
+export const INTAKE_RENTAL_NAMES: string[] = RENTAL_ROW_NAMES.map((rr) => rr.estimator ?? rr.label);
