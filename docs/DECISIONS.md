@@ -141,3 +141,31 @@ the local parenthesis repair kept since 3.6.0 is retired, and the oracle test
 asserts the published file is clean. Nothing else changed; refdata and the
 importer fixture were regenerated. Commit f138479, deployed from the Vercel
 CLI (the Git integration left a deployment in "Initializing" all afternoon).
+
+## 2026-09-18 — The website fills what the Yamashiro script filled
+
+**Why.** The Yamashiro project (A-00649) was assembled by a script from the
+SLD, the Courtesy Electric gear quote and Vera's concrete quote; the user
+wants the same sheet to come out of the website when the form is filled.
+Three inputs the script set had no home on the intake tabs.
+
+**Added to the intake tabs.**
+- 3 · Electrical: the distribution schedule (block E) is now editable — "Edit
+  the schedule" seeds the engine's rows, every column of the sheet is typed
+  (type / provider / cost basis use the template's dropdowns), and "Price the
+  switchgear line at the quotes" writes the register (switchgear line = the
+  vendor-quoted total on the rows we provide; sub-panels / transformers /
+  breakers line = 0, they are inside the quotes) so the estimate, the sheet's
+  B178 and Overrides row 10 carry one number. "→ catalog pricing" undoes it.
+  Trench surface and depth (B8/B9) are typed here too. Choosing the conductor
+  material sets the service chain's material as well — one site material.
+- 4 · Construction: striping quantity and cost per lot (a contractor's quote
+  for striping still to do), and a "Quoted site-works items" list (Vera's
+  walls and slab) on the wires and peripherals line.
+
+**Behind it.** `lib/intake/schedule.ts` holds the schedule as data: the
+engine's rows moved out of plan.ts (`engineDistributionSchedule`), the typed
+rows, `quotedGearTotal` (by-others rows are never our money — and a figure
+typed against one still sums into the sheet's B178, so leave such rows
+unpriced), `priceGearAtQuotes` / `clearGearQuotePricing`. The fill and block
+I's feeder naming read the same rows in both modes.

@@ -4,6 +4,8 @@ import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import { feederFloorA } from "@/lib/calc/chain";
 import type { DistributionFeeder, InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
+import { DISTRIBUTION_COST_BASES, DISTRIBUTION_PROVIDERS, DISTRIBUTION_TYPES, clearGearQuotePricing, distributionScheduleOf, emptyScheduleRow, gearPricedAtQuotes, priceGearAtQuotes, quotedGearTotal } from "@/lib/intake/schedule";
+import type { DistributionScheduleRow } from "@/lib/proposal/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import type { StickyPath } from "@/lib/intake/rebuild";
 import { feederOutOfScope, feederScopeNote } from "@/lib/interconnection";
@@ -48,7 +50,7 @@ function PinnedMoney({ label, hint, path, value, step }: { label: string; hint?:
 }
 
 export function ElectricalSection() {
-  const { project, result } = useProject();
+  const { project, result, setProject } = useProject();
   const { rebuild } = useRebuild();
   const input: QuickEstimateInput = project.quick ? normalizeQuickInput(project.quick, project.setup) : defaultQuickInput();
   const s = project.setup;
@@ -66,6 +68,7 @@ export function ElectricalSection() {
       },
     });
   const setFrame = (v: string) => setSetup({ gearOverrides: { ...s.gearOverrides, switchgear480A: v === "" ? undefined : Number(v) } });
+  const setIntake = (patch: Partial<NonNullable<typeof project.intake>>) => rebuild((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), ...patch } }));
   const setAmbient = (v: string) =>
     rebuild((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), designAmbientC: v === "" ? null : Number(v) } }));
 
@@ -99,6 +102,13 @@ export function ElectricalSection() {
   const addFeeder = () => setFeeders([...typedFeeders, resolveFeeder({ from: scheduleItems[0]?.name ?? "", to: scheduleItems[1]?.name ?? "", distanceFt: 0, voltage: 480, phases: 3 })]);
   const removeFeeder = (i: number) => setFeeders(typedFeeders.filter((_, k) => k !== i));
   const optNum = (v: string) => (v === "" ? undefined : Number(v));
+  // Block E as data: the engine's rows, or the typed schedule with its vendor quotes.
+  const schedule = distributionScheduleOf(project, result);
+  const setSchedule = (rows: DistributionScheduleRow[]) => setProject((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), distributionSchedule: rows.length ? rows : undefined } }));
+  const setRow = (i: number, patch: Partial<DistributionScheduleRow>) => setSchedule(schedule.rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const editSchedule = () => setSchedule(schedule.rows.map((r) => ({ ...r })));
+  const quotedTotal = quotedGearTotal(schedule.rows);
+  const gearAtQuotes = gearPricedAtQuotes(project);
   const bus480 = result.panel.bus480;
   const bus208 = result.panel.bus208;
   const lineNo = (loadTypeId: string) => {
@@ -113,7 +123,15 @@ export function ElectricalSection() {
       <Section title="3 · Electrical — materials and routing" subtitle="Conductor material, how the conduit gets there, the ground it crosses, and the run distances. Everything below re-sizes as these change.">
         <Grid cols={4}>
           <Field label="Feeder conductor material" hint="Cu or Al — the branch runs to the chargers">
-            <select className={selectCls} value={s.feederMaterial} onChange={(e) => setSetup({ feederMaterial: e.target.value as Material })}>
+            <select
+              className={selectCls}
+              value={s.feederMaterial}
+              onChange={(e) => {
+                // The intake has ONE conductor material (Electrical B6) and prices the feeders in it too — the chain follows.
+                const material = e.target.value as Material;
+                setSetup({ feederMaterial: material, serviceChain: { ...(chain ?? { enabled: true, utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }), material } });
+              }}
+            >
               <option value="Cu">Cu</option>
               <option value="Al">Al</option>
             </select>
@@ -129,6 +147,19 @@ export function ElectricalSection() {
           </Field>
           <Field label="Design ambient (°C)" hint="Site data for the intake's Electrical!B10 — ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs. Every charger-run verdict on the intake waits for it; the estimator sizes without it.">
             <input type="number" className={inputCls} value={project.intake?.designAmbientC ?? ""} placeholder="e.g. 40" onChange={(e) => setAmbient(e.target.value)} />
+          </Field>
+          <Field label="Trench surface" hint="Intake B8 — what the trench cuts through">
+            <select className={selectCls} value={project.intake?.trenchSurface ?? ""} onChange={(e) => setIntake({ trenchSurface: e.target.value || undefined })}>
+              <option value="">Mixed (template default)</option>
+              {["Asphalt", "Concrete", "Landscape", "Mixed"].map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Trench depth (in)" hint="Intake B9 — blank = the template's 24 in">
+            <input type="number" className={inputCls} placeholder="24" value={project.intake?.trenchDepthIn ?? ""} onChange={(e) => setIntake({ trenchDepthIn: e.target.value === "" ? null : Number(e.target.value) })} />
           </Field>
         </Grid>
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -316,8 +347,29 @@ export function ElectricalSection() {
         </Section>
       )}
 
-      <Section title="Distribution equipment schedule" subtitle="What the panel schedule calls for. Priced on the switchgear line; the intake receives it as documented, never priced twice.">
-        {result.panel.suggestedGear.filter((g) => g.qty > 0).length === 0 ? (
+      <Section
+        title="Distribution equipment schedule"
+        subtitle="Intake Electrical block E (rows 165–176). The engine lists its own gear, priced on the switchgear line and marked so the sheet never prices it twice. Edit the schedule to describe the real lineup — one row per item with the vendor's quoted cost — and, if you like, price the switchgear line at those quotes."
+      >
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${schedule.typed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{schedule.typed ? "typed" : "auto"}</span>
+          {!schedule.typed && (
+            <button className="font-medium text-blue-600 hover:underline" onClick={editSchedule}>
+              Edit the schedule
+            </button>
+          )}
+          {schedule.typed && (
+            <>
+              <button className="font-medium text-blue-600 hover:underline" onClick={() => setSchedule([...schedule.rows, emptyScheduleRow()])}>
+                + Add a row
+              </button>
+              <button className="font-medium text-blue-600 hover:underline" onClick={() => setSchedule([])}>
+                → engine&apos;s schedule
+              </button>
+            </>
+          )}
+        </div>
+        {schedule.rows.length === 0 ? (
           <div className="text-sm text-zinc-500">No gear yet.</div>
         ) : (
           <div className={wrap}>
@@ -325,24 +377,128 @@ export function ElectricalSection() {
               <thead className={theadCls}>
                 <tr>
                   <th className={th}>Item</th>
-                  <th className={th}>Size</th>
-                  <th className={th}>Voltage</th>
+                  <th className={th}>Type</th>
                   <th className={thNum}>Qty</th>
+                  <th className={thNum}>Volts</th>
+                  <th className={thNum}>Ph</th>
+                  <th className={thNum}>Rating (A)</th>
+                  <th className={th}>Fed from</th>
+                  <th className={th}>Feeds</th>
+                  <th className={th}>Location</th>
+                  <th className={th}>Who provides</th>
+                  <th className={th}>Cost basis</th>
+                  <th className={thNum}>Quoted ($)</th>
+                  {schedule.typed && <th className={th} />}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                {result.panel.suggestedGear
-                  .filter((g) => g.qty > 0)
-                  .map((g, i) => (
-                    <tr key={`${g.item}-${i}`}>
-                      <td className={td}>{g.item}</td>
-                      <td className={td}>{g.size}</td>
-                      <td className={td}>{g.voltage}</td>
-                      <td className={tdNum}>{num(g.qty)}</td>
+                {schedule.rows.map((r, i) =>
+                  schedule.typed ? (
+                    <tr key={i}>
+                      <td className={td}>
+                        <input className={`${inputCls} min-w-[16rem]`} value={r.item} onChange={(e) => setRow(i, { item: e.target.value })} />
+                      </td>
+                      <td className={td}>
+                        <select className={selectCls} value={r.type} onChange={(e) => setRow(i, { type: e.target.value })}>
+                          {DISTRIBUTION_TYPES.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={tdNum}>
+                        <input type="number" className={`${inputCls} w-16`} value={r.qty ?? ""} onChange={(e) => setRow(i, { qty: e.target.value === "" ? null : Number(e.target.value) })} />
+                      </td>
+                      <td className={tdNum}>
+                        <input type="number" className={`${inputCls} w-20`} value={r.volts ?? ""} onChange={(e) => setRow(i, { volts: e.target.value === "" ? null : Number(e.target.value) })} />
+                      </td>
+                      <td className={tdNum}>
+                        <input type="number" className={`${inputCls} w-14`} value={r.phases ?? ""} onChange={(e) => setRow(i, { phases: e.target.value === "" ? null : Number(e.target.value) })} />
+                      </td>
+                      <td className={tdNum}>
+                        <input type="number" className={`${inputCls} w-20`} value={r.ratingA ?? ""} onChange={(e) => setRow(i, { ratingA: e.target.value === "" ? null : Number(e.target.value) })} />
+                      </td>
+                      <td className={td}>
+                        <input className={`${inputCls} min-w-[10rem]`} list="distribution-feeder-items" value={r.fedFrom} onChange={(e) => setRow(i, { fedFrom: e.target.value })} />
+                      </td>
+                      <td className={td}>
+                        <input className={`${inputCls} min-w-[10rem]`} value={r.feeds} onChange={(e) => setRow(i, { feeds: e.target.value })} />
+                      </td>
+                      <td className={td}>
+                        <input className={`${inputCls} w-28`} value={r.location} onChange={(e) => setRow(i, { location: e.target.value })} />
+                      </td>
+                      <td className={td}>
+                        <select className={selectCls} value={r.whoProvides} onChange={(e) => setRow(i, { whoProvides: e.target.value })}>
+                          {DISTRIBUTION_PROVIDERS.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={td}>
+                        <select className={selectCls} value={r.costBasis} onChange={(e) => setRow(i, { costBasis: e.target.value })}>
+                          {DISTRIBUTION_COST_BASES.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={tdNum}>
+                        <input type="number" className={`${inputCls} w-24`} value={r.quotedCost ?? ""} onChange={(e) => setRow(i, { quotedCost: e.target.value === "" ? null : Number(e.target.value) })} />
+                      </td>
+                      <td className={td}>
+                        <button type="button" className="text-xs text-zinc-500 hover:text-red-600" title="Remove this row" onClick={() => setSchedule(schedule.rows.filter((_, k) => k !== i))}>
+                          ✕
+                        </button>
+                      </td>
                     </tr>
-                  ))}
+                  ) : (
+                    <tr key={i}>
+                      <td className={td}>{r.item}</td>
+                      <td className={td}>{r.type}</td>
+                      <td className={tdNum}>{r.qty ?? ""}</td>
+                      <td className={tdNum}>{r.volts ?? ""}</td>
+                      <td className={tdNum}>{r.phases ?? ""}</td>
+                      <td className={tdNum}>{r.ratingA ?? ""}</td>
+                      <td className={td}>{r.fedFrom}</td>
+                      <td className={td}>{r.feeds}</td>
+                      <td className={td}>{r.location}</td>
+                      <td className={td}>{r.whoProvides}</td>
+                      <td className={td}>{r.costBasis}</td>
+                      <td className={tdNum}>{r.quotedCost === null ? "—" : money(r.quotedCost)}</td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
+          </div>
+        )}
+        {schedule.typed && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+            <span>
+              Vendor-quoted total on the rows we provide: <span className="font-medium tabular-nums">{money(quotedTotal)}</span>
+            </span>
+            {gearAtQuotes ? (
+              <>
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">switchgear line priced at the quotes</span>
+                {Math.abs(quotedTotal - (project.overrides ?? []).find((o) => o.key.endsWith("Main Distribution Switchgear"))!.value) > 0.005 && (
+                  <button className="font-medium text-blue-600 hover:underline" onClick={() => setProject((p) => priceGearAtQuotes(p, schedule.rows))}>
+                    re-apply {money(quotedTotal)}
+                  </button>
+                )}
+                <button className="font-medium text-blue-600 hover:underline" onClick={() => setProject((p) => clearGearQuotePricing(p))}>
+                  → catalog pricing
+                </button>
+              </>
+            ) : (
+              <button className="rounded-md border border-zinc-200 px-3 py-1 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" disabled={quotedTotal <= 0} onClick={() => setProject((p) => priceGearAtQuotes(p, schedule.rows))}>
+                Price the switchgear line at the quotes
+              </button>
+            )}
+            <span className="text-xs text-zinc-500">Writes the register: switchgear line = quotes, sub-panels / transformers / breakers line = 0 (they are inside the quotes). The sheet&apos;s B178 carries the same total.</span>
           </div>
         )}
         {cabinets && <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">Distributed system: the cabinets&apos; AC feeders are sized here; the cabinet-to-dispenser DC runs are not in the takeoff yet and stay blank on the intake (rows 174–205).</div>}

@@ -16,7 +16,7 @@ import { GPR_ITEM_NAME } from "../calc/autoplan";
 import { feederFloorA, feederSegmentId } from "../calc/chain";
 import { designRate, designSets } from "../calc/designFees";
 import { effectiveInstallMethod } from "../calc/install";
-import type { EstimateResult, GearSelection, Project } from "../calc/types";
+import type { EstimateResult, Project } from "../calc/types";
 import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS, capacityOf, hasExistingChargers, keepsExistingService } from "../existing";
 import { feederOutOfScope } from "../interconnection";
 import { defaultInterconnection } from "../interconnection";
@@ -64,6 +64,7 @@ import {
   splitApplicationSubmitted,
 } from "./cells";
 import { estimatorOverrideRows, type IntakeOverrideRow } from "./handoff";
+import { engineDistributionSchedule, typedDistributionSchedule } from "./schedule";
 import { isoToSerial } from "./serial";
 import type { CellWrite } from "./xlsxWrite";
 
@@ -102,20 +103,7 @@ export function splitAddress(address: string): [string, string] {
   return [address.slice(0, i).trim(), address.slice(i + 1).trim()];
 }
 
-function gearType(item: string): string {
-  const t = item.toLowerCase();
-  if (t.includes("switchgear") || t.includes("switchboard")) return "Switchboard";
-  if (t.includes("transformer")) return "Transformer";
-  if (t.includes("sub-panel") || t.includes("subpanel") || t.includes("sub panel")) return "Subpanel";
-  if (t.includes("panel")) return "Panelboard";
-  if (t.includes("disconnect")) return "Service disconnect";
-  return "Other";
-}
 
-const parseNumber = (text: string): number | undefined => {
-  const m = /(\d+(?:\.\d+)?)/.exec(text);
-  return m ? Number(m[1]) : undefined;
-};
 
 /** Everything the estimator can say about the project, as intake cell writes. Pure. */
 export function planIntakeFill(project: Project, result: EstimateResult, proposal: ProposalResult | null, opts: IntakeFillOptions = {}): IntakeFillPlan {
@@ -469,105 +457,33 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Electrical", ELECTRICAL_CELLS.designSubmitted, ic.designSubmitted);
   put("Electrical", ELECTRICAL_CELLS.designReturned, ic.designReturned);
 
-  // Block E — distribution equipment, documented and priced through the override register (never twice).
-  const gear: GearSelection[] = per.useAutoGear ? result.panel.suggestedGear : per.gear;
+  // Block E — distribution equipment, documented and priced through the
+  // override register (never twice). A typed schedule (an imported
+  // workbook's, or the 3 · Electrical editor's) travels exactly as typed;
+  // otherwise the engine's own rows (lib/intake/schedule.ts).
+  const typedSchedule = typedDistributionSchedule(it);
+  const scheduleRows = typedSchedule.length ? typedSchedule : engineDistributionSchedule(project, result);
+  const scheduleCapacity = DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1;
   let dRow = DISTRIBUTION_TABLE.firstRow;
-  const typedSchedule = (it?.distributionSchedule ?? []).filter((r) => r.item.trim() || r.type.trim() || (r.quotedCost ?? 0) > 0);
-  if (typedSchedule.length) {
-    // An imported intake's schedule travels back exactly as typed — the engineer's own rows, not a regenerated list.
-    for (const r of typedSchedule.slice(0, DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1)) {
-      put("Electrical", `${DISTRIBUTION_TABLE.item}${dRow}`, r.item);
-      put("Electrical", `${DISTRIBUTION_TABLE.type}${dRow}`, r.type);
-      put("Electrical", `${DISTRIBUTION_TABLE.qty}${dRow}`, r.qty ?? undefined);
-      put("Electrical", `${DISTRIBUTION_TABLE.volts}${dRow}`, r.volts ?? undefined);
-      put("Electrical", `${DISTRIBUTION_TABLE.phases}${dRow}`, r.phases ?? undefined);
-      put("Electrical", `${DISTRIBUTION_TABLE.ratingA}${dRow}`, r.ratingA ?? undefined);
-      put("Electrical", `${DISTRIBUTION_TABLE.fedFrom}${dRow}`, r.fedFrom);
-      put("Electrical", `${DISTRIBUTION_TABLE.feeds}${dRow}`, r.feeds);
-      put("Electrical", `${DISTRIBUTION_TABLE.location}${dRow}`, r.location);
-      put("Electrical", `${DISTRIBUTION_TABLE.whoProvides}${dRow}`, r.whoProvides);
-      put("Electrical", `${DISTRIBUTION_TABLE.costBasis}${dRow}`, r.costBasis);
-      put("Electrical", `${DISTRIBUTION_TABLE.quotedCost}${dRow}`, r.quotedCost ?? undefined);
-      dRow++;
-    }
-    if (typedSchedule.length > DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1) warnings.push(`${typedSchedule.length - (DISTRIBUTION_TABLE.lastRow - DISTRIBUTION_TABLE.firstRow + 1)} distribution schedule row(s) beyond the intake's table were not written.`);
-    dRow = DISTRIBUTION_TABLE.lastRow + 1; // nothing generated below a typed schedule
-  }
-  // Every item names what feeds it and what it feeds — the sheet's own check
-  // ("a panel nobody feeds is a panel nobody costed a feeder to") reads column G.
-  const distributionRow = (item: string, type: string, qty: number, volts?: number, ratingA?: number, fedFrom?: string, feeds?: string, existing = false) => {
-    if (dRow > DISTRIBUTION_TABLE.lastRow) return;
-    put("Electrical", `${DISTRIBUTION_TABLE.item}${dRow}`, existing ? `${item} — existing, retained` : item);
-    put("Electrical", `${DISTRIBUTION_TABLE.type}${dRow}`, type);
-    put("Electrical", `${DISTRIBUTION_TABLE.qty}${dRow}`, qty);
-    put("Electrical", `${DISTRIBUTION_TABLE.volts}${dRow}`, volts);
-    put("Electrical", `${DISTRIBUTION_TABLE.ratingA}${dRow}`, ratingA);
-    put("Electrical", `${DISTRIBUTION_TABLE.fedFrom}${dRow}`, fedFrom);
-    put("Electrical", `${DISTRIBUTION_TABLE.feeds}${dRow}`, feeds);
-    put("Electrical", `${DISTRIBUTION_TABLE.whoProvides}${dRow}`, existing ? INTAKE_TEXT.byOthers : INTAKE_TEXT.feederByUs);
-    put("Electrical", `${DISTRIBUTION_TABLE.costBasis}${dRow}`, existing ? INTAKE_TEXT.byOthers : INTAKE_TEXT.costBasisPricedElsewhere);
+  for (const r of scheduleRows.slice(0, scheduleCapacity)) {
+    put("Electrical", `${DISTRIBUTION_TABLE.item}${dRow}`, r.item);
+    put("Electrical", `${DISTRIBUTION_TABLE.type}${dRow}`, r.type);
+    put("Electrical", `${DISTRIBUTION_TABLE.qty}${dRow}`, r.qty ?? undefined);
+    put("Electrical", `${DISTRIBUTION_TABLE.volts}${dRow}`, r.volts ?? undefined);
+    put("Electrical", `${DISTRIBUTION_TABLE.phases}${dRow}`, r.phases ?? undefined);
+    put("Electrical", `${DISTRIBUTION_TABLE.ratingA}${dRow}`, r.ratingA ?? undefined);
+    put("Electrical", `${DISTRIBUTION_TABLE.fedFrom}${dRow}`, r.fedFrom);
+    put("Electrical", `${DISTRIBUTION_TABLE.feeds}${dRow}`, r.feeds);
+    put("Electrical", `${DISTRIBUTION_TABLE.location}${dRow}`, r.location);
+    put("Electrical", `${DISTRIBUTION_TABLE.whoProvides}${dRow}`, r.whoProvides);
+    put("Electrical", `${DISTRIBUTION_TABLE.costBasis}${dRow}`, r.costBasis);
+    put("Electrical", `${DISTRIBUTION_TABLE.quotedCost}${dRow}`, r.quotedCost ?? undefined);
     dRow++;
-  };
-  const mainGear = gear.find((g) => g.qty > 0 && gearType(g.item) === "Switchboard");
-  const existingBoard = per.existingSwitchgear ? `Existing main switchgear${result.panel.bus480 ? ` ${result.panel.bus480.suggestedBusA}A frame` : ""}` : undefined;
-  const mainName = existingBoard ?? (mainGear ? `${mainGear.item} ${mainGear.size}`.trim() : ic.pointOfConnection || "Service equipment");
-  const stepDown = gear.find((g) => g.qty > 0 && gearType(g.item) === "Transformer");
-  const stepDownName = stepDown ? `${stepDown.item} ${stepDown.size}`.trim() : undefined;
-  const subPanel = gear.find((g) => g.qty > 0 && (gearType(g.item) === "Subpanel" || gearType(g.item) === "Panelboard"));
-  const subPanelName = subPanel ? `${subPanel.item} ${subPanel.size}`.trim() : undefined;
-  const serviceSource = ic.serviceType === "Added load to existing service" ? ic.pointOfConnection || "Existing service" : "Utility transformer";
-  const hasL2 = result.rows.some((r) => !r.synthetic && r.category === "L2");
-  const hasDc = result.rows.some((r) => !r.synthetic && r.category === "DCFC");
-  const branchOcpd = (category: string) => new Set(result.rows.filter((r) => !r.synthetic && r.category === category && r.ocpdA > 0).map((r) => r.ocpdA));
-  const dcOcpd = branchOcpd("DCFC");
-  const l2Ocpd = branchOcpd("L2");
-  if (existingBoard) distributionRow(existingBoard, "Switchboard", 1, 480, result.panel.bus480?.suggestedBusA, serviceSource, "New main breaker for the EV load", true);
-  for (const g of gear) {
-    if (g.qty <= 0) continue;
-    const amps = /a$/i.test(g.size.trim()) ? parseNumber(g.size) : undefined;
-    const volts = parseNumber(g.voltage);
-    const type = gearType(g.item);
-    const name = `${g.item} ${g.size}`.trim();
-    let fedFrom: string | undefined;
-    let feeds: string | undefined;
-    if (type === "Switchboard") {
-      fedFrom = serviceSource;
-      feeds = [hasDc ? "DC charger branches" : "", stepDownName ? stepDownName : "", !stepDownName && hasL2 ? "Level 2 branches" : ""].filter(Boolean).join(", ") || "Charger branches";
-    } else if (type === "Transformer") {
-      fedFrom = mainName;
-      feeds = subPanelName ?? "Level 2 panel";
-    } else if (type === "Subpanel" || type === "Panelboard") {
-      fedFrom = stepDownName ?? mainName;
-      feeds = "Level 2 branches";
-    } else if (/^main breaker/i.test(g.item)) {
-      fedFrom = mainName;
-      feeds = [hasDc ? "DC charger branches" : "", stepDownName ?? (hasL2 ? "Level 2 branches" : "")].filter(Boolean).join(", ") || "Charger branches";
-    } else if (/breaker/i.test(g.item)) {
-      // A branch breaker matches the engine's OCPD for a DC or Level 2 circuit; anything else on the main is the step-down's primary device.
-      if (amps !== undefined && l2Ocpd.has(amps) && (volts === undefined || volts < 300)) {
-        fedFrom = subPanelName ?? stepDownName ?? mainName;
-        feeds = "Level 2 units";
-      } else if (amps !== undefined && dcOcpd.has(amps)) {
-        fedFrom = mainName;
-        feeds = "DC chargers";
-      } else {
-        fedFrom = mainName;
-        feeds = stepDownName ?? "Charger branches";
-      }
-    } else {
-      fedFrom = mainName;
-    }
-    distributionRow(name, type, g.qty, volts, amps, fedFrom, feeds, type === "Switchboard" && !!per.existingSwitchgear);
   }
-  if ((per.disconnectQty ?? 0) > 0) {
-    const largestDc = Math.max(0, ...result.rows.filter((r) => !r.synthetic && r.category === "DCFC").map((r) => r.ocpdA));
-    distributionRow("EVSE disconnect (NEC 625.43)", "EVSE disconnect", per.disconnectQty!, 480, largestDc || undefined, mainName, "DC chargers");
-  }
-  for (const item of per.customItems ?? []) if (/\(quoted\)$/.test(item.name) && item.qty > 0) distributionRow(item.name.replace(/\s*\(quoted\)$/, ""), "Other", item.qty, undefined, undefined, mainName);
-  // Customer-furnished utility substructures, so the CEO sees them on his schedule; their money travels in override row 14.
-  if (per.transformerPadCost > 0) distributionRow("Transformer pad (customer-furnished, utility sets the transformer)", "Other", 1, undefined, undefined, "Utility primary", mainName);
-  if (per.cableWellCost > 0) distributionRow("Cable well / secondary handhole", "Other", 1, undefined, undefined, "Utility transformer", mainName);
-  if (per.pullBoxQty > 0) distributionRow("Utility pull box, traffic-rated", "Other", per.pullBoxQty, undefined, undefined, "Utility transformer", mainName);
+  if (scheduleRows.length > scheduleCapacity) warnings.push(`${scheduleRows.length - scheduleCapacity} distribution schedule row(s) beyond the intake's table were not written.`);
+  const rowByType = (re: RegExp) => scheduleRows.find((r) => re.test(r.type.trim()) || re.test(r.item.trim()));
+  const boardRow = rowByType(/^switchboard$/i) ?? rowByType(/switchgear|switchboard|main board|msb/i);
+  const mainName = boardRow?.item ?? (ic.pointOfConnection || "Service equipment");
 
   // Block I (3.7.0) — the feeders between the items on the schedule. The
   // sheet prices this block into the Pricing tab's wire line, so the
@@ -617,19 +533,18 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   } else {
     const txSeg = feederSeg("FDR Switchgear→TX");
     const spSeg = feederSeg("FDR TX→Sub-panel");
-    // TO must be an item on block E as written — on an imported workbook that
-    // is the engineer's own schedule, so the pair names ITS transformer and
-    // panel rows (the sheet resolves volts, phases and rating from them), and
-    // runs from the item the engineer said feeds the transformer.
-    const typedByType = (re: RegExp) => typedSchedule.find((r) => re.test(r.type.trim()) || re.test(r.item.trim()));
-    const typedTx = typedByType(/^transformer$/i) ?? typedByType(/transformer|step.?down/i);
-    const typedSp = typedByType(/^(subpanel|sub-panel|panelboard|panel)$/i) ?? typedByType(/sub.?panel|panelboard/i);
-    const txTo = typedTx?.item ?? stepDownName;
-    const spTo = typedSp?.item ?? subPanelName;
-    const txFrom = typedTx ? (typedSchedule.find((r) => r.item.trim() && r.item.trim() === typedTx.fedFrom.trim())?.item ?? typedByType(/switchboard|switchgear|main board|msb/i)?.item ?? ic.pointOfConnection ?? mainName) : mainName;
+    // TO must be an item on block E as written — the engine's rows, or on an
+    // imported / typed schedule the engineer's own transformer and panel rows
+    // (the sheet resolves volts, phases and rating from them) — and the pair
+    // runs from the item the schedule says feeds the transformer.
+    const txRow = rowByType(/^transformer$/i) ?? rowByType(/transformer|step.?down/i);
+    const spRow = rowByType(/^(subpanel|sub-panel|panelboard|panel)$/i) ?? rowByType(/sub.?panel|panelboard/i);
+    const txTo = txRow?.item;
+    const spTo = spRow?.item;
+    const txFrom = txRow ? (scheduleRows.find((r) => r.item.trim() && r.item.trim() === txRow.fedFrom.trim())?.item ?? mainName) : mainName;
     if (txSeg && txTo) feederRow(txFrom, txTo, txSeg.oneWayDistFt, Math.ceil(txSeg.designAmps * cf), txSeg.resolvedRunsPerUnit, engineConductor(txSeg), undefined);
     if (spSeg && txTo && spTo) feederRow(txTo, spTo, spSeg.oneWayDistFt, Math.ceil(spSeg.designAmps * cf), spSeg.resolvedRunsPerUnit, engineConductor(spSeg), undefined);
-    if (typedSchedule.length && (txSeg || spSeg) && (!typedTx || !typedSp)) warnings.push(`Block I: the imported schedule has no ${!typedTx ? "transformer" : "sub-panel"} row, so the estimator's ${!typedTx ? "switchgear → transformer" : "transformer → sub-panel"} feeder was written against the estimator's own name — the sheet cannot resolve its volts or rating; the typed floor in column G carries it.`);
+    if (typedSchedule.length && (txSeg || spSeg) && (!txRow || !spRow)) warnings.push(`Block I: the typed schedule has no ${!txRow ? "transformer" : "sub-panel"} row, so the estimator's ${!txRow ? "switchgear → transformer" : "transformer → sub-panel"} feeder could not be written against a schedule item and was left out; add the row to the schedule or type the feeder on 3 · Electrical.`);
     if (!txSeg && !spSeg && typedSchedule.length) leftBlank.push(`Electrical block I distribution feeders (rows ${F.firstRow}–${F.lastRow}) — the imported schedule has items but no feeder rows were typed and the estimator has no step-down transformer to derive them from; every panel, transformer and remote disconnect needs one.`);
   }
 

@@ -150,6 +150,14 @@ export function ConstructionSection() {
   const concreteAuto = qtyOf(civil, (n) => n.startsWith("Concrete ("));
   const asphaltAuto = qtyOf(civil, (n) => n === "Asphalt paving — parking stalls");
   const gpr = (per.customItems ?? []).find((i) => i.name === GPR_ITEM_NAME)?.qty ?? 0;
+  // Everything on customItems except the engine's own GPR line is a quoted item someone typed.
+  const quotedItems = (per.customItems ?? []).filter((i) => i.name !== GPR_ITEM_NAME);
+  const setQuotedItems = (items: { name: string; qty: number; unitCost: number }[]) =>
+    setProject((p) => ({ ...p, peripherals: { ...p.peripherals, customItems: [...(p.peripherals.customItems ?? []).filter((i) => i.name === GPR_ITEM_NAME), ...items] } }));
+  const setQuotedItem = (i: number, patch: Partial<{ name: string; qty: number; unitCost: number }>) => setQuotedItems(quotedItems.map((c, k) => (k === i ? { ...c, ...patch } : c)));
+  function setPeripheral<K extends keyof typeof per>(key: K, value: (typeof per)[K]) {
+    setProject((p) => ({ ...p, peripherals: { ...p.peripherals, [key]: value } }));
+  }
   const siteWorksBase = costs.lines.filter((l) => (SITE_WORKS_LINES as string[]).includes(l.name)).reduce((t, l) => t + l.base, 0);
   const rentalsPinned = pinned("equipment");
   const passThrough = per.permitFeeTotal + f.planCheckPermitFee + per.utilityAppFee + (c?.utilityInterconnectFee ?? 0) + (c?.lineExtensionContribution ?? 0);
@@ -199,10 +207,35 @@ export function ConstructionSection() {
         </Grid>
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
           <Derived label="Rebar (auto)" value={num(qtyOf(civil, (n) => n === "Rebar"))} />
-          <Derived label="Striping (auto)" value={qtyOf(signage, (n) => n === "Striping") > 0 ? "1 lot" : "—"} />
+          <Derived label="Striping" value={`${num(qtyOf(signage, (n) => n === "Striping"))} lot${per.stripingQtyOverride !== undefined ? " (typed)" : " (auto)"} · ${money(signage.find((l) => l.name === "Striping")?.unitCost ?? 0)}/lot`} />
           <Derived label="Signs / posts (auto)" value={`${num(qtyOf(signage, (n) => n === "Signs"))} / ${num(qtyOf(signage, (n) => n === "Sign posts"))}`} />
           <Derived label="Wheel stops (auto)" value={num(qtyOf(civil, (n) => n === "Wheel stops"))} />
           <Derived label="Site works, before uplift" value={money(siteWorksBase)} />
+        </div>
+        <Grid cols={4}>
+          <Field label="Striping (lots)" hint="blank = stalls ÷ 10 — one lot is the whole site's striping">
+            <input type="number" step="any" className={inputCls} placeholder={String(Math.round(((result.rollups.nL2Stalls + result.rollups.nDCFC) / 10) * 100) / 100)} value={per.stripingQtyOverride ?? ""} onChange={(e) => setPeripheral("stripingQtyOverride", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Field>
+          <Field label="Striping cost per lot ($)" hint="a contractor's quote for the striping still to do">
+            <input type="number" className={inputCls} value={per.stripingUnitCost ?? ""} placeholder="rate card" onChange={(e) => setPeripheral("stripingUnitCost", e.target.value === "" ? undefined : Number(e.target.value))} />
+          </Field>
+        </Grid>
+        <h3 className="mt-5 text-sm font-semibold text-zinc-800 dark:text-zinc-200">Quoted site-works items</h3>
+        <p className="mb-2 text-xs text-zinc-500">Concrete walls, slabs, paving or anything a contractor quoted for this site — priced on the wires and peripherals line and carried to the intake&apos;s site works.</p>
+        <div className="space-y-2">
+          {quotedItems.map((c, i) => (
+            <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_6rem_8rem_2rem]">
+              <input className={inputCls} placeholder="Item — who quoted it, quote number" value={c.name} onChange={(e) => setQuotedItem(i, { name: e.target.value })} />
+              <input type="number" className={inputCls} placeholder="qty" value={c.qty} onChange={(e) => setQuotedItem(i, { qty: Number(e.target.value) })} />
+              <input type="number" className={inputCls} placeholder="unit cost $" value={c.unitCost} onChange={(e) => setQuotedItem(i, { unitCost: Number(e.target.value) })} />
+              <button type="button" className="text-xs text-zinc-500 hover:text-red-600" title="Remove" onClick={() => setQuotedItems(quotedItems.filter((_, k) => k !== i))}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button type="button" className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={() => setQuotedItems([...quotedItems, { name: "", qty: 1, unitCost: 0 }])}>
+            + Add a quoted item
+          </button>
         </div>
       </Section>
 
