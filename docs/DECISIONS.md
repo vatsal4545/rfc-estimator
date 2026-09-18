@@ -78,3 +78,8 @@ estimator's item name or the template's label). Any other name stays in the
 app; the fill's report names it, and the Peripherals and Construction tabs
 show "Not on the intake" beside it, with a picker of the 14 names. Two lines
 on one row: the first is written and the report says so.
+
+**Decided (Vatsal, 2026-09-18).** Live with the 14 names for now. If free-text
+rental lines are ever needed on the sheet, that is a template change on the
+CEO's side — unlock the name cells in Construction!A39:A52, or add blank rows
+to the table — after which the app can write any rental name.
