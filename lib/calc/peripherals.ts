@@ -83,7 +83,8 @@ export function disconnectRateFor(largestDcBreakerA: number): number {
   return DISCONNECT_RATES.above400A;
 }
 
-function gearUnitCost(sel: GearSelection): number {
+/** The estimator's price for one piece of gear: its override, else the catalog row. */
+export function gearUnitCost(sel: GearSelection): number {
   if (sel.costOverride !== undefined) return sel.costOverride;
   const row = GEAR_CATALOG.find(
     (g) => g.item === sel.item && g.size === sel.size && g.voltage === sel.voltage,

@@ -77,9 +77,12 @@ describe("importing a completed intake workbook", async () => {
     expect(estimate.panel.bus480?.suggestedBusA).toBe(3200);
     expect(project.takeoff.filter((r) => !r.synthetic)).toHaveLength(6);
     expect(estimate.rows.some((r) => r.loadTypeId.startsWith("SVC"))).toBe(false);
-    // Quoted distribution gear lands in the wires and peripherals line.
-    expect(project.peripherals.customItems!.some((c) => c.name.startsWith("EVSE disconnects") && c.unitCost === 12000)).toBe(true);
-    expect(report.mapped.some((m) => /Distribution equipment: 1 quoted item/.test(m))).toBe(true);
+    // The quoted disconnects no longer land in the wires line on top of the engine's gear; the register's own switchgear row (150,000, Jesse's quote) prices the gear line and the schedule stands beside it.
+    expect(project.peripherals.customItems?.some((c) => /\(quoted\)$/.test(c.name))).not.toBe(true);
+    expect(project.overrides!.find((o) => o.key === "line:Main Distribution Switchgear")!.value).toBe(150000);
+    expect(project.overrides!.find((o) => o.key === "line:Electrical Sub-Panels, Transformers, Breakers")!.value).toBe(0); // the register's row 10 spans both estimator lines
+    expect(estimate.costs.lines.find((l) => l.name === "Main Distribution Switchgear")!.base).toBe(150000);
+    expect(report.mapped.some((m) => /Distribution schedule: 2 row\(s\), \$12,000 as priced — the register's switchgear row \(\$150,000\) prices the gear line instead/.test(m))).toBe(true);
     expect(report.skipped.some((s) => /trench surface/i.test(s))).toBe(true);
     // Site facts and the engineer's own rows travel as typed: trench facts, every run's distance and conductor, the schedule, the revision history.
     expect(project.intake!.trenchSurface).toBe("Asphalt");

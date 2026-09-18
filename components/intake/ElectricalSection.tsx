@@ -4,7 +4,7 @@ import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import { feederFloorA } from "@/lib/calc/chain";
 import type { DistributionFeeder, InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
-import { DISTRIBUTION_COST_BASES, DISTRIBUTION_PROVIDERS, DISTRIBUTION_TYPES, clearGearQuotePricing, distributionScheduleOf, emptyScheduleRow, gearPricedAtQuotes, priceGearAtQuotes, quotedGearTotal } from "@/lib/intake/schedule";
+import { DISTRIBUTION_COST_BASES, DISTRIBUTION_PROVIDERS, DISTRIBUTION_TYPES, clearGearQuotePricing, distributionScheduleOf, emptyScheduleRow, estimatedGearTotal, gearPricedAtSchedule, priceGearAtSchedule, scheduledGearTotal, withCatalogPrice } from "@/lib/intake/schedule";
 import type { DistributionScheduleRow } from "@/lib/proposal/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import type { StickyPath } from "@/lib/intake/rebuild";
@@ -105,10 +105,14 @@ export function ElectricalSection() {
   // Block E as data: the engine's rows, or the typed schedule with its vendor quotes.
   const schedule = distributionScheduleOf(project, result);
   const setSchedule = (rows: DistributionScheduleRow[]) => setProject((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), distributionSchedule: rows.length ? rows : undefined } }));
-  const setRow = (i: number, patch: Partial<DistributionScheduleRow>) => setSchedule(schedule.rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  // A row's price follows the catalog as its type, rating, volts or quantity change — until a vendor quote is chosen, which is then typed by hand.
+  const setRow = (i: number, patch: Partial<DistributionScheduleRow>) =>
+    setSchedule(schedule.rows.map((r, k) => (k === i ? ("quotedCost" in patch ? { ...r, ...patch } : withCatalogPrice({ ...r, ...patch })) : r)));
   const editSchedule = () => setSchedule(schedule.rows.map((r) => ({ ...r })));
-  const quotedTotal = quotedGearTotal(schedule.rows);
-  const gearAtQuotes = gearPricedAtQuotes(project);
+  const quotedTotal = scheduledGearTotal(schedule.rows);
+  const estimated = estimatedGearTotal(schedule.rows);
+  const gearAtQuotes = gearPricedAtSchedule(project);
+  const engineGearTotal = result.costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
   const bus480 = result.panel.bus480;
   const bus208 = result.panel.bus208;
   const lineNo = (loadTypeId: string) => {
@@ -349,7 +353,7 @@ export function ElectricalSection() {
 
       <Section
         title="Distribution equipment schedule"
-        subtitle="Intake Electrical block E (rows 165–176). The engine lists its own gear, priced on the switchgear line and marked so the sheet never prices it twice. Edit the schedule to describe the real lineup — one row per item with the vendor's quoted cost — and, if you like, price the switchgear line at those quotes."
+        subtitle="Intake Electrical block E (rows 165–176). The engine lists its own gear with the estimator's catalog price in the cost column — the sheet's gear total is the sum of that column, nothing else. Edit the schedule to describe the real lineup: a typed row prices itself from the catalog by type and rating; pick “Vendor quote” to type the vendor's figure instead. Then price the switchgear line at the schedule so the estimate and the sheet agree."
       >
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${schedule.typed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{schedule.typed ? "typed" : "auto"}</span>
@@ -476,17 +480,24 @@ export function ElectricalSection() {
             </table>
           </div>
         )}
+        {!schedule.typed && schedule.rows.length > 0 && (
+          <div className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
+            Priced on the sheet at <span className="font-medium tabular-nums">{money(quotedTotal)}</span> — the estimator&apos;s switchgear and sub-panels lines, {money(engineGearTotal)}, from the same catalog.
+            {Math.abs(quotedTotal - engineGearTotal) > 0.5 && <span className="ml-1 text-amber-800 dark:text-amber-300">The two differ — a gear line override is in force on the Overrides tab.</span>}
+          </div>
+        )}
         {schedule.typed && (
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
             <span>
-              Vendor-quoted total on the rows we provide: <span className="font-medium tabular-nums">{money(quotedTotal)}</span>
+              Schedule total on the rows we provide: <span className="font-medium tabular-nums">{money(quotedTotal)}</span>
+              {estimated.filled.length > 0 && <span className="ml-1 text-amber-800 dark:text-amber-300">+ {estimated.filled.length} unpriced row(s) the estimate carries at the catalog ({money(estimated.total)} in all) — the sheet will read UNPRICED until they are typed</span>}
             </span>
             {gearAtQuotes ? (
               <>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">switchgear line priced at the quotes</span>
-                {Math.abs(quotedTotal - (project.overrides ?? []).find((o) => o.key.endsWith("Main Distribution Switchgear"))!.value) > 0.005 && (
-                  <button className="font-medium text-blue-600 hover:underline" onClick={() => setProject((p) => priceGearAtQuotes(p, schedule.rows))}>
-                    re-apply {money(quotedTotal)}
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">switchgear line priced at the schedule</span>
+                {Math.abs(estimated.total - (project.overrides ?? []).find((o) => o.key.endsWith("Main Distribution Switchgear"))!.value) > 0.005 && (
+                  <button className="font-medium text-blue-600 hover:underline" onClick={() => setProject((p) => priceGearAtSchedule(p, schedule.rows))}>
+                    re-apply {money(estimated.total)}
                   </button>
                 )}
                 <button className="font-medium text-blue-600 hover:underline" onClick={() => setProject((p) => clearGearQuotePricing(p))}>
@@ -494,11 +505,11 @@ export function ElectricalSection() {
                 </button>
               </>
             ) : (
-              <button className="rounded-md border border-zinc-200 px-3 py-1 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" disabled={quotedTotal <= 0} onClick={() => setProject((p) => priceGearAtQuotes(p, schedule.rows))}>
-                Price the switchgear line at the quotes
+              <button className="rounded-md border border-zinc-200 px-3 py-1 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" disabled={estimated.total <= 0} onClick={() => setProject((p) => priceGearAtSchedule(p, schedule.rows))}>
+                Price the switchgear line at the schedule ({money(estimated.total)})
               </button>
             )}
-            <span className="text-xs text-zinc-500">Writes the register: switchgear line = quotes, sub-panels / transformers / breakers line = 0 (they are inside the quotes). The sheet&apos;s B178 carries the same total.</span>
+            <span className="text-xs text-zinc-500">Writes the register: switchgear line = the schedule&apos;s total, sub-panels / transformers / breakers line = 0 (they are on the schedule). The sheet&apos;s B178 carries the same total.</span>
           </div>
         )}
         {cabinets && <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">Distributed system: the cabinets&apos; AC feeders are sized here; the cabinet-to-dispenser DC runs are not in the takeoff yet and stay blank on the intake (rows 174–205).</div>}

@@ -169,3 +169,42 @@ rows, `quotedGearTotal` (by-others rows are never our money — and a figure
 typed against one still sums into the sheet's B178, so leave such rows
 unpriced), `priceGearAtQuotes` / `clearGearQuotePricing`. The fill and block
 I's feeder naming read the same rows in both modes.
+
+## 2026-09-18 — The distribution schedule prices itself
+
+**Fact of the template.** `Electrical!B178` (distribution equipment cost) is
+`SUM(L165:L176)` — the quoted-cost column and nothing else — and
+`Pricing!B9` is B178 × the materials markup. B179 flags a row UNPRICED unless
+its cost basis is "By others" or "Priced elsewhere in this workbook". Since
+the Overrides tab stopped carrying the estimator's figures by default
+(2026-09-17), an app-filled intake had been handing the CEO a gear line of
+$0 with every row marked "Priced elsewhere". The sheet's own RefData gear
+table is the estimator's OLD ladder (2000 A $60k, 2500 A $58,540, 3000 A
+$65k; no 600 A, 3200 A, transformers or panels) — it does not price block E
+and does not match the current catalog everywhere.
+
+**Behaviour.**
+- The engine's schedule rows carry the estimator's catalog price in column L
+  (qty × unit). Cost basis "RefData rate" where the sheet's table has the
+  same figure, "Allowance" where it is the estimator's own (Larson-based
+  frames, transformers, panels, breakers, EVSE disconnects). Utility
+  substructures stay "Priced elsewhere" (they are the Utility line). B178
+  now equals the estimator's switchgear + sub-panels lines on every fill.
+- A typed row prices itself from the catalog by type, rating and volts
+  (`catalogPriceFor`): Switchboard → main switchgear frame, Service
+  disconnect → main breaker (208 V: disconnect), Panelboard/Subpanel →
+  sub-panel, Transformer → its kVA, EVSE disconnect → the disconnect ladder,
+  a breaker → its frame. Meter cabinets and tap boxes have no catalog price.
+  Choosing "Vendor quote" stops the auto-fill and the vendor's figure is typed.
+- "Price the switchgear line at the schedule" = Σ L on the rows we provide,
+  with a row nobody priced carried at the catalog (the sheet says UNPRICED
+  until it is typed). Sub-panels line → 0.
+- Importer: a schedule with costs prices the gear line in place of the
+  engine's catalog (never the engine's gear plus the quotes, which is what
+  the old "(quoted) custom items" did). The register's own switchgear row
+  wins when the engineer typed one; a schedule that merely repeats the
+  engine's catalog adds nothing.
+
+**Wire quotes.** The sheet prices conductor at RefData's locked $/ft; a wire
+quote can only reach the estimator (per-project $/ft on 3 · Electrical) and,
+opt-in, Overrides row 9. Yamashiro's rates set from Courtesy S1809768.

@@ -11,6 +11,8 @@
 
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
 import { feederFloorA } from "../calc/chain";
+import { computeEstimate } from "../calc/engine";
+import { GEAR_LINE_KEY, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
 import { withDesignSets } from "../calc/designFees";
 import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
@@ -320,16 +322,18 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   };
   const interconnectFeeUnit = num("Electrical", E.interconnectFee) ?? 0;
   const lineExtensionUnit = num("Electrical", E.contributionAboveAllowance) ?? 0;
-  // Distribution equipment schedule — quoted items we provide, at the materials
-  // markup; and the rows themselves, verbatim, so the fill writes the
-  // engineer's schedule back rather than a regenerated one.
-  const distributionItems: { name: string; qty: number; unitCost: number }[] = [];
+  // Distribution equipment schedule — the rows themselves, verbatim, so the
+  // fill writes the engineer's schedule back rather than a regenerated one;
+  // and the gear priced AS SCHEDULED: the sheet's B178 is the sum of the
+  // quoted-cost column, so the estimator's switchgear line takes that total
+  // (a row we provide that nobody priced is carried at the catalog and
+  // reported) and the sub-panels line stands down — never the engine's
+  // catalog gear plus the quotes on top.
   const distributionSchedule: DistributionScheduleRow[] = [];
   const D = DISTRIBUTION_TABLE;
   for (let r = D.firstRow; r <= D.lastRow; r++) {
     const item = str("Electrical", `${D.item}${r}`);
     const cost = num("Electrical", `${D.quotedCost}${r}`) ?? 0;
-    const who = str("Electrical", `${D.whoProvides}${r}`).toLowerCase();
     const typeText = str("Electrical", `${D.type}${r}`);
     if (item || typeText || cost > 0) {
       distributionSchedule.push({
@@ -349,12 +353,9 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
       const ratingText = str("Electrical", `${D.ratingA}${r}`);
       if (ratingText && num("Electrical", `${D.ratingA}${r}`) === undefined) warnings.push(`Distribution schedule row ${r}: rating "${ratingText}" is text in a number cell — the sheet cannot size on it.`);
     }
-    if (!item || cost <= 0 || who === "by others") continue;
-    const type = str("Electrical", `${D.type}${r}`);
-    const rating = num("Electrical", `${D.ratingA}${r}`);
-    distributionItems.push({ name: `${item}${type ? ` — ${type}` : ""}${rating ? ` ${rating} A` : ""} (quoted)`, qty: 1, unitCost: cost });
   }
-  if (distributionItems.length) mapped.push(`Distribution equipment: ${distributionItems.length} quoted item(s), ${money(distributionItems.reduce((s, i) => s + i.unitCost, 0))} into the wires and peripherals line`);
+  const scheduledGear = distributionSchedule.length ? estimatedGearTotal(distributionSchedule) : undefined;
+
   // Block I (3.7.0) — the feeders between the items on the schedule. Each row
   // is resolved against the schedule the way the sheet resolves it (volts and
   // phases of the item fed — a transformer takes the FROM item's volts, else
@@ -828,7 +829,6 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     customItems = customItems.filter((c) => c.name !== GPR_ITEM_NAME);
     if (gprEa > 0) customItems.push({ name: GPR_ITEM_NAME, qty: gprEa, unitCost: num("Construction", "D25") ?? customItems.find((c) => c.name === GPR_ITEM_NAME)?.unitCost ?? 1500 });
   }
-  customItems = [...customItems, ...distributionItems];
   per.customItems = customItems;
   if (permitQty > 0) per.permitFeeTotal = permitFees;
   if (utilityQty > 0) per.utilityAppFee = utilityFees;
@@ -954,8 +954,21 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (rateSchedule) mapped.push(`Rate schedule ${rateSchedule}${access ? ` · ${access}` : ""} · ${hoursOpen ?? 24} h/day · ${daysOpen ?? 365} days/yr`);
   project.existing = existing;
   project.overrides = overrides.length ? overrides : undefined;
-
   project = applyEquipmentSchedule(project, allowance);
+  // The gear as the schedule prices it — replacing the engine's catalog gear,
+  // never added on top of it. The register's own switchgear row wins when the
+  // engineer typed one; and a schedule that merely repeats the engine's
+  // catalog (an app-filled file coming home) adds nothing.
+  if (scheduledGear && scheduledGear.total > 0) {
+    const registerRow = (project.overrides ?? []).find((o) => o.key === GEAR_LINE_KEY);
+    const engineGear = computeEstimate(project).costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
+    const detail = `${distributionSchedule.length} row(s), ${money(scheduledGear.total)} as priced${scheduledGear.filled.length ? ` (${scheduledGear.filled.length} unpriced row(s) at the estimator's catalog: ${scheduledGear.filled.map((r) => r.item).join("; ")})` : ""}`;
+    if (registerRow) mapped.push(`Distribution schedule: ${detail} — the register's switchgear row (${money(registerRow.value)}) prices the gear line instead`);
+    else if (Math.abs(scheduledGear.total - engineGear) > 0.005) {
+      project = priceGearAtSchedule(project, distributionSchedule, "Imported intake — distribution schedule");
+      mapped.push(`Distribution schedule: ${detail} — carried on the switchgear line in place of the estimator's catalog gear (${money(engineGear)})`);
+    } else mapped.push(`Distribution schedule: ${detail} — the estimator's own catalog, unchanged`);
+  }
   project = applyRemovalScope(project);
   project = applyFieldOverrides(project);
   if (existing && hasExistingChargers(existing.projectType)) {

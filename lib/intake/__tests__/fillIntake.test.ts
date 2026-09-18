@@ -214,11 +214,13 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Electrical", "B187")).toBe(150);
     expect(wb.get("Electrical", "B191")).toBe(3500);
     expect(wb.get("Electrical", "B197")).toBe("Yes");
-    // Distribution gear documented, never priced twice.
+    // Distribution gear priced from the estimator's catalog — the sheet's B178 is the sum of column L, so this is how the CEO's Pricing tab gets the gear.
     expect(String(wb.get("Electrical", "A165"))).toMatch(/switchgear/i);
     expect(wb.get("Electrical", "J165")).toBe("Zero Impact Energy");
-    expect(wb.get("Electrical", "K165")).toBe("Priced elsewhere in this workbook");
-    expect(wb.get("Electrical", "L165")).toBeNull();
+    expect(wb.get("Electrical", "K165")).toBe("Allowance"); // the 3,200 A frame is the estimator's Larson-based figure, not in the sheet's RefData
+    expect(wb.get("Electrical", "L165")).toBe(62200);
+    expect(wb.get("Electrical", "B178")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
+    expect(String(wb.get("Electrical", "B179"))).toMatch(/^OK/);
     // Nothing landed where the 3.2.0 layout used to keep these.
     expect(wb.get("Electrical", "B5")).toBeNull();
     expect(wb.get("Electrical", "D12")).toBeNull();
