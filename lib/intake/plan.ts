@@ -14,6 +14,7 @@
 
 import { GPR_ITEM_NAME } from "../calc/autoplan";
 import { feederFloorA, feederSegmentId } from "../calc/chain";
+import { designRate, designSets } from "../calc/designFees";
 import { effectiveInstallMethod } from "../calc/install";
 import type { EstimateResult, GearSelection, Project } from "../calc/types";
 import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS, capacityOf, hasExistingChargers, keepsExistingService } from "../existing";
@@ -45,7 +46,6 @@ import {
   INTAKE_TEXT,
   OVERRIDE_COLS,
   REVISIONS_TABLE,
-  DESIGN_SET_RATES,
   PROJECT_CELLS,
   RENTAL_ROW_NAMES,
   intakeRentalRow,
@@ -665,12 +665,17 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   siteQty(SITE_WORKS_ROWS.steelMesh, 0);
   if (it?.switchgearSignQty !== undefined && it?.switchgearSignQty !== null) siteQty(SITE_WORKS_ROWS.switchgearSign, it.switchgearSignQty);
   else leftBlank.push("Construction B24 switchgear sign — not a separate line in the estimator (inside the site-works override) unless an imported intake carried a count.");
-  if (f.pmHours > 0) put("Construction", CONSTRUCTION_CELLS.pmHours, f.pmHours);
-  // Drawing-set counts: the estimator prices design as fees; where a fee is a whole number of the template's sets, say so.
-  const sets = (cost: number, rate: number) => (cost > 0 && Math.abs(cost / rate - Math.round(cost / rate)) < 1e-6 ? Math.round(cost / rate) : undefined);
-  put("Construction", CONSTRUCTION_CELLS.autoCadSets, sets(f.autoCadDesignCost, DESIGN_SET_RATES.autoCad));
-  put("Construction", CONSTRUCTION_CELLS.eeSets, sets(f.electricalEngDesignCost, DESIGN_SET_RATES.ee));
-  leftBlank.push("Construction B32/B33 drawing-set counts — written only where the estimator's design fee is a whole number of the template's sets; the D&E total travels as override row 16 regardless.");
+  // Design and engineering, as the sheet prices it: quantity × rate on each
+  // of the three rows, so B35 reproduces the estimator's design total. A
+  // typed set count travels as typed; a market-rate fee travels as the sets
+  // it buys at the rate (fractional when it is not a whole number of sets).
+  const designRow = (setsCell: string, rateCell: string, sets: number, rate: number) => {
+    put("Construction", setsCell, sets > 0 ? sets : undefined);
+    put("Construction", rateCell, rate);
+  };
+  designRow(CONSTRUCTION_CELLS.autoCadSets, CONSTRUCTION_CELLS.autoCadRate, designSets(f, "autoCad"), designRate(f, "autoCad"));
+  designRow(CONSTRUCTION_CELLS.eeSets, CONSTRUCTION_CELLS.eeRate, designSets(f, "ee"), designRate(f, "ee"));
+  designRow(CONSTRUCTION_CELLS.pmHours, CONSTRUCTION_CELLS.pmRate, f.pmHours, f.pmHourlyRate);
   const round4 = (n: number) => Math.round(n * 10000) / 10000;
   const rentalRowOf = (i: { name: string }) => intakeRentalRow(i.name);
   for (const rr of RENTAL_ROW_NAMES) {

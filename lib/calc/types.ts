@@ -583,6 +583,17 @@ export interface FinancialInput {
   fiveYearServiceCost: number;
   autoCadDesignCost: number;
   electricalEngDesignCost: number;
+  /**
+   * Design as the intake prices it — drawing sets at a rate per set
+   * (Construction!B32/D32, B33/D33). A typed set count makes the fee
+   * sets × rate (lib/calc/designFees); absent, the fee is the market-rate
+   * formula and the sets shown are fee ÷ rate. Rates default to the
+   * template's ($3,412.50 / $2,080).
+   */
+  autoCadSets?: number;
+  autoCadSetRate?: number;
+  eeSets?: number;
+  eeSetRate?: number;
   /** Design / permitting PM hours at pmHourlyRate — a manual entry. */
   pmHours: number;
   pmHourlyRate: number; // 358

@@ -1,8 +1,9 @@
 "use client";
 
+import { designRate, designSets, withDesignRate, withDesignSets } from "@/lib/calc/designFees";
 import { laborBreakdown } from "@/lib/calc/costs";
 import { reconcileHardwareCost } from "@/lib/catalog";
-import type { LaborItem } from "@/lib/calc/types";
+import type { FinancialInput, LaborItem } from "@/lib/calc/types";
 import { fractionToPct, money, pctToFraction } from "@/lib/format";
 import { newId } from "@/lib/id";
 import { reconcileServiceTerms } from "@/lib/skus";
@@ -16,6 +17,7 @@ export function FinancialsTab() {
   function update<K extends keyof typeof f>(key: K, value: (typeof f)[K]) {
     setProject((p) => ({ ...p, financial: { ...p.financial, [key]: value } }));
   }
+  const setFinancial = (next: FinancialInput) => setProject((p) => ({ ...p, financial: next }));
 
   // Warranty / service / EVOLV: derived from the price book's service classes
   // and the Commercial tab's terms while serviceTermsAuto is on; typing a
@@ -225,11 +227,17 @@ export function FinancialsTab() {
         subtitle="The Quick Estimate tab fills these from market-rate formulas — override any of them with real quotes."
       >
         <Grid cols={4}>
-          <Field label="Site plan design — AutoCAD ($)" hint="Parking layout, ADA stalls, equipment placement">
-            <input type="number" className={inputCls} value={f.autoCadDesignCost} onChange={(e) => update("autoCadDesignCost", Number(e.target.value))} />
+          <Field label="Site plan design — AutoCAD (sets)" hint="Parking layout, ADA stalls, equipment placement">
+            <input type="number" step="any" className={inputCls} value={designSets(f, "autoCad")} onChange={(e) => setFinancial(withDesignSets(f, "autoCad", Number(e.target.value)))} />
           </Field>
-          <Field label="SLD / electrical engineering design ($)" hint="PE-stamped single-line, load calcs, panel schedule">
-            <input type="number" className={inputCls} value={f.electricalEngDesignCost} onChange={(e) => update("electricalEngDesignCost", Number(e.target.value))} />
+          <Field label="AutoCAD rate per set ($)" hint={`Site plan fee ${money(f.autoCadDesignCost)} = sets × rate`}>
+            <input type="number" className={inputCls} value={designRate(f, "autoCad")} onChange={(e) => setFinancial(withDesignRate(f, "autoCad", Number(e.target.value)))} />
+          </Field>
+          <Field label="SLD / electrical engineering (sets)" hint="PE-stamped single-line, load calcs, panel schedule">
+            <input type="number" step="any" className={inputCls} value={designSets(f, "ee")} onChange={(e) => setFinancial(withDesignSets(f, "ee", Number(e.target.value)))} />
+          </Field>
+          <Field label="EE rate per set ($)" hint={`SLD fee ${money(f.electricalEngDesignCost)} = sets × rate`}>
+            <input type="number" className={inputCls} value={designRate(f, "ee")} onChange={(e) => setFinancial(withDesignRate(f, "ee", Number(e.target.value)))} />
           </Field>
           <Field label="Design / permitting PM hours" hint="Manual entry. Construction PM is priced as % of labor above (CEO basis)">
             <input type="number" className={inputCls} value={f.pmHours} onChange={(e) => update("pmHours", Number(e.target.value))} />

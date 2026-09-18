@@ -5,10 +5,11 @@ import { INTAKE_TEMPLATE } from "@/lib/intake/cells";
 import { GPR_ITEM_NAME } from "@/lib/calc/autoplan";
 import { SITE_WORKS_LINES } from "@/lib/calc/costs";
 import { AUTO_QTY_ITEM } from "@/lib/calc/equipment";
-import type { EquipmentRentalItem } from "@/lib/calc/types";
+import { DESIGN_UNIT_RATES, clearDesignSets, designCost, designRate, designSets, designSetsTyped, withDesignRate, withDesignSets, type DesignFeeKind } from "@/lib/calc/designFees";
+import type { EquipmentRentalItem, FinancialInput } from "@/lib/calc/types";
 import { intakeRentalRow } from "@/lib/intake/cells";
 import { fractionToPct, money, num, pct, pctToFraction } from "@/lib/format";
-import type { StickyPath } from "@/lib/intake/rebuild";
+import { readPath, setSticky, type StickyPath } from "@/lib/intake/rebuild";
 import { defaultCommercial } from "@/lib/proposal/defaults";
 import type { CommercialInput } from "@/lib/proposal/types";
 import { useProject } from "../ProjectContext";
@@ -80,6 +81,48 @@ function PinnedNumber({ label, hint, path, value, step, percent }: { label: stri
         )}
       </div>
     </Field>
+  );
+}
+
+/** One design row as the intake carries it: quantity × rate = fee. Typing the quantity or the rate pins the row; “→ auto” hands the fee back to the market-rate formula. */
+function DesignRow({ kind, label, unit, hint }: { kind: DesignFeeKind; label: string; unit: string; hint: string }) {
+  const { project, setProject } = useProject();
+  const { unpin, pinned } = useRebuild();
+  const f = project.financial;
+  const setsPath: StickyPath = kind === "autoCad" ? "financial.autoCadSets" : "financial.eeSets";
+  const ratePath: StickyPath = kind === "autoCad" ? "financial.autoCadSetRate" : "financial.eeSetRate";
+  const costPath: StickyPath = kind === "autoCad" ? "financial.autoCadDesignCost" : "financial.electricalEngDesignCost";
+  const typed = designSetsTyped(f, kind) || pinned(costPath);
+  const store = (next: FinancialInput) =>
+    setProject((p) => {
+      let q = { ...p, financial: next };
+      for (const path of [setsPath, ratePath, costPath]) q = setSticky(q, path, readPath(q, path));
+      return q;
+    });
+  const toAuto = () => {
+    setProject((p) => ({ ...p, financial: clearDesignSets(p.financial, kind) }));
+    for (const path of [setsPath, ratePath, costPath]) unpin(path);
+  };
+  return (
+    <Grid cols={4}>
+      <Field label={`${label} (${unit})`} hint={hint}>
+        <div className="flex items-center gap-2">
+          <input type="number" step="any" className={`${inputCls} w-full`} value={designSets(f, kind)} onChange={(e) => store(withDesignSets(f, kind, Number(e.target.value)))} />
+          <AutoPill typed={typed} />
+          {typed && (
+            <button className="whitespace-nowrap text-xs font-medium text-blue-600 hover:underline" onClick={toAuto}>
+              → auto
+            </button>
+          )}
+        </div>
+      </Field>
+      <Field label="Rate per set ($)" hint={`Intake ${kind === "autoCad" ? "D32" : "D33"}: ${money(DESIGN_UNIT_RATES[kind])}`}>
+        <input type="number" className={inputCls} value={designRate(f, kind)} onChange={(e) => store(withDesignRate(f, kind, Number(e.target.value)))} />
+      </Field>
+      <Field label={`${label} ($)`} hint={typed ? "quantity × rate" : "market-rate fee at Build, read as sets × rate"}>
+        <div className={readonlyCls}>{money(designCost(f, kind))}</div>
+      </Field>
+    </Grid>
   );
 }
 
@@ -163,18 +206,23 @@ export function ConstructionSection() {
         </div>
       </Section>
 
-      <Section title="Design and engineering" subtitle="The estimator prices design as fees (market-rate formulas at Build); the intake carries drawing sets and PM hours at its own rates. Your total travels as override row 16, plan check as a pass-through fee.">
+      <Section title="Design and engineering" subtitle="Priced as the intake prices it (Construction rows 32–34): a quantity at a ZIE billing rate on each row, summed into the design and engineering total. Build reads the market-rate fee as the sets it buys at the rate; type a quantity or a rate and the fee follows it. Plan check is a pass-through fee.">
+        <DesignRow kind="autoCad" label="Site plan design — AutoCAD" unit="drawing sets" hint="One issued drawing package: site plan, equipment layout, civil details" />
+        <DesignRow kind="ee" label="Electrical engineering — SLD" unit="drawing sets" hint="One stamped electrical package: single-line, panel schedule, load calculation" />
         <Grid cols={4}>
-          <PinnedNumber label="Site plan design — AutoCAD ($)" path="financial.autoCadDesignCost" value={f.autoCadDesignCost} />
-          <PinnedNumber label="Electrical engineering — SLD ($)" path="financial.electricalEngDesignCost" value={f.electricalEngDesignCost} />
-          <PinnedNumber label="Project management (hours)" hint="Design and permitting PM — a manual entry" path="financial.pmHours" value={f.pmHours} step="1" />
-          <Field label="PM hourly rate ($)" hint="Intake: $358">
+          <PinnedNumber label="Project management (hours)" hint="Design and permitting PM — billed hourly" path="financial.pmHours" value={f.pmHours} step="1" />
+          <Field label="PM hourly rate ($)" hint="Intake D34: $358">
             <input type="number" className={inputCls} value={f.pmHourlyRate} onChange={(e) => setFinancial("pmHourlyRate", Number(e.target.value))} />
           </Field>
-          <PinnedNumber label="Plan check fee ($)" hint="AHJ, valuation-based on DC sites — pass-through" path="financial.planCheckPermitFee" value={f.planCheckPermitFee} />
-          <Field label="Design and engineering total" hint="before plan check — what the override register carries">
+          <Field label="Project management ($)" hint="hours × rate">
+            <div className={readonlyCls}>{money(f.pmHours * f.pmHourlyRate)}</div>
+          </Field>
+          <Field label="Design and engineering total" hint="the three rows — intake B35">
             <div className={readonlyCls}>{money(costs.designAndEngineering)}</div>
           </Field>
+        </Grid>
+        <Grid cols={4}>
+          <PinnedNumber label="Plan check fee ($)" hint="AHJ, valuation-based on DC sites — pass-through" path="financial.planCheckPermitFee" value={f.planCheckPermitFee} />
         </Grid>
       </Section>
 

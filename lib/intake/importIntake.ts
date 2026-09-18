@@ -11,6 +11,7 @@
 
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
 import { feederFloorA } from "../calc/chain";
+import { withDesignSets } from "../calc/designFees";
 import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
   CONNECTOR_KEYS,
@@ -34,7 +35,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
 import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
@@ -786,17 +787,22 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   };
   if (switchgearPriced) mapped.push(`Switchgear frame being priced: ${switchgearPriced} A`);
 
-  const f = { ...project.financial };
+  let f = { ...project.financial };
   if (crewDays !== undefined) f.laborBusinessDays = crewDays;
   if (crewRate !== undefined) f.laborDailyRate = crewRate;
   if (contingency !== undefined) f.contingencyPct = contingency;
   if (salesTax !== undefined) f.salesTaxPct = salesTax;
   if (pmPct !== undefined) f.pmPctOfLabor = pmPct;
-  if (autoCadSets !== undefined) f.autoCadDesignCost = autoCadSets * (num("Construction", "D32") ?? 3412.5);
-  if (eeSets !== undefined) f.electricalEngDesignCost = eeSets * (num("Construction", "D33") ?? 2080);
+  // Design and engineering travel as the sheet prices them: quantity × rate, both typed.
+  const autoCadRate = num("Construction", CONSTRUCTION_CELLS.autoCadRate);
+  const eeRate = num("Construction", CONSTRUCTION_CELLS.eeRate);
+  if (autoCadRate !== undefined && autoCadRate > 0) f.autoCadSetRate = autoCadRate;
+  if (eeRate !== undefined && eeRate > 0) f.eeSetRate = eeRate;
+  if (autoCadSets !== undefined) f = withDesignSets(f, "autoCad", autoCadSets);
+  if (eeSets !== undefined) f = withDesignSets(f, "ee", eeSets);
   if (pmHours !== undefined) {
     f.pmHours = pmHours;
-    f.pmHourlyRate = num("Construction", "D34") ?? f.pmHourlyRate;
+    f.pmHourlyRate = num("Construction", CONSTRUCTION_CELLS.pmRate) ?? f.pmHourlyRate;
   }
   if (permitQty > 0) f.planCheckPermitFee = 0; // the intake carries permit and plan check as one pass-through fee
   project.financial = f;
@@ -925,8 +931,11 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (crewDays !== undefined) sticky.add("financial.laborBusinessDays");
   if (pmHours !== undefined) sticky.add("financial.pmHours");
   if (pmPct !== undefined) sticky.add("financial.pmPctOfLabor");
-  if (autoCadSets !== undefined) sticky.add("financial.autoCadDesignCost");
-  if (eeSets !== undefined) sticky.add("financial.electricalEngDesignCost");
+  if (autoCadSets !== undefined) sticky.add("financial.autoCadDesignCost").add("financial.autoCadSets");
+  if (eeSets !== undefined) sticky.add("financial.electricalEngDesignCost").add("financial.eeSets");
+  if (autoCadRate !== undefined) sticky.add("financial.autoCadSetRate");
+  if (eeRate !== undefined) sticky.add("financial.eeSetRate");
+  if (pmHours !== undefined) sticky.add("financial.pmHourlyRate");
   if (permitQty > 0) {
     sticky.add("financial.planCheckPermitFee");
     sticky.add("peripherals.permitFeeTotal");

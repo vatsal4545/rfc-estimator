@@ -5,6 +5,8 @@
 // into them. The round-trip test locks the two together, so a template change
 // is a one-file edit here plus a fixture regeneration.
 
+import { DESIGN_UNIT_RATES } from "../calc/designFees";
+
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
   version: "3.7.0",
@@ -303,8 +305,8 @@ export const SITE_WORKS_ROWS = {
   dump: 27,
 } as const;
 export const SITE_WORKS_COLS = { qty: "B", include: "E" } as const;
-/** The template's design unit rates (Construction!D32 / D33) — the fill back-derives set counts from the estimator's design costs with them. */
-export const DESIGN_SET_RATES = { autoCad: 3412.5, ee: 2080 } as const;
+/** The template's design unit rates (Construction!D32 / D33) — see lib/calc/designFees. */
+export const DESIGN_SET_RATES = { autoCad: DESIGN_UNIT_RATES.autoCad, ee: DESIGN_UNIT_RATES.ee } as const;
 
 /** Rentals: name in A (the template's own labels), qty B, unit cost C, days D, include E. */
 export const RENTAL_TABLE = { firstRow: 39, lastRow: 52, name: "A", qty: "B", unitCost: "C", days: "D", include: "E" } as const;

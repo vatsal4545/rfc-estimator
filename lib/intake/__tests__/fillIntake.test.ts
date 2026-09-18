@@ -225,6 +225,20 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Electrical", "B51")).toBeNull();
   });
 
+  it("Construction tab: design and engineering as quantity × rate on rows 32–34, summing to the estimator's design total", () => {
+    const f = project.financial;
+    expect(f.autoCadDesignCost).toBeGreaterThan(0);
+    expect(wb.get("Construction", "B32")).toBeCloseTo(f.autoCadDesignCost / 3412.5, 4);
+    expect(wb.get("Construction", "D32")).toBe(3412.5);
+    expect(wb.get("Construction", "B33")).toBeCloseTo(f.electricalEngDesignCost / 2080, 4);
+    expect(wb.get("Construction", "D33")).toBe(2080);
+    expect(wb.get("Construction", "B34")).toBeNull(); // no PM hours typed
+    expect(wb.get("Construction", "D34")).toBe(358);
+    // The sheet's own total (B35 = SUMPRODUCT of B × D) reproduces the estimator's design and engineering line.
+    expect(wb.get("Construction", "B35")).toBeCloseTo(result.costs.designAndEngineering, 0);
+    expect(report.leftBlank.some((s) => /B32\/B33/.test(s))).toBe(false);
+  });
+
   it("Construction tab: labour, site-works quantities, rentals, markups, pass-through fees", () => {
     expect(wb.get("Construction", "B5")).toBe(project.financial.laborBusinessDays);
     expect(wb.get("Construction", "B6")).toBe(2750);

@@ -7,6 +7,7 @@
 // nothing here is a hidden adder. Dollar defaults are budgetary allowances
 // (2025-26 US / California market) meant to be overridden with real quotes.
 
+import { applyTypedDesignSets } from "./designFees";
 import { computeEstimate } from "./engine";
 import { INSTALL_METHOD_INFO, SURFACE_FT_PER_CREW_DAY, effectiveInstallMethod } from "./install";
 import { applyTakeoffEdits, generateTakeoffRows } from "./quickstart";
@@ -622,7 +623,7 @@ export function buildQuickProject(
     ? counts.nDCFC * RATE_CARD.commissioningPerDcfc + counts.nL2 * RATE_CARD.commissioningPerL2
     : 0;
 
-  p.financial = {
+  p.financial = applyTypedDesignSets({
     ...p.financial,
     laborBusinessDays: laborDays,
     autoCadDesignCost: input.includeSitePlanDesign ? sitePlanFee(counts) : 0,
@@ -632,7 +633,7 @@ export function buildQuickProject(
     chargerHardwareCostIsAuto: true,
     evolvCommissioningCost: commissioning,
     planCheckPermitFee: 0, // set from valuation below
-  };
+  });
 
   // --- Pass 1: valuation + panel-dependent quantities ----------------------
   const pass1 = computeEstimate(p);

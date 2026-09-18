@@ -114,6 +114,14 @@ describe("importing a completed intake workbook", async () => {
     expect(f.salesTaxPct).toBe(0.0725);
     expect(f.autoCadDesignCost).toBeCloseTo(3 * 3412.5, 6);
     expect(f.electricalEngDesignCost).toBeCloseTo(3 * 2080, 6);
+    // Quantity and rate travel as typed, so the app shows the sheet's own rows and a rebuild keeps them.
+    expect(f.autoCadSets).toBe(3);
+    expect(f.autoCadSetRate).toBe(3412.5);
+    expect(f.eeSets).toBe(3);
+    expect(f.eeSetRate).toBe(2080);
+    expect(f.pmHours).toBe(35);
+    expect(f.pmHourlyRate).toBe(358);
+    expect(project.sticky).toEqual(expect.arrayContaining(["financial.autoCadSets", "financial.autoCadSetRate", "financial.eeSets", "financial.pmHourlyRate"]));
     expect(f.pmHours).toBe(35);
     expect(f.pmHourlyRate).toBe(358);
     expect(estimate.costs.designAndEngineering).toBeCloseTo(29007.5, 6);
