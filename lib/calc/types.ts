@@ -98,6 +98,42 @@ export interface ServiceChainConfig {
   utilityToSwitchgearFt: number;
   switchgearToTransformerFt: number;
   transformerToSubpanelFt: number;
+  /**
+   * The distribution feeders between the items on the schedule, when the
+   * engineer typed them (intake 3.7.0 Electrical block I) or the app's user
+   * did. Present and non-empty, they REPLACE the two auto segments
+   * (switchgear → step-down transformer → sub-panel): the typed schedule is
+   * the site, the auto pair is the guess. The service lateral from the utility
+   * transformer is block D's and stays either way.
+   */
+  feeders?: DistributionFeeder[];
+}
+
+/**
+ * One feeder between two items on the distribution schedule, sized the way
+ * the intake sizes it: ampacity at the floor divided by the parallel sets,
+ * voltage drop at floor / 1.25 — so the floor is the 125 %-inclusive figure
+ * and the engine's design current is floor / continuousLoadFactor.
+ */
+export interface DistributionFeeder {
+  /** Schedule item it runs from (block E column A) — free text when the source is not on the schedule. */
+  from: string;
+  /** Schedule item it feeds — sets the floor, volts and phases when nothing is typed. */
+  to: string;
+  distanceFt: number;
+  /** Column G — a typed floor (e.g. the breaker on a transformer primary). Blank = the rating of the item fed. */
+  floorA?: number;
+  /** The item fed's rating on the schedule, resolved when the row was read so the engine can size without the schedule. */
+  ratingA?: number;
+  /** Volts and phases of the item fed (a transformer takes the FROM item's volts, or the service voltage). */
+  voltage: number;
+  phases: 1 | 3;
+  /** Column I — parallel sets typed; blank = the engine chooses. */
+  sets?: number;
+  /** Column K — conductor override, estimator spelling ("350 kcmil"). */
+  conductorOverride?: string;
+  /** Column P — conduit override, kept in the intake's own spelling; the engine sizes conduit itself. */
+  conduitOverride?: string;
 }
 
 /**

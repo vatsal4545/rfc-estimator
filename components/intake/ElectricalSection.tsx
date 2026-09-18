@@ -2,7 +2,8 @@
 
 import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
-import type { InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
+import { feederFloorA } from "@/lib/calc/chain";
+import type { DistributionFeeder, InstallMethod, Material, QuickEstimateInput, Terrain } from "@/lib/calc/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
 import type { StickyPath } from "@/lib/intake/rebuild";
 import { feederOutOfScope, feederScopeNote } from "@/lib/interconnection";
@@ -14,9 +15,10 @@ import { InterconnectionSection } from "../IntakeTab";
 import { Field, Grid, Pill, Section, inputCls, selectCls } from "../ui";
 import { useRebuild } from "./useRebuild";
 
-// 3 · Electrical — the intake's Electrical tab (3.6.0): the sizing basis, the
+// 3 · Electrical — the intake's Electrical tab (3.7.0): the sizing basis, the
 // charger-run table (one row per unit — DC and Level 2 alike), the service and
-// switchgear, the Rule 29 block and the distribution schedule. Inputs are the
+// switchgear, the Rule 29 block, the distribution schedule and, since 3.7.0,
+// the feeders between the items on it (block I). Inputs are the
 // Quick Estimate's; the tables are the engine's sizing, live.
 
 const th = "px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-500 whitespace-nowrap";
@@ -69,7 +71,34 @@ export function ElectricalSection() {
 
   const dcRows = result.rows.filter((r) => !r.synthetic && r.category === "DCFC");
   const l2Rows = result.rows.filter((r) => !r.synthetic && r.category === "L2");
-  const svc = result.rows.filter((r) => r.synthetic);
+  const svc = result.rows.filter((r) => r.synthetic && !r.loadTypeId.startsWith("FDR"));
+  // Block I — the feeders between the items on the schedule: the engine's rows (auto pair or typed) and the typed register behind them.
+  const feederRows = result.rows.filter((r) => r.synthetic && r.loadTypeId.startsWith("FDR"));
+  const typedFeeders: DistributionFeeder[] = chain?.feeders ?? [];
+  const scheduleItems: { name: string; type: string; volts: number | null; phases: number | null; ratingA: number | null }[] = project.intake?.distributionSchedule?.length
+    ? project.intake.distributionSchedule.map((r) => ({ name: r.item, type: r.type, volts: r.volts, phases: r.phases, ratingA: r.ratingA }))
+    : result.panel.suggestedGear
+        .filter((g) => g.qty > 0)
+        .map((g) => ({ name: `${g.item} ${g.size}`.trim(), type: g.item, volts: Number(String(g.voltage).replace(/[^\d.]/g, "")) || null, phases: 3, ratingA: /a$/i.test(g.size.trim()) ? Number(g.size.replace(/[^\d.]/g, "")) || null : null }));
+  const setFeeders = (feeders: DistributionFeeder[]) =>
+    setSetup({
+      serviceChain: {
+        ...(chain ?? { enabled: true, material: s.feederMaterial, utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }),
+        ...(feeders.length ? { feeders } : { feeders: undefined }),
+      },
+    });
+  /** Volts, phases and the floor of a feeder come from the item it feeds — a transformer takes the FROM item's volts, else the service voltage. */
+  const resolveFeeder = (f: DistributionFeeder): DistributionFeeder => {
+    const to = scheduleItems.find((x) => x.name.trim().toLowerCase() === f.to.trim().toLowerCase());
+    const from = scheduleItems.find((x) => x.name.trim().toLowerCase() === f.from.trim().toLowerCase());
+    const serviceVolts = project.intake?.existingServiceVoltage ?? 480;
+    const voltage = (/^transformer$/i.test(to?.type ?? "") ? (from?.volts ?? serviceVolts) : to?.volts) ?? serviceVolts;
+    return { ...f, voltage, phases: to?.phases === 1 ? 1 : 3, ...(to?.ratingA ? { ratingA: to.ratingA } : { ratingA: undefined }) };
+  };
+  const setFeeder = (i: number, patch: Partial<DistributionFeeder>) => setFeeders(typedFeeders.map((f, k) => (k === i ? resolveFeeder({ ...f, ...patch }) : f)));
+  const addFeeder = () => setFeeders([...typedFeeders, resolveFeeder({ from: scheduleItems[0]?.name ?? "", to: scheduleItems[1]?.name ?? "", distanceFt: 0, voltage: 480, phases: 3 })]);
+  const removeFeeder = (i: number) => setFeeders(typedFeeders.filter((_, k) => k !== i));
+  const optNum = (v: string) => (v === "" ? undefined : Number(v));
   const bus480 = result.panel.bus480;
   const bus208 = result.panel.bus208;
   const lineNo = (loadTypeId: string) => {
@@ -317,6 +346,103 @@ export function ElectricalSection() {
           </div>
         )}
         {cabinets && <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">Distributed system: the cabinets&apos; AC feeders are sized here; the cabinet-to-dispenser DC runs are not in the takeoff yet and stay blank on the intake (rows 174–205).</div>}
+      </Section>
+
+      <Section
+        title="Distribution feeders — between the items on the schedule"
+        subtitle="The wire between the boxes (intake 3.7.0 Electrical block I, rows 242–253), priced into the wire line on both sides. Nothing typed = the engine's switchgear → transformer → sub-panel pair. Type the site's own feeders to replace it: the floor is the rating of the item fed unless you type one, the engine sizes at floor ÷ 1.25 the way the sheet does, and the sheet reads the conductor and sets as overrides."
+      >
+        {feederRows.length === 0 && typedFeeders.length === 0 ? (
+          <div className="text-sm text-zinc-500">No feeders to price: a single-voltage site with no step-down transformer has none between the boxes. Add one below if the schedule has a panel or remote disconnect fed by its own run.</div>
+        ) : (
+          <div className={wrap}>
+            <table className={table}>
+              <thead className={theadCls}>
+                <tr>
+                  <th className={th}>Feeder</th>
+                  <th className={thNum}>Distance (ft)</th>
+                  <th className={thNum}>Floor (A)</th>
+                  <th className={th}>Conductor</th>
+                  <th className={thNum}>Sets</th>
+                  <th className={th}>Conduit</th>
+                  <th className={thNum}>Cost</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {feederRows.map((r) => (
+                  <tr key={r.id}>
+                    <td className={td}>{r.location}</td>
+                    <td className={tdNum}>{num(r.oneWayDistFt)}</td>
+                    <td className={tdNum}>{num(Math.ceil(r.designAmps * s.continuousLoadFactor))}</td>
+                    <td className={td}>
+                      {r.selectedWire} {r.material}
+                    </td>
+                    <td className={tdNum}>{num(r.resolvedRunsPerUnit)}</td>
+                    <td className={td}>{r.conduitSize}</td>
+                    <td className={tdNum}>{money(r.rowTotal)}</td>
+                  </tr>
+                ))}
+                {typedFeeders.map((f, i) =>
+                  feederRows.some((r) => r.location === `${f.from.trim() || "?"} → ${f.to.trim() || "?"}`) ? null : (
+                    <tr key={`unsized-${i}`} className="text-amber-800 dark:text-amber-300">
+                      <td className={td}>
+                        {f.from || "?"} → {f.to || "?"}
+                      </td>
+                      <td className={tdNum}>{num(f.distanceFt)}</td>
+                      <td className={tdNum}>{feederFloorA(f) > 0 ? num(feederFloorA(f)) : "—"}</td>
+                      <td className={td} colSpan={4}>
+                        {feederFloorA(f) <= 0 ? "no floor — the item fed is not on the schedule with a rating; type a floor" : f.distanceFt <= 0 ? "no distance — not priced" : "not sized"}
+                      </td>
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {chain && feederRows.length > 0 && chain.material !== s.feederMaterial && (
+          <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">
+            The sheet prices block I in the site material ({s.feederMaterial}); the estimator&apos;s feeder segments are {chain.material}, so the fill leaves their conductors to the sheet. Set the service-chain material on the Setup tab to {s.feederMaterial} for the two to price alike.
+          </div>
+        )}
+        <datalist id="distribution-feeder-items">
+          {scheduleItems.map((x) => (
+            <option key={x.name} value={x.name} />
+          ))}
+        </datalist>
+        <div className="mt-4 space-y-3">
+          {typedFeeders.map((f, i) => (
+            <Grid cols={3} key={i}>
+              <Field label="From" hint="item or board it runs from">
+                <input className={inputCls} list="distribution-feeder-items" value={f.from} onChange={(e) => setFeeder(i, { from: e.target.value })} />
+              </Field>
+              <Field label="To" hint={f.ratingA ? `${num(f.ratingA)} A · ${num(f.voltage)} V — sets the floor` : "item on the schedule it feeds"}>
+                <input className={inputCls} list="distribution-feeder-items" value={f.to} onChange={(e) => setFeeder(i, { to: e.target.value })} />
+              </Field>
+              <Field label="Distance (ft)">
+                <input type="number" className={inputCls} value={f.distanceFt || ""} onChange={(e) => setFeeder(i, { distanceFt: Number(e.target.value) || 0 })} />
+              </Field>
+              <Field label="Floor (A)" hint="blank = the item's rating">
+                <input type="number" className={inputCls} placeholder={f.ratingA ? String(f.ratingA) : "type one"} value={f.floorA ?? ""} onChange={(e) => setFeeder(i, { floorA: optNum(e.target.value) })} />
+              </Field>
+              <Field label="Sets" hint="blank = engine chooses">
+                <input type="number" className={inputCls} placeholder="auto" value={f.sets ?? ""} onChange={(e) => setFeeder(i, { sets: optNum(e.target.value) })} />
+              </Field>
+              <Field label="Conductor override" hint='e.g. "250 kcmil", "2/0 AWG"'>
+                <div className="flex gap-2">
+                  <input className={inputCls} placeholder="auto" value={f.conductorOverride ?? ""} onChange={(e) => setFeeder(i, { conductorOverride: e.target.value || undefined })} />
+                  <button type="button" className="shrink-0 rounded-md border border-zinc-200 px-2 text-xs text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={() => removeFeeder(i)} title="Remove this feeder">
+                    ✕
+                  </button>
+                </div>
+              </Field>
+            </Grid>
+          ))}
+          <button type="button" className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800" onClick={addFeeder}>
+            + Add a feeder
+          </button>
+          {typedFeeders.length > 0 && <div className="text-xs text-zinc-500">Typed feeders replace the engine&apos;s guessed pair. Remove every row to go back to it.</div>}
+        </div>
       </Section>
     </div>
   );

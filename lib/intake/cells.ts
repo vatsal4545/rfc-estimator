@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.6.0 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.7.0 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -7,16 +7,16 @@
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.6.0",
+  version: "3.7.0",
   /**
    * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
-   * changed cells, and moved at 3.2.0, 3.5.0 and 3.6.0 — so it is not a
-   * reliable content digest. The version string is what actually gates a fill.
+   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0 and 3.7.0 — so it is not
+   * a reliable content digest. The version string is what actually gates a fill.
    */
-  contentHash: "3ae762acca5ac36d",
-  file: "EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx",
+  contentHash: "a9ba811854921b2d",
+  file: "EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -89,8 +89,10 @@ export const EQUIPMENT_TABLE = {
  * the Equipment tab, block C dispenser runs (power cabinets only), block D
  * service and switchgear, block E the distribution schedule, block F the
  * utility interconnection (Rule 29) block, block G retained infrastructure
- * (auto, from the Existing tab) and block H the site's conductor sizing table
- * (auto). 3.5.0 moved nothing — it locked every non-blue cell.
+ * (auto, from the Existing tab), block H the site's conductor sizing table
+ * (auto) and, since 3.7.0, block I the distribution feeders between the items
+ * on the schedule. 3.5.0 moved nothing — it locked every non-blue cell; 3.6.0
+ * and 3.7.0 only appended.
  */
 export const ELECTRICAL_CELLS = {
   // Block A — sizing basis
@@ -210,6 +212,40 @@ export const DISTRIBUTION_TABLE = {
   costBasis: "K",
   quotedCost: "L",
 } as const;
+
+/**
+ * Block I (3.7.0) — the distribution feeders: the wire between the boxes on
+ * the schedule that nothing else carried until now (existing board to the new
+ * EV panel, breaker to transformer primary, transformer secondary to the
+ * Level 2 panel, panel to panel). One row per feeder; FROM and TO are items
+ * on the schedule (column A of block E — the dropdowns list A165:A176), the
+ * floor is the rating of the item fed unless column G types one, and the
+ * sheet sizes conductor, ground, conduit and material itself. Its material
+ * total (B256) joins the wire line on the Pricing tab, so the estimator's
+ * feeder segments must land here for the two to agree.
+ */
+export const DISTRIBUTION_FEEDER_TABLE = {
+  firstRow: 242,
+  lastRow: 253,
+  from: "B",
+  to: "C",
+  floorA: "G",
+  distanceFt: "H",
+  sets: "I",
+  conductorOverride: "K",
+  conduitOverride: "P",
+  /** Auto columns, read back when the file carries cached values. */
+  autoVolts: "D",
+  autoPhases: "E",
+  autoRatingA: "F",
+  autoConductor: "J",
+  autoConduit: "O",
+  material: "Q",
+  verdict: "R",
+} as const;
+
+/** Block I's summary rows (all formulas). */
+export const DISTRIBUTION_FEEDER_CELLS = { count: "B255", material: "B256", distanceFt: "B257", verdict: "B258", coverage: "B259" } as const;
 
 /** The Rule 29 block's "application submitted" dropdown since 3.3.0. */
 export const APPLICATION_SUBMITTED_OPTIONS = ["Yes", "No", "In preparation"] as const;

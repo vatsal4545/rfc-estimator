@@ -1,7 +1,7 @@
 import { effectiveInstallMethod } from "./install";
 import type { PanelSchedule } from "./panel";
 import { WIRE_TABLE } from "./tables";
-import type { ConduitMaterial, LoadType, Material, Setup, TakeoffRowInput } from "./types";
+import type { ConduitMaterial, DistributionFeeder, LoadType, Material, Setup, TakeoffRowInput } from "./types";
 
 const SQRT3 = Math.sqrt(3);
 
@@ -28,6 +28,18 @@ function autoRuns(connectedAmps: number, material: Material, contFactor: number)
 export interface ServiceChainResult {
   loadTypes: LoadType[];
   rows: TakeoffRowInput[];
+}
+
+/** Load-type id (and `chain-` row id suffix) of typed distribution feeder k (0-based) — how the intake fill finds its row again. */
+export function feederSegmentId(index: number, feeder: DistributionFeeder): string {
+  return `FDR ${index + 1} ${feeder.from.trim() || "?"} → ${feeder.to.trim() || "?"}`;
+}
+
+/** The floor the feeder is sized to: the typed one, else the item fed's rating on the schedule. */
+export function feederFloorA(feeder: DistributionFeeder): number {
+  const typed = feeder.floorA ?? 0;
+  if (typed > 0) return typed;
+  return feeder.ratingA ?? 0;
 }
 
 /**
@@ -65,23 +77,24 @@ export function buildServiceChain(
     connectedAmps: number,
     ocpdA: number,
     distFt: number,
+    typed?: { phases: 1 | 3; sets?: number; sizeOverride?: string },
   ) {
     if (connectedAmps <= 0 || distFt <= 0) return;
-    const runs = autoRuns(connectedAmps, mat, cf);
+    const runs = typed?.sets && typed.sets > 0 ? typed.sets : autoRuns(connectedAmps, mat, cf);
     loadTypes.push({
       id,
       category: "Feeder",
       voltage,
-      phases: 3,
+      phases: typed?.phases ?? 3,
       kwPerPort: 0,
       runsPerUnit: runs,
-      conductorsPerRun: 4,
+      conductorsPerRun: typed?.phases === 1 ? 3 : 4,
       feederOcpdA: ocpdA,
       designAmpsOverride: connectedAmps,
       hasDataCable: false,
       materialOverride: mat,
       runsAreParallel: true,
-      notes: "Auto-generated service chain segment",
+      notes: typed ? "Distribution feeder from the schedule (intake block I)" : "Auto-generated service chain segment",
     });
     rows.push({
       id: `chain-${id}`,
@@ -89,8 +102,28 @@ export function buildServiceChain(
       location,
       units: 1,
       oneWayDistFt: distFt,
+      ...(typed?.sets && typed.sets > 0 ? { runsPerUnitOverride: typed.sets } : {}),
+      ...(typed?.sizeOverride ? { sizeOverride: typed.sizeOverride } : {}),
       conduitOverride: chainConduit,
       synthetic: true,
+    });
+  }
+
+  // Typed distribution feeders (intake 3.7.0 block I) replace the guessed
+  // switchgear → transformer → sub-panel pair. Each is sized the way the
+  // sheet sizes it: the floor is the 125 %-inclusive figure (the rating of
+  // the item fed, or the typed floor), so the design current is floor / cf
+  // and the engine's own 125 % lands back on the floor; the OCPD is the next
+  // standard device at or above it.
+  const typedFeeders = (cfg.feeders ?? []).filter((f) => f.to.trim() || f.from.trim() || f.distanceFt > 0);
+  function typedSegments() {
+    typedFeeders.forEach((f, i) => {
+      const floor = feederFloorA(f);
+      segment(feederSegmentId(i, f), `${f.from.trim() || "?"} → ${f.to.trim() || "?"}`, f.voltage > 0 ? f.voltage : 480, floor / cf, 0, f.distanceFt, {
+        phases: f.phases === 1 ? 1 : 3,
+        sets: f.sets,
+        sizeOverride: f.conductorOverride,
+      });
     });
   }
 
@@ -104,7 +137,9 @@ export function buildServiceChain(
       panel.bus480.suggestedBusA,
       cfg.utilityToSwitchgearFt,
     );
-    if (panel.transformer && panel.bus208) {
+    if (typedFeeders.length) {
+      typedSegments();
+    } else if (panel.transformer && panel.bus208) {
       const primaryFla = (panel.transformer.suggestedKva * 1000) / (480 * SQRT3);
       segment(
         "FDR Switchgear→TX",
@@ -134,6 +169,7 @@ export function buildServiceChain(
       panel.bus208.suggestedBusA,
       cfg.utilityToSwitchgearFt,
     );
+    if (typedFeeders.length) typedSegments();
   }
 
   return { loadTypes, rows };

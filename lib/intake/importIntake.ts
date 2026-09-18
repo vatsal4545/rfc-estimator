@@ -10,7 +10,8 @@
 // except where the intake carries a quote the estimator has no table for.
 
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
-import type { EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
+import { feederFloorA } from "../calc/chain";
+import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
   CONNECTOR_KEYS,
   RETAIN_ELEMENTS,
@@ -33,7 +34,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
 import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
@@ -353,6 +354,47 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     distributionItems.push({ name: `${item}${type ? ` — ${type}` : ""}${rating ? ` ${rating} A` : ""} (quoted)`, qty: 1, unitCost: cost });
   }
   if (distributionItems.length) mapped.push(`Distribution equipment: ${distributionItems.length} quoted item(s), ${money(distributionItems.reduce((s, i) => s + i.unitCost, 0))} into the wires and peripherals line`);
+  // Block I (3.7.0) — the feeders between the items on the schedule. Each row
+  // is resolved against the schedule the way the sheet resolves it (volts and
+  // phases of the item fed — a transformer takes the FROM item's volts, else
+  // the service voltage; the floor is the item fed's rating unless column G
+  // types one) and handed to the engine as a typed feeder, which replaces the
+  // chain's guessed switchgear → transformer → sub-panel pair and prices at
+  // the same rates the sheet's B256 does.
+  const FD = DISTRIBUTION_FEEDER_TABLE;
+  const feeders: DistributionFeeder[] = [];
+  const scheduleByItem = new Map(distributionSchedule.map((row) => [row.item.trim().toLowerCase(), row]));
+  const serviceVolts = num("Project", "B29");
+  for (let r = FD.firstRow; r <= FD.lastRow; r++) {
+    const from = str("Electrical", `${FD.from}${r}`);
+    const to = str("Electrical", `${FD.to}${r}`);
+    const distanceFt = num("Electrical", `${FD.distanceFt}${r}`) ?? 0;
+    if (!from && !to && distanceFt <= 0) continue;
+    const toRow = scheduleByItem.get(to.toLowerCase());
+    const fromRow = scheduleByItem.get(from.toLowerCase());
+    const feedsTransformer = /^transformer$/i.test(toRow?.type ?? "");
+    const voltage = (feedsTransformer ? (fromRow?.volts ?? serviceVolts) : toRow?.volts) ?? serviceVolts ?? 480;
+    const floorA = num("Electrical", `${FD.floorA}${r}`);
+    const sets = num("Electrical", `${FD.sets}${r}`);
+    const conductor = str("Electrical", `${FD.conductorOverride}${r}`);
+    const conduit = str("Electrical", `${FD.conduitOverride}${r}`);
+    const feeder: DistributionFeeder = {
+      from,
+      to,
+      distanceFt,
+      voltage,
+      phases: toRow?.phases === 1 ? 1 : 3,
+      ...(toRow?.ratingA ? { ratingA: toRow.ratingA } : {}),
+      ...(floorA && floorA > 0 ? { floorA } : {}),
+      ...(sets && sets > 0 ? { sets } : {}),
+      ...(conductor ? { conductorOverride: conductorFromIntake(conductor) } : {}),
+      ...(conduit ? { conduitOverride: conduit } : {}),
+    };
+    feeders.push(feeder);
+    if (feederFloorA(feeder) <= 0) warnings.push(`Distribution feeder row ${r} (${from || "?"} → ${to || "?"}): the item fed is not on the schedule with a rating and no floor was typed — not sized or priced.`);
+    else if (distanceFt <= 0) warnings.push(`Distribution feeder row ${r} (${from || "?"} → ${to || "?"}): no distance — not priced.`);
+  }
+  if (feeders.length) mapped.push(`Distribution feeders: ${feeders.length} row(s), ${feeders.reduce((t, x) => t + x.distanceFt, 0)} ft between the items on the schedule — sized by the engine at the sheet's floors, priced in the wire line`);
 
   // ---- Construction -------------------------------------------------------
   const crewDays = num("Construction", "B5");
@@ -713,6 +755,9 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     ...(quickBase.setup.serviceChain ?? { enabled: false, material: "Al", utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }),
     // The utility builds the transformer-to-switchgear run under its EV infrastructure rule, or the existing feeder stays — either way not our scope.
     utilityToSwitchgearFt: feederOutOfScope(feederBy) ? 0 : (txToSwitchgear ?? quickBase.setup.serviceChain?.utilityToSwitchgearFt ?? 25),
+    // The sheet has ONE conductor material (B6) and prices block I's feeders in it — the chain follows.
+    ...(material === "Al" || material === "Cu" ? { material } : {}),
+    ...(feeders.length ? { feeders } : {}),
   };
   if (feederBy.startsWith("Utility")) mapped.push("Service feeder provided by the utility — the transformer-to-switchgear run is left out of our scope");
   else if (feederBy.startsWith("Existing")) mapped.push("Service feeder retained — the transformer-to-switchgear run is neither sized nor costed");

@@ -109,3 +109,68 @@ describe("Service chain — L2-only site", () => {
     expect(r.panel.transformer).toBeUndefined();
   });
 });
+
+// Intake 3.7.0 block I: feeders typed between the items on the distribution
+// schedule replace the guessed switchgear → transformer → sub-panel pair and
+// size the way the sheet sizes them — at the floor the item fed sets.
+describe("Service chain — typed distribution feeders (intake 3.7.0 block I)", () => {
+  const base = defaultProject();
+  const project: Project = {
+    ...base,
+    takeoff: generateTakeoffRows([
+      { loadTypeId: "DCFC 240kW", count: 5 },
+      { loadTypeId: "L2 Dual 40A", count: 6 },
+    ]),
+    setup: {
+      ...base.setup,
+      serviceChain: {
+        enabled: true,
+        material: "Cu",
+        utilityToSwitchgearFt: 25,
+        switchgearToTransformerFt: 15,
+        transformerToSubpanelFt: 15,
+        feeders: [
+          // Floor from the item fed's schedule rating; the engine picks the sets.
+          { from: "Existing MSB", to: "EV distribution panel", distanceFt: 60, voltage: 480, phases: 3, ratingA: 400 },
+          // A typed floor (breaker on a transformer primary) wins over the rating; sets and conductor typed.
+          { from: "EV distribution panel", to: "Transformer 112.5 kVA", distanceFt: 25, voltage: 480, phases: 3, ratingA: 0, floorA: 175, sets: 1, conductorOverride: "2/0 AWG" },
+          // No floor anywhere — the sheet says "enter the item fed"; the engine cannot size it either.
+          { from: "Transformer 112.5 kVA", to: "Mystery box", distanceFt: 40, voltage: 208, phases: 3 },
+        ],
+      },
+    },
+    peripherals: { ...base.peripherals, useAutoGear: true },
+  };
+  const r = computeEstimate(project);
+  const fdr = r.rows.filter((row) => row.synthetic && row.loadTypeId.startsWith("FDR"));
+
+  it("replaces the auto pair with one segment per typed feeder that has a floor, keeping the service lateral", () => {
+    expect(r.rows.find((row) => row.id === "chain-SVC Utility→Switchgear")).toBeDefined();
+    expect(r.rows.find((row) => row.id === "chain-FDR Switchgear→TX")).toBeUndefined();
+    expect(r.rows.find((row) => row.id === "chain-FDR TX→Sub-panel")).toBeUndefined();
+    expect(fdr.map((row) => row.loadTypeId)).toEqual(["FDR 1 Existing MSB → EV distribution panel", "FDR 2 EV distribution panel → Transformer 112.5 kVA"]);
+  });
+
+  it("sizes at the floor: design current = floor / 1.25 so the engine's 125 % lands back on the floor, OCPD = the floor", () => {
+    const f1 = fdr[0];
+    expect(f1.designAmps).toBeCloseTo(400 / 1.25, 6);
+    expect(f1.ocpdA).toBe(400);
+    expect(f1.oneWayDistFt).toBe(60);
+    expect(f1.material).toBe("Cu");
+    expect(f1.rowTotal).toBeGreaterThan(0);
+  });
+
+  it("honours a typed floor, typed sets and a typed conductor", () => {
+    const f2 = fdr[1];
+    expect(f2.designAmps).toBeCloseTo(175 / 1.25, 6);
+    expect(f2.ocpdA).toBe(175);
+    expect(f2.resolvedRunsPerUnit).toBe(1);
+    expect(f2.selectedWire).toBe("2/0 AWG");
+  });
+
+  it("survives a Quick Estimate rebuild", async () => {
+    const { buildQuickProject, defaultQuickInput, HARDWARE_ALLOWANCE } = await import("../autoplan");
+    const rebuilt = buildQuickProject({ ...defaultQuickInput(), lines: [{ loadTypeId: "DCFC 240kW", count: 2 }] }, project, "t", HARDWARE_ALLOWANCE);
+    expect(rebuilt.setup.serviceChain?.feeders).toHaveLength(3);
+  });
+});

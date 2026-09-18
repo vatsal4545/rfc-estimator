@@ -473,6 +473,8 @@ export function buildQuickProject(
     utilityToSwitchgearFt: p.setup.serviceChain?.utilityToSwitchgearFt ?? 25,
     switchgearToTransformerFt: p.setup.serviceChain?.switchgearToTransformerFt ?? 15,
     transformerToSubpanelFt: p.setup.serviceChain?.transformerToSubpanelFt ?? 15,
+    // Typed distribution feeders (intake block I) are the site's, not the plan's — they survive a rebuild.
+    ...(p.setup.serviceChain?.feeders?.length ? { feeders: p.setup.serviceChain.feeders } : {}),
   };
   // Hybrid digs only the service section. The step-down TX and 208V
   // sub-panel legs exist only on mixed-voltage sites (chain.ts builds them

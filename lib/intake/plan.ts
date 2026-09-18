@@ -1,4 +1,4 @@
-// Plan the fill of the CEO's EVSE Project Intake 3.6.0 from a project — which
+// Plan the fill of the CEO's EVSE Project Intake 3.7.0 from a project — which
 // cell gets which value. Pure and light (no zip code), so the intake tabs can
 // preview it live; fillIntake.ts applies it to the template.
 //
@@ -13,6 +13,7 @@
 // finish those cells.
 
 import { GPR_ITEM_NAME } from "../calc/autoplan";
+import { feederFloorA, feederSegmentId } from "../calc/chain";
 import { effectiveInstallMethod } from "../calc/install";
 import type { EstimateResult, GearSelection, Project } from "../calc/types";
 import { CONNECTOR_KEYS, PROJECT_TYPE_TEXT, RETAIN_ELEMENTS, capacityOf, hasExistingChargers, keepsExistingService } from "../existing";
@@ -28,6 +29,7 @@ import {
   CONSTRUCTION_CELLS,
   DEAL_CELLS,
   DISPENSER_RUN_TABLE,
+  DISTRIBUTION_FEEDER_TABLE,
   DISTRIBUTION_TABLE,
   ELECTRICAL_CELLS,
   EQUIPMENT_SINGLES,
@@ -54,6 +56,7 @@ import {
   SITE_WORKS_COLS,
   SITE_WORKS_ROWS,
   VERSION_CELLS,
+  INTAKE_CHARGER_RUN_SIZES,
   INTAKE_FEEDER_SIZES,
   conductorToIntake,
   conduitToIntake,
@@ -565,6 +568,70 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   if (per.transformerPadCost > 0) distributionRow("Transformer pad (customer-furnished, utility sets the transformer)", "Other", 1, undefined, undefined, "Utility primary", mainName);
   if (per.cableWellCost > 0) distributionRow("Cable well / secondary handhole", "Other", 1, undefined, undefined, "Utility transformer", mainName);
   if (per.pullBoxQty > 0) distributionRow("Utility pull box, traffic-rated", "Other", per.pullBoxQty, undefined, undefined, "Utility transformer", mainName);
+
+  // Block I (3.7.0) — the feeders between the items on the schedule. The
+  // sheet prices this block into the Pricing tab's wire line, so the
+  // estimator's feeder segments must land here for the two to agree. Typed
+  // feeders (imported block I, or the app's own table) travel as typed; else
+  // the chain's switchgear → transformer → sub-panel pair is written against
+  // the names block E just used, with the estimator's sizing current as the
+  // floor (a transformer's schedule rating is kVA, which the sheet cannot
+  // size on) and its conductor as the override — the same conductor at the
+  // same floor prices the same on both sides.
+  const cf = s.continuousLoadFactor;
+  const F = DISTRIBUTION_FEEDER_TABLE;
+  let fRow = F.firstRow;
+  const feederRow = (from: string, to: string, distanceFt: number, floorA: number | undefined, sets: number | undefined, conductor: string | undefined, conduit: string | undefined) => {
+    if (fRow > F.lastRow) return;
+    put("Electrical", `${F.from}${fRow}`, from);
+    put("Electrical", `${F.to}${fRow}`, to);
+    put("Electrical", `${F.floorA}${fRow}`, floorA && floorA > 0 ? floorA : undefined);
+    put("Electrical", `${F.distanceFt}${fRow}`, distanceFt > 0 ? distanceFt : undefined);
+    put("Electrical", `${F.sets}${fRow}`, sets && sets > 0 ? sets : undefined);
+    put("Electrical", `${F.conductorOverride}${fRow}`, conductor);
+    put("Electrical", `${F.conduitOverride}${fRow}`, conduit);
+    fRow++;
+  };
+  const typedFeeders = (s.serviceChain?.feeders ?? []).filter((x) => x.to.trim() || x.from.trim() || x.distanceFt > 0);
+  const feederSeg = (loadTypeId: string) => result.rows.find((r) => r.synthetic && r.loadTypeId.startsWith("FDR") && r.loadTypeId === loadTypeId);
+  const feederSegs = result.rows.filter((r) => r.synthetic && r.loadTypeId.startsWith("FDR"));
+  // The sheet has ONE conductor material (B6) and reads every size in block I
+  // as that material. An estimator conductor sized in the other material would
+  // be misread — its ampacity and price both wrong on the sheet — so it is
+  // written only when the two agree; otherwise the sheet sizes its own at the
+  // floor and the report says why the two sides price differently.
+  const feederMaterialsAgree = !s.serviceChain || s.serviceChain.material === s.feederMaterial;
+  if (feederSegs.length && !feederMaterialsAgree) {
+    warnings.push(`Block I prices its feeders in the site material (Electrical B6 = ${s.feederMaterial}); the estimator's feeder segments are ${s.serviceChain!.material}, so their conductors were not written as overrides and the sheet sizes its own. Set the service-chain material to ${s.feederMaterial} for the two to price alike.`);
+  }
+  const engineConductor = (seg: { selectedWire: string } | undefined) => (seg && feederMaterialsAgree ? snapConductorToIntake(seg.selectedWire, INTAKE_CHARGER_RUN_SIZES).size : undefined);
+  if (typedFeeders.length) {
+    typedFeeders.forEach((x, i) => {
+      const seg = feederSeg(feederSegmentId(i, x));
+      const conductor = x.conductorOverride ? snapConductorToIntake(x.conductorOverride).size : engineConductor(seg);
+      feederRow(x.from, x.to, x.distanceFt, x.floorA, x.sets ?? seg?.resolvedRunsPerUnit, conductor, x.conduitOverride);
+      if (feederFloorA(x) <= 0) warnings.push(`Distribution feeder ${i + 1} (${x.from || "?"} → ${x.to || "?"}): no floor — the item fed is not on the schedule with a rating and no floor was typed, so neither the estimator nor the sheet can size it (Electrical G${F.firstRow + i}).`);
+      else if (!(x.distanceFt > 0)) warnings.push(`Distribution feeder ${i + 1} (${x.from || "?"} → ${x.to || "?"}): no distance — not priced (Electrical H${F.firstRow + i}).`);
+    });
+    if (typedFeeders.length > F.lastRow - F.firstRow + 1) warnings.push(`${typedFeeders.length - (F.lastRow - F.firstRow + 1)} distribution feeder(s) beyond the intake's table were not written.`);
+  } else {
+    const txSeg = feederSeg("FDR Switchgear→TX");
+    const spSeg = feederSeg("FDR TX→Sub-panel");
+    // TO must be an item on block E as written — on an imported workbook that
+    // is the engineer's own schedule, so the pair names ITS transformer and
+    // panel rows (the sheet resolves volts, phases and rating from them), and
+    // runs from the item the engineer said feeds the transformer.
+    const typedByType = (re: RegExp) => typedSchedule.find((r) => re.test(r.type.trim()) || re.test(r.item.trim()));
+    const typedTx = typedByType(/^transformer$/i) ?? typedByType(/transformer|step.?down/i);
+    const typedSp = typedByType(/^(subpanel|sub-panel|panelboard|panel)$/i) ?? typedByType(/sub.?panel|panelboard/i);
+    const txTo = typedTx?.item ?? stepDownName;
+    const spTo = typedSp?.item ?? subPanelName;
+    const txFrom = typedTx ? (typedSchedule.find((r) => r.item.trim() && r.item.trim() === typedTx.fedFrom.trim())?.item ?? typedByType(/switchboard|switchgear|main board|msb/i)?.item ?? ic.pointOfConnection ?? mainName) : mainName;
+    if (txSeg && txTo) feederRow(txFrom, txTo, txSeg.oneWayDistFt, Math.ceil(txSeg.designAmps * cf), txSeg.resolvedRunsPerUnit, engineConductor(txSeg), undefined);
+    if (spSeg && txTo && spTo) feederRow(txTo, spTo, spSeg.oneWayDistFt, Math.ceil(spSeg.designAmps * cf), spSeg.resolvedRunsPerUnit, engineConductor(spSeg), undefined);
+    if (typedSchedule.length && (txSeg || spSeg) && (!typedTx || !typedSp)) warnings.push(`Block I: the imported schedule has no ${!typedTx ? "transformer" : "sub-panel"} row, so the estimator's ${!typedTx ? "switchgear → transformer" : "transformer → sub-panel"} feeder was written against the estimator's own name — the sheet cannot resolve its volts or rating; the typed floor in column G carries it.`);
+    if (!txSeg && !spSeg && typedSchedule.length) leftBlank.push(`Electrical block I distribution feeders (rows ${F.firstRow}–${F.lastRow}) — the imported schedule has items but no feeder rows were typed and the estimator has no step-down transformer to derive them from; every panel, transformer and remote disconnect needs one.`);
+  }
 
   // ---- Construction ---------------------------------------------------------
   put("Construction", CONSTRUCTION_CELLS.crewDays, f.laborBusinessDays);

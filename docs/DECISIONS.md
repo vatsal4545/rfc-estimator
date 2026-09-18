@@ -83,3 +83,46 @@ on one row: the first is written and the report says so.
 rental lines are ever needed on the sheet, that is a template change on the
 CEO's side — unlock the name cells in Construction!A39:A52, or add blank rows
 to the table — after which the app can write any rental name.
+
+## 2026-09-18 — Intake 3.7.0: distribution feeders priced (Electrical block I)
+
+**Fact of the template.** 3.7.0 (released 2026-09-15, content hash
+a9ba811854921b2d) appends one block and moves nothing: Electrical rows
+239–259, "I · DISTRIBUTION FEEDERS", twelve rows (242–253) of feeder between
+the items on the distribution schedule. Blue inputs per row: B FROM, C TO
+(both dropdowns over A165:A176), G floor A override, H distance, I sets,
+K conductor override (WIRE_SIZE), P conduit override (PVC_SIZE). The sheet
+resolves volts / phases / rating from the item fed (a transformer takes the
+FROM item's volts, else Project!B29), sizes the conductor from block H's
+site table at floor ÷ sets, checks drop at floor ÷ 1.25, and totals material
+in B256, which `Pricing!B10` now adds to the wire line. Until now nothing in
+the workbook priced the wire between the boxes. The nine formulas the 3.6.0
+release saved one parenthesis short are still short in the published 3.7.0;
+the app's copies append the missing `)` (XML patch, nothing else touched).
+
+**Behaviour.** The estimator already had the two feeders every mixed-voltage
+site has — the chain's switchgear → step-down transformer and transformer →
+sub-panel segments. The fill now writes them into block I against the names
+block E used (on an imported workbook, the engineer's own transformer and
+panel rows), with the estimator's sizing current as the floor in column G (a
+transformer's schedule rating is kVA, which the sheet cannot size on) and its
+conductor and sets as overrides — the same conductor at the same floor
+prices the same on both sides. Typed rows travel the other way: the importer
+reads block I, resolves each row against the schedule, and hands them to the
+chain as `setup.serviceChain.feeders`, which REPLACE the guessed pair and are
+sized the way the sheet sizes them (design current = floor ÷ 1.25, OCPD =
+next standard device at or above the floor). The 3 · Electrical section shows
+the engine's feeder rows and a small register to type the site's own.
+
+**Material.** The sheet has ONE conductor material (Electrical B6) and reads
+every size in block I as that material. The importer now sets the chain's
+material from B6. When a project's chain material differs from its site
+material (the app's default is an aluminium chain under copper branches), the
+fill does not write the estimator's feeder conductor as an override — an
+aluminium size would be misread as copper, ampacity and price both wrong —
+and the report says the two sides price differently until the service-chain
+material is set to match.
+
+**Verified.** 458 tests; Hilton Rev C (3.6.0 file) imports, fills a 3.7.0
+with both feeders OK against Jesse's schedule rows, 2,190 formulas recalc
+with zero errors, and import → fill → import → fill is stable to the cent.

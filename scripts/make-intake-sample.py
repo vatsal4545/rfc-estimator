@@ -3,7 +3,7 @@
 replacement-site scenario and save it as the importer's test fixture:
 
     python3 scripts/make-intake-sample.py
-    → lib/intake/__fixtures__/intake-sample-3.6.0.xlsx
+    → lib/intake/__fixtures__/intake-sample-3.7.0.xlsx
 
 Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, replacing a
 failing 2018 installation with twelve months of metered history, a Rule 29
@@ -16,8 +16,8 @@ import os
 import openpyxl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.6.0.xlsx")
-OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.6.0.xlsx")
+SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.0.xlsx")
+OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.7.0.xlsx")
 
 wb = openpyxl.load_workbook(SRC)
 
@@ -61,6 +61,12 @@ elec.update({
     "B155": "Utility — EV infrastructure rule", "B157": 40,
     "A165": "EVSE disconnects", "B165": "EVSE disconnect", "C165": 4, "D165": 480, "E165": 3, "F165": 600, "G165": "MSB",
     "H165": "TP5 cabinets", "I165": "Pad", "J165": "Zero Impact Energy", "K165": "Vendor quote", "L165": 12000,
+    "A166": "EV distribution panel", "B166": "Panelboard", "C166": 1, "D166": 480, "E166": 3, "F166": 400, "G166": "Existing MSB",
+    "H166": "EVSE disconnects", "I166": "Electrical room", "J166": "Zero Impact Energy", "K166": "Priced elsewhere in this workbook",
+    # Block I (3.7.0) — the feeders between the items on the schedule: the existing board to the new EV panel
+    # (floor = the panel's 400 A rating), and the panel to the disconnects in two typed sets of 350 KCMIL.
+    "B242": "Existing MSB", "C242": "EV distribution panel", "H242": 60,
+    "B243": "EV distribution panel", "C243": "EVSE disconnects", "H243": 25, "I243": 2, "K243": "350 KCMIL",
     "B185": "Added load to existing service", "B186": "Underground", "B187": 150, "B188": "No", "B191": 3500,
     "B192": "Unknown — design not yet submitted", "B195": "Unknown", "B197": "Yes", "B198": "Yes", "B199": "Yes", "B200": "Yes",
 })
@@ -117,7 +123,7 @@ ex["G69"] = "Two units down all month"
 ex.update({"B131": "No", "C131": "Yes", "D131": 0.55, "B132": "Yes", "C132": "Yes", "D132": 0.40,
            "B133": "Yes", "C133": "No", "D133": 0.03, "B134": "No", "C134": "Yes", "D134": 0.02})
 ex.update({"B174": 4, "B175": 4, "B176": 8, "B177": 4, "B178": 2, "B179": "Yes", "B180": "No", "B181": "No", "B182": 5})
-# Section I (3.6.0) — capacity of the existing service: a 320 kW measured peak (NEC 220.87), a spare position, utility told.
+# Section I (3.7.0) — capacity of the existing service: a 320 kW measured peak (NEC 220.87), a spare position, utility told.
 ex.update({"B192": 320, "B196": "Yes", "B197": "Yes"})
 put("Existing", ex)
 
