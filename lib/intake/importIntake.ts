@@ -12,7 +12,7 @@
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
 import { feederFloorA } from "../calc/chain";
 import { computeEstimate } from "../calc/engine";
-import { GEAR_LINE_KEY, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
+import { GEAR_LINE_KEY, engineDistributionSchedule, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
 import { withDesignSets } from "../calc/designFees";
 import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
@@ -37,7 +37,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, INTAKE_TEXT, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
 import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
@@ -752,6 +752,11 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     mapped.push("Switchgear retained on the Existing tab — the estimator prices a main breaker into the existing board, no switchboard, pad or gear bollards");
   }
   if (Object.keys(takeoffEdits).length) quickBase.takeoffEdits = takeoffEdits;
+  // The utility decides the customer-built substructures at Build (PG&E and
+  // SCE build the service under their EV rule; a POU has the customer pour
+  // the pad) — so it has to be on the project before the build, or a PG&E
+  // site comes home with a pad it never had.
+  if (utility) quickBase.setup.utility = utility;
   quickBase.setup.feederMaterial = material === "Al" ? "Al" : material === "Cu" ? "Cu" : quickBase.setup.feederMaterial;
   quickBase.setup.serviceChain = {
     ...(quickBase.setup.serviceChain ?? { enabled: false, material: "Al", utilityToSwitchgearFt: 25, switchgearToTransformerFt: 15, transformerToSubpanelFt: 15 }),
@@ -955,11 +960,22 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   project.existing = existing;
   project.overrides = overrides.length ? overrides : undefined;
   project = applyEquipmentSchedule(project, allowance);
+  // A schedule the app itself wrote before block E carried prices (every row
+  // "Priced elsewhere", no cost, the same items the engine generates today)
+  // is not the engineer's — drop it so the engine's priced rows take over.
+  if (distributionSchedule.length && distributionSchedule.every((r) => (r.quotedCost ?? 0) === 0 && (r.costBasis === INTAKE_TEXT.costBasisPricedElsewhere || r.costBasis === INTAKE_TEXT.byOthers))) {
+    const engineItems = new Set(engineDistributionSchedule(project, computeEstimate(project)).map((r) => r.item.trim()));
+    const imported = distributionSchedule.map((r) => r.item.trim());
+    if (imported.every((it) => engineItems.has(it))) {
+      project.intake = { ...project.intake!, distributionSchedule: undefined };
+      mapped.push(`Distribution schedule: the app's own ${imported.length} unpriced row(s) — regenerated with the estimator's catalog prices`);
+    }
+  }
   // The gear as the schedule prices it — replacing the engine's catalog gear,
   // never added on top of it. The register's own switchgear row wins when the
   // engineer typed one; and a schedule that merely repeats the engine's
   // catalog (an app-filled file coming home) adds nothing.
-  if (scheduledGear && scheduledGear.total > 0) {
+  if (scheduledGear && scheduledGear.total > 0 && project.intake?.distributionSchedule) {
     const registerRow = (project.overrides ?? []).find((o) => o.key === GEAR_LINE_KEY);
     const engineGear = computeEstimate(project).costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
     const detail = `${distributionSchedule.length} row(s), ${money(scheduledGear.total)} as priced${scheduledGear.filled.length ? ` (${scheduledGear.filled.length} unpriced row(s) at the estimator's catalog: ${scheduledGear.filled.map((r) => r.item).join("; ")})` : ""}`;

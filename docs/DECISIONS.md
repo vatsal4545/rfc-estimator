@@ -208,3 +208,19 @@ and does not match the current catalog everywhere.
 **Wire quotes.** The sheet prices conductor at RefData's locked $/ft; a wire
 quote can only reach the estimator (per-project $/ft on 3 · Electrical) and,
 opt-in, Overrides row 9. Yamashiro's rates set from Courtesy S1809768.
+
+## 2026-09-18 — Castro (I-271744) Rev B, and two importer rules
+
+- An intake the app filled before block E carried prices comes home with
+  six rows "Priced elsewhere" and no cost. The importer now recognises that
+  (every row unpriced, every item one the engine generates) and drops the
+  schedule so the engine's priced rows take over on the next fill.
+- The importer sets the utility on the project BEFORE the Quick build, so
+  the utility's substructure rule applies (PG&E/SCE build the service under
+  their EV rule; a POU has the customer pour the pad). Castro had come home
+  with a $5,000 pad it never had.
+- Price Book v1.1 (7) (chargers, accessories, warranties, service plans)
+  matches the app's price book on all 87 SKUs; it carries no switchgear,
+  panels, transformers or breakers, so gear stays on the estimator's catalog.
+- Castro Rev B: design ambient 30 °C typed (the sheet priced the wire line
+  at $0 without it), schedule priced from the catalog.

@@ -10,6 +10,7 @@ import { defaultCommercial, defaultIntake } from "../../proposal/defaults";
 import { findSku } from "../../ref/priceBook";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../../skus";
 import { fillIntakeWorkbook } from "../fillIntake";
+import { projectFromIntake } from "../importIntake";
 import { GEAR_LINE_KEY, SUBPANELS_LINE_KEY, catalogPriceFor, clearGearQuotePricing, distributionScheduleOf, engineDistributionSchedule, estimatedGearTotal, gearPricedAtSchedule, priceGearAtSchedule, scheduledGearTotal, withCatalogPrice } from "../schedule";
 import { readWorkbook } from "../xlsx";
 
@@ -112,5 +113,24 @@ describe("distribution schedule as data", () => {
     const back = clearGearQuotePricing(project);
     expect(gearPricedAtSchedule(back)).toBe(false);
     expect(computeEstimate(applyFieldOverrides(back)).costs.lines.find((l) => l.name === "Main Distribution Switchgear")!.base).toBe(before);
+  });
+
+  it("an unpriced schedule the app wrote before block E carried prices comes home as the engine's, and refills priced", async () => {
+    const project = site();
+    const result = computeEstimate(project);
+    const rows = engineDistributionSchedule(project, result).map((r) => ({ ...r, costBasis: r.costBasis === "By others" ? r.costBasis : "Priced elsewhere in this workbook", quotedCost: null }));
+    const stale = { ...project, intake: { ...(project.intake ?? defaultIntake()), distributionSchedule: rows } };
+    const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), stale, result, computeProposal(stale, result)!, { today: "2026-09-18" });
+    const wb = await readWorkbook(bytes);
+    expect(wb.get("Electrical", "B178")).toBe(0); // what every app-filled intake said until today
+    const { project: back, report } = projectFromIntake(wb, { ...defaultProject(), commercial: defaultCommercial() });
+    expect(back.intake?.distributionSchedule).toBeUndefined();
+    expect(report.mapped.some((m) => /regenerated with the estimator's catalog prices/.test(m))).toBe(true);
+    const again = computeEstimate(back);
+    const { bytes: b2 } = await fillIntakeWorkbook(readFileSync(TEMPLATE), back, again, computeProposal(back, again)!, { today: "2026-09-18" });
+    const wb2 = await readWorkbook(b2);
+    const gearLines = again.costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
+    expect(wb2.get("Electrical", "B178")).toBeCloseTo(gearLines, 2);
+    expect(gearLines).toBeGreaterThan(0);
   });
 });
