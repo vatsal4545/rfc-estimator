@@ -60,7 +60,8 @@ describe("Service chain — 5x DCFC 240kW + 6x L2 Dual 40A", () => {
     expect(pri.volts).toBe(480);
 
     const sec = seg("FDR TX→Sub-panel");
-    expect(sec.designAmps).toBeCloseTo(416.4, 1); // 150 kVA at 208V
+    // 150 kVA delivers 416 A at 208 V, but the secondary lands in a 400 A panel whose main protects it (NEC 240.21(C)) — sized to that device, not to a floor the panel cannot carry.
+    expect(sec.designAmps).toBeCloseTo(400 / 1.25, 1);
     expect(sec.volts).toBe(208);
     expect(sec.resolvedRunsPerUnit).toBeGreaterThanOrEqual(2); // parallel set on the secondary
   });

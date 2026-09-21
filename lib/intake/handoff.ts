@@ -82,7 +82,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * rows 9–16 plus the frame and branch breaker; entries typed on the app's
  * own register travel too and win their row.
  */
-export function estimatorOverrideRows(project: Project, result: EstimateResult, proposal: ProposalResult | null, carry = true): IntakeOverrideRow[] {
+export function estimatorOverrideRows(project: Project, result: EstimateResult, proposal: ProposalResult | null, carry = true, writeRegister = true): IntakeOverrideRow[] {
   const rows = new Map<number, IntakeOverrideRow>();
   const put = (row: number, value: number | undefined, reason: string, source: IntakeOverrideRow["source"] = "estimator") => {
     if (value === undefined || !Number.isFinite(value)) return;
@@ -141,9 +141,12 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
   if (c && c.lineExtensionContribution && c.lineExtensionContribution > 0) put(OVERRIDE_ROWS.lineExtension, c.lineExtensionContribution, "Rules 15/16 contribution from the utility design — pass-through at cost");
   if (c && c.additionalScope > 0) put(OVERRIDE_ROWS.additionalScope, c.additionalScope, c.additionalScopeReason?.trim() || "Additional or unforeseen scope carried on the Commercial tab — pass-through");
 
-  // Entries typed on the app's register travel as typed and win their row.
+  // Entries typed on the app's register travel as typed and win their row —
+  // only when the handoff asks for the register (writeRegister), or when the
+  // estimator's own figures are being carried (they would be pointless without
+  // the typed entries that outrank them).
   const units = (project.quick?.lines ?? []).reduce((s, l) => s + Math.max(0, l.count), 0);
-  for (const e of project.overrides ?? []) {
+  for (const e of writeRegister || carry ? (project.overrides ?? []) : []) {
     if (!Number.isFinite(e.value)) continue;
     const row = REGISTER_ROW[e.key];
     if (!row) continue;

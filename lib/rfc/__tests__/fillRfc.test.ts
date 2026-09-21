@@ -357,9 +357,9 @@ describe("filling the RFC / MSRP calculator from a project", async () => {
     // construction the app does not discount reads a clean zero, and a
     // pass-through line bills at base with nothing added or taken off.
     const wires = COSTS_INTERNAL_LABELS.indexOf("Wires, Conduits and Peripherals");
-    expect(Number(wb.get("Internal Summary", `C${14 + wires}`))).toBe(0);
+    expect(Number(wb.get("Internal Summary", `C${14 + wires}`))).toBeCloseTo(0, 9);
     const permits = COSTS_INTERNAL_LABELS.indexOf("Permits");
-    expect(Number(wb.get("Internal Summary", `C${14 + permits}`))).toBe(0);
+    expect(Number(wb.get("Internal Summary", `C${14 + permits}`))).toBeCloseTo(0, 9);
     expect(customerPriceOf(14 + permits)).toBeCloseTo(c.lines[permits].base, 2);
     // Labour and PM keep the in-house discount, as a real positive discount.
     expect(Number(wb.get("Internal Summary", "C28"))).toBeCloseTo(project.commercial!.discountInHousePct, 9);

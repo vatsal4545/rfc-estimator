@@ -12,6 +12,7 @@
 // beside them. What the estimator does not model is reported so a human can
 // finish those cells.
 
+import { findLoadType } from "../calc/tables";
 import { GPR_ITEM_NAME } from "../calc/autoplan";
 import { feederFloorA, feederSegmentId } from "../calc/chain";
 import { designRate, designSets } from "../calc/designFees";
@@ -77,6 +78,8 @@ export interface IntakeFillOptions {
   today?: string;
   /** Carry the estimator's construction and engineering figures into the Overrides register (default: the project's setting, else true). */
   carryOverrides?: boolean;
+  /** Send the app's Overrides-tab entries into the intake's register. Defaults to project.intake.writeOverrideRegister, else false. */
+  writeRegister?: boolean;
 }
 
 export interface IntakeFillPlan {
@@ -118,7 +121,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     if (value === undefined || value === null) return;
     if (typeof value === "string" && value.trim() === "") return;
     if (typeof value === "number" && !Number.isFinite(value)) return;
-    writes.push({ sheet, ref, value });
+    // Trimmed: a trailing space in "Prepared by" or a name reads as a different value to the sheet's lookups.
+    writes.push({ sheet, ref, value: typeof value === "string" ? value.trim() : value });
   };
   const yesNo = (b: boolean | undefined | null) => (b === undefined || b === null ? undefined : b ? INTAKE_TEXT.yes : INTAKE_TEXT.no);
   const yn = (on: boolean) => (on ? "Y" : "N");
@@ -135,6 +139,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const ic = { ...defaultInterconnection(), ...it?.interconnection };
   // Off by default: the CEO prices the job from the intake's own derivation and wants the Overrides tab left to what was typed there.
   const carry = opts.carryOverrides ?? it?.carryEstimatorOverrides ?? false;
+  const writeRegister = opts.writeRegister ?? it?.writeOverrideRegister ?? false;
 
   // ---- Version ------------------------------------------------------------
   const fileVersion = it?.fileVersion?.trim() || "Rev A";
@@ -401,15 +406,24 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       if (row > CHARGER_RUN_TABLE.lastRow) continue;
       put("Electrical", `${CHARGER_RUN_TABLE.distanceFt}${row}`, r.oneWayDistFt);
       if (it?.sharedTrenchRuns) put("Electrical", `${CHARGER_RUN_TABLE.sharesTrench}${row}`, INTAKE_TEXT.yes);
-      put("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`, Math.max(1, r.resolvedRunsPerUnit));
-      // The estimator's size, or the next one up when the sheet's table does not
-      // carry it (3 AWG, 450 kcmil…); a snapped conductor takes the sheet's own
-      // conduit rather than the estimator's, which was sized for the smaller wire.
-      const conductor = snapConductorToIntake(r.selectedWire);
-      put("Electrical", `${CHARGER_RUN_TABLE.conductorOverride}${row}`, conductor.size);
-      if (conductor.snapped) snappedSizes.set(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`, (snappedSizes.get(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`) ?? 0) + 1);
-      // A conductor someone typed on the row (an imported intake's, or a Takeoff override) goes with the sheet's own conduit for it; the estimator's conduit travels only with the estimator's conductor.
-      else if (!r.sizeOverride) put("Electrical", `${CHARGER_RUN_TABLE.conduitOverride}${row}`, conduitToIntake(r.conduitSize));
+      // "Sets" on the sheet means conductors in PARALLEL (one circuit), and
+      // NEC 310.10(G) allows that only from 1/0 up — so the estimator's
+      // circuit count travels only for a parallel set (a DC cabinet on 2 ×
+      // 3/0) or a count someone typed. A dual Level 2 pedestal is two 40 A
+      // circuits in the estimator but ONE 80 A circuit on the sheet, which
+      // sizes it itself; writing "2 sets" of 8 AWG there was wrong.
+      const parallel = findLoadType(project.loadTypes, r.loadTypeId)?.runsAreParallel ?? false;
+      if ((parallel && r.resolvedRunsPerUnit > 1) || (r.runsPerUnitOverride ?? 0) > 0) put("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`, Math.max(1, r.resolvedRunsPerUnit));
+      // The conductor and conduit columns are the sheet's own sizing unless a
+      // size was TYPED on the row (an imported intake's, or a Takeoff override):
+      // an override pins the size, and one that merely repeats the auto size
+      // pins it for no reason. A typed size not on the sheet's ladder rounds up.
+      if (r.sizeOverride) {
+        const conductor = snapConductorToIntake(r.selectedWire);
+        put("Electrical", `${CHARGER_RUN_TABLE.conductorOverride}${row}`, conductor.size);
+        if (conductor.snapped) snappedSizes.set(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`, (snappedSizes.get(`${conductorToIntake(r.selectedWire)} → ${conductor.size}`) ?? 0) + 1);
+      }
+      if (r.conduitOverride) put("Electrical", `${CHARGER_RUN_TABLE.conduitOverride}${row}`, conduitToIntake(r.conduitSize));
       runFt += r.oneWayDistFt;
     }
   }
@@ -559,7 +573,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     const spTo = spRow?.item;
     const txFrom = txRow ? (scheduleRows.find((r) => r.item.trim() && r.item.trim() === txRow.fedFrom.trim())?.item ?? mainName) : mainName;
     if (txSeg && txTo) feederRow(txFrom, txTo, txSeg.oneWayDistFt, Math.ceil(txSeg.designAmps * cf), txSeg.resolvedRunsPerUnit, engineConductor(txSeg), undefined);
-    if (spSeg && txTo && spTo) feederRow(txTo, spTo, spSeg.oneWayDistFt, Math.ceil(spSeg.designAmps * cf), spSeg.resolvedRunsPerUnit, engineConductor(spSeg), undefined);
+    // The secondary feeder's floor is the panel it lands in (the sheet's default: the rating of the item fed) — NEC 240.21(C), the panel's main protects it; a floor typed from the transformer's secondary FLA oversized it into a smaller panel.
+    if (spSeg && txTo && spTo) feederRow(txTo, spTo, spSeg.oneWayDistFt, undefined, spSeg.resolvedRunsPerUnit, engineConductor(spSeg), undefined);
     if (typedSchedule.length && (txSeg || spSeg) && (!txRow || !spRow)) warnings.push(`Block I: the typed schedule has no ${!txRow ? "transformer" : "sub-panel"} row, so the estimator's ${!txRow ? "switchgear → transformer" : "transformer → sub-panel"} feeder could not be written against a schedule item and was left out; add the row to the schedule or type the feeder on 3 · Electrical.`);
     if (!txSeg && !spSeg && typedSchedule.length) leftBlank.push(`Electrical block I distribution feeders (rows ${F.firstRow}–${F.lastRow}) — the imported schedule has items but no feeder rows were typed and the estimator has no step-down transformer to derive them from; every panel, transformer and remote disconnect needs one.`);
   }
@@ -755,7 +770,14 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   }
 
   // ---- Overrides ------------------------------------------------------------
-  const overrides = estimatorOverrideRows(project, result, proposal, carry);
+  const overrides = estimatorOverrideRows(project, result, proposal, carry, writeRegister);
+  const heldBack = !writeRegister && !carry ? (project.overrides ?? []).filter((e) => Number.isFinite(e.value)).length : 0;
+  if (heldBack > 0) leftBlank.push(`Overrides register — ${heldBack} entr${heldBack === 1 ? "y" : "ies"} on the app's Overrides tab stay in the app; the sheet's register is left blank unless "write the register" is ticked on Version & handoff.`);
+  const unreadRows = overrides.filter((o) => o.row >= 9 && o.row <= 14).map((o) => o.row);
+  if (unreadRows.length)
+    warnings.push(
+      `Overrides row(s) ${unreadRows.join(", ")} travel to the register, but the sheet's own Pricing tab reads only rows 15–18 (rentals, design, line extension, additional scope) — rows 9–14 reach the CEO's engine, not the sheet's price. Rows 9–15 are "before uplift": the Pricing tab marks row 15 up by the materials markup.`,
+    );
   for (const o of overrides) {
     put("Overrides", `${OVERRIDE_COLS.value}${o.row}`, o.value);
     put("Overrides", `${OVERRIDE_COLS.reason}${o.row}`, o.reason);
