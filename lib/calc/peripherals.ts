@@ -231,7 +231,7 @@ export function computePeripherals(
   // bank); pure surface EMT anchors to the existing slab — no pour. The
   // switchgear pad rides with any DCFC scope, the step-down TX + sub-panel
   // pad only exists on mixed-voltage sites, and every bollard adds a footing.
-  const mixedVoltage = rollups.nDCFC > 0 && rollups.nL2 > 0;
+  const mixedVoltage = rollups.nDCFC > 0 && rollups.nL2 > 0 && !input.l2ClientPowered;
   const padYards =
     method === "surface"
       ? 0

@@ -15,7 +15,7 @@ export function computeEstimate(project: Project): EstimateResult {
   const manualRows = project.takeoff
     .filter((r) => !r.synthetic)
     .map((row) => computeTakeoffRow(row, project.setup, project.loadTypes));
-  const panel = computePanelSchedule(manualRows, project.loadTypes, project.setup.gearOverrides, { existingSwitchgear: project.peripherals.existingSwitchgear });
+  const panel = computePanelSchedule(manualRows, project.loadTypes, project.setup.gearOverrides, { existingSwitchgear: project.peripherals.existingSwitchgear, l2ClientPowered: project.peripherals.l2ClientPowered });
 
   // Pass 2: the service chain (utility TX -> switchgear -> step-down TX ->
   // sub-panel) is generated from the panel schedule and sized by the same

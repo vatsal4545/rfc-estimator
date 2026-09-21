@@ -266,3 +266,23 @@ exactly the (uncorrected) basis the estimator sizes on, so the sheet and the
 estimator pick the same wire. A defaulted value is flagged in the handoff
 report so the ASHRAE 2% design dry-bulb or duct-bank temperature gets typed
 when it is hotter; the sheet then sizes some runs up, as it should.
+
+## 2026-09-21 — Level 2 client powered
+
+New option `peripherals.l2ClientPowered` (checkbox on 3 · Electrical's
+Level 2 section and on the Peripherals tab): the Level 2 units are fed from
+the client's existing 208 V panel. Effects: no step-down transformer and no
+208 V sub-panel are sized or priced, the transformer's primary breaker and
+the two feeder legs (switchgear → TX → sub-panel) drop out, the TX/sub-panel
+pad and bollards drop out, and the Level 2 load leaves the 480 V bus. What
+stays: every Level 2 branch circuit and its breaker (landed in the client's
+panel), priced as before. The 208 V bus is still summed so the panel note
+says how much spare capacity the client's panel needs.
+
+The intake 3.8.0 has no cell for this and the CEO has not added one, so it
+travels without a template change: a "by others" Panelboard row —
+"Client's existing 208 V panel (Level 2 client powered) — existing,
+retained" — on the distribution schedule, the Level 2 breakers fed from it,
+a sentence appended to Equipment!B27, and the Overrides row-10 reason. The
+importer reads the row back into the flag, so a round trip keeps it.
+475 tests.

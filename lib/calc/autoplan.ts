@@ -481,7 +481,7 @@ export function buildQuickProject(
   // sub-panel legs exist only on mixed-voltage sites (chain.ts builds them
   // when both levels are present) — single-voltage sites dig just the
   // utility-to-gear leg.
-  const mixedVoltage = counts.nDCFC > 0 && counts.nL2 > 0;
+  const mixedVoltage = counts.nDCFC > 0 && counts.nL2 > 0 && !p.peripherals.l2ClientPowered;
   const serviceFt =
     counts.nChargers === 0
       ? 0
@@ -513,7 +513,7 @@ export function buildQuickProject(
     ...p.setup,
     clientName: input.clientName,
     siteAddress: input.siteAddress,
-    scopeOfWork: scopeText(input, p.loadTypes, trenchFt > 0),
+    scopeOfWork: scopeText(input, p.loadTypes, trenchFt > 0, !!p.peripherals.l2ClientPowered),
     conduitType: method === "trench" ? "PVC" : "EMT",
     installMethod: method,
     surfaceRouteFt: surfaceFt,
@@ -657,7 +657,7 @@ export function buildQuickProject(
   return p;
 }
 
-function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: boolean): string {
+function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: boolean, l2ClientPowered = false): string {
   const parts = input.lines
     .filter((l) => l.count > 0 && findLoadType(loadTypes, l.loadTypeId))
     .map((l) => `${l.count} × ${l.loadTypeId}`);
@@ -672,7 +672,7 @@ function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: 
   const method = INSTALL_METHOD_INFO[input.installMethod ?? "trench"];
   return `Turnkey EVCS install: ${parts.join(" + ")} on a ${TERRAIN_INFO[input.terrain].label.toLowerCase()}, ${method.label.toLowerCase()}${
     services.length ? `, incl. ${services.join(", ")}` : ""
-  }.`;
+  }.${l2ClientPowered ? " Level 2 units client powered from the client's existing 208 V panel — no step-down transformer or sub-panel." : ""}`;
 }
 
 // ---------------------------------------------------------------------------

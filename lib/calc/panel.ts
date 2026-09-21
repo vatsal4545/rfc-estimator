@@ -39,6 +39,8 @@ export interface BusSummary {
   autoBusA: number;
   /** True when suggestedBusA comes from a manual override. */
   overridden: boolean;
+  /** 208 V only: the bus is the CLIENT's existing panel (Level 2 client powered) — sized here as the spare capacity it needs, not as gear we buy. */
+  clientPowered?: boolean;
 }
 
 export interface PanelSchedule {
@@ -74,7 +76,7 @@ export function computePanelSchedule(
   rows: TakeoffRowComputed[],
   loadTypes: LoadType[],
   overrides?: GearOverrides,
-  opts: { existingSwitchgear?: boolean } = {},
+  opts: { existingSwitchgear?: boolean; l2ClientPowered?: boolean } = {},
 ): PanelSchedule {
   const notes: string[] = [];
   const chargerRows = rows.filter((r) => r.category === "L2" || r.category === "DCFC");
@@ -138,6 +140,7 @@ export function computePanelSchedule(
       suggestedBusA: overrideA && overrideA > 0 ? overrideA : autoBusA,
       autoBusA,
       overridden: !!overrideA && overrideA > 0,
+      ...(opts.l2ClientPowered ? { clientPowered: true } : {}),
     };
     if (bus208.overridden && bus208.suggestedBusA < demandAmps) {
       notes.push(`208V panel override ${bus208.suggestedBusA}A is below the ${Math.ceil(demandAmps)}A demand (NEC 625 continuous) — undersized.`);
@@ -148,7 +151,13 @@ export function computePanelSchedule(
   }
 
   const has480Service = rows480.length > 0;
-  if (bus208 && has480Service) {
+  if (bus208 && opts.l2ClientPowered) {
+    // The client's existing 208 V panel feeds the Level 2 units: no step-down,
+    // no sub-panel, and none of that load on our 480 V bus.
+    notes.push(
+      `Level 2 chargers client powered — fed from the client's existing 208 V panel. No step-down transformer or 208 V sub-panel is priced; the panel needs ${Math.ceil(bus208.demandAmps)} A of spare capacity (${bus208.circuitCount} branch breaker(s) priced and landed in it).`,
+    );
+  } else if (bus208 && has480Service) {
     // Step-down transformer for the L2 load, fed from the 480V gear.
     const connectedKva = (bus208.connectedAmps * 208 * SQRT3) / 1000;
     const demandKva = connectedKva * 1.25; // transformer sized at 125% continuous
@@ -210,7 +219,7 @@ export function computePanelSchedule(
     // every branch breaker below. Only the switchboard itself drops out.
     suggestedGear.push({ item: opts.existingSwitchgear ? "Main breaker" : "Main switchgear", size: `${bus480.suggestedBusA}A`, voltage: "480V", qty: 1 });
   }
-  if (bus208) {
+  if (bus208 && !bus208.clientPowered) {
     const item = bus208.suggestedBusA >= 1000 ? "Distribution panel" : "Sub-panel";
     suggestedGear.push({ item, size: `${bus208.suggestedBusA}A`, voltage: "208V", qty: 1 });
   }

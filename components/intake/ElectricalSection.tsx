@@ -261,9 +261,9 @@ export function ElectricalSection() {
               {bus480 ? `${num(bus480.connectedAmps, 0)} A · demand ${num(bus480.demandAmps, 0)} A` : bus208 ? `${num(bus208.connectedAmps, 0)} A at 208 V` : "—"}
             </div>
           </Field>
-          <Field label="Step-down transformer" hint="Only on a mixed 480/208 V site">
+          <Field label="Step-down transformer" hint={project.peripherals.l2ClientPowered ? "None — Level 2 client powered" : "Only on a mixed 480/208 V site"}>
             <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">
-              {result.panel.transformer ? `${num(result.panel.transformer.suggestedKva)} kVA` : "none"}
+              {result.panel.transformer ? `${num(result.panel.transformer.suggestedKva)} kVA` : project.peripherals.l2ClientPowered && bus208 ? "none — client powered" : "none"}
             </div>
           </Field>
         </Grid>
@@ -319,6 +319,22 @@ export function ElectricalSection() {
 
       {l2Rows.length > 0 && (
         <Section title="Level 2 circuits" subtitle="One circuit per run, at the unit's distance. On the intake a dual pedestal is one charger-run row with two sets (Electrical rows 18–47).">
+          <label className="mb-3 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={!!project.peripherals.l2ClientPowered}
+              onChange={(e) => rebuild((p) => ({ ...p, peripherals: { ...p.peripherals, l2ClientPowered: e.target.checked || undefined } }))}
+            />
+            <span>
+              <span className="font-medium">Level 2 chargers client powered</span>
+              <span className="ml-2 text-xs text-zinc-500">
+                Fed from the client&apos;s existing 208 V panel: the step-down transformer and the 208 V sub-panel are removed from the estimate (with their pad and bollards); the Level 2 branch breakers and circuits stay and are priced.
+                {bus208?.clientPowered ? ` The client's panel needs ${num(bus208.demandAmps, 0)} A of spare capacity for ${bus208.circuitCount} circuit(s).` : ""}
+                {" "}On the intake this travels as a &ldquo;by others&rdquo; panel row on the distribution schedule and in the scope sentence — the sheet has no cell for it.
+              </span>
+            </span>
+          </label>
           <div className={wrap}>
             <table className={table}>
               <thead className={theadCls}>

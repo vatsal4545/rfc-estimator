@@ -129,6 +129,15 @@ export function PeripheralsTab() {
             </span>
           </span>
         </label>
+        <label className="mb-3 flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5" checked={!!p.l2ClientPowered} onChange={(e) => updateP("l2ClientPowered", e.target.checked || undefined)} />
+          <span>
+            <span className="font-medium">Level 2 chargers client powered</span>
+            <span className="ml-2 text-xs text-zinc-500">
+              The Level 2 units are fed from the client&apos;s existing 208 V panel. No step-down transformer or 208 V sub-panel is priced, their pad and bollards drop out and the Level 2 load leaves the 480 V bus; the Level 2 branch breakers (landed in the client&apos;s panel) and branch circuits stay. The intake carries it as a &ldquo;by others&rdquo; panel row on the distribution schedule.
+            </span>
+          </span>
+        </label>
         {p.useAutoGear ? (
           <>
             <div className="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">

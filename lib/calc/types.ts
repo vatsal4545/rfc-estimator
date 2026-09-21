@@ -475,6 +475,17 @@ export interface PeripheralsInput {
    */
   existingSwitchgear?: boolean;
   /**
+   * The Level 2 chargers are CLIENT POWERED: fed from the client's existing
+   * 208 V panel rather than from our service. No step-down transformer and no
+   * 208 V sub-panel are sized or priced, their pad and bollards drop out and
+   * the Level 2 load no longer rides on the 480 V bus; the Level 2 branch
+   * breakers (landed in the client's panel) and every Level 2 branch circuit
+   * stay. The 208 V bus is still summed so the client's panel is told what
+   * spare capacity it needs. The CEO's intake has no cell for this, so it
+   * travels on the distribution schedule as a "by others" panel row.
+   */
+  l2ClientPowered?: boolean;
+  /**
    * EVSE disconnecting means (NEC 625.43) — fused or non-fused disconnects at
    * the DC chargers, counted by hand. Priced into the sub-panels /
    * transformers / breakers line. Absent = none.

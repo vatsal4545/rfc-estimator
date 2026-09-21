@@ -107,7 +107,7 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
     const gearBits = [
       bus480 ? (per.existingSwitchgear ? `${num(bus480.suggestedBusA)} A main breaker into the existing switchgear (board retained, not priced)` : `${num(bus480.suggestedBusA)} A 480 V switchgear`) : "",
       tx ? `${num(tx.suggestedKva)} kVA step-down` : "",
-      bus208 ? `${num(bus208.suggestedBusA)} A 208 V sub-panel` : "",
+      bus208 ? (bus208.clientPowered ? `Level 2 client powered — branch breakers into the client's existing 208 V panel, no step-down or sub-panel` : `${num(bus208.suggestedBusA)} A 208 V sub-panel`) : "",
       (per.disconnectQty ?? 0) > 0 ? `${num(per.disconnectQty ?? 0)} EVSE disconnect(s) at ${money(result.peripherals.disconnectUnitCost)}` : "",
     ].filter(Boolean);
     put(

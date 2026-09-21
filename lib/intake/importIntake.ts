@@ -12,7 +12,7 @@
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
 import { feederFloorA } from "../calc/chain";
 import { computeEstimate } from "../calc/engine";
-import { GEAR_LINE_KEY, engineDistributionSchedule, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
+import { CLIENT_L2_PANEL_ITEM, GEAR_LINE_KEY, engineDistributionSchedule, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
 import { withDesignSets } from "../calc/designFees";
 import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
@@ -779,6 +779,11 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (existing && keepsExistingService(existing.projectType) && existing.register.switchgear === "RETAIN") {
     quickBase.peripherals = { ...quickBase.peripherals, existingSwitchgear: true };
     mapped.push("Switchgear retained on the Existing tab — the estimator prices a main breaker into the existing board, no switchboard, pad or gear bollards");
+  }
+  // The intake has no cell for client-powered Level 2; the app writes it as a "by others" panel row on the schedule and reads it back here.
+  if (distributionSchedule.some((r) => r.item.trim().toLowerCase().startsWith(CLIENT_L2_PANEL_ITEM.toLowerCase()))) {
+    quickBase.peripherals = { ...quickBase.peripherals, l2ClientPowered: true };
+    mapped.push("Level 2 client powered (schedule row) — the estimator prices no step-down transformer or sub-panel; Level 2 branch breakers stay");
   }
   if (Object.keys(takeoffEdits).length) quickBase.takeoffEdits = takeoffEdits;
   // The utility decides the customer-built substructures at Build (PG&E and

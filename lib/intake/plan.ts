@@ -26,6 +26,7 @@ import { findSku } from "../ref/priceBook";
 import {
   CARBON_CELLS,
   CHARGER_RUN_TABLE,
+  INTAKE_TEMPLATE,
   COMMERCIAL_CELLS,
   CONSTRUCTION_CELLS,
   DEAL_CELLS,
@@ -67,7 +68,7 @@ import {
   splitApplicationSubmitted,
 } from "./cells";
 import { estimatorOverrideRows, type IntakeOverrideRow } from "./handoff";
-import { engineDistributionSchedule, typedDistributionSchedule } from "./schedule";
+import { CLIENT_L2_PANEL_ITEM, engineDistributionSchedule, typedDistributionSchedule } from "./schedule";
 import { isoToSerial } from "./serial";
 import type { CellWrite } from "./xlsxWrite";
 
@@ -427,6 +428,10 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   }
   if (totalCabinets > 0) leftBlank.push(`Electrical rows ${DISPENSER_RUN_TABLE.firstRow}–${DISPENSER_RUN_TABLE.lastRow} cabinet-to-dispenser DC runs — the estimator sizes the cabinets' AC feeders only.`);
 
+  if (per.l2ClientPowered && result.rows.some((r) => !r.synthetic && r.category === "L2"))
+    warnings.push(
+      `Level 2 client powered: the units are fed from the client's existing 208 V panel, so no step-down transformer or sub-panel is priced (their pad and bollards drop out; the Level 2 branch breakers and circuits stay). The intake ${INTAKE_TEMPLATE.version} has no cell for this — it travels as the "${CLIENT_L2_PANEL_ITEM}" row on the distribution schedule (by others) and in the scope sentence.`,
+    );
   // Block D — service and switchgear.
   put("Electrical", ELECTRICAL_CELLS.pointOfConnection, ic.pointOfConnection);
   put("Electrical", ELECTRICAL_CELLS.txToSwitchgearFt, s.serviceChain?.utilityToSwitchgearFt);

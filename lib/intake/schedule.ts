@@ -120,6 +120,9 @@ export function emptyScheduleRow(): DistributionScheduleRow {
  * Everything here is priced on the estimator's gear line, so the cost basis
  * says so and no quoted cost is written — the sheet never prices it twice.
  */
+/** The schedule row that carries "Level 2 client powered" onto the intake, which has no cell for it. The importer reads it back. */
+export const CLIENT_L2_PANEL_ITEM = "Client's existing 208 V panel (Level 2 client powered)";
+
 export function engineDistributionSchedule(project: Project, result: EstimateResult): DistributionScheduleRow[] {
   const per = project.peripherals;
   const ic = project.intake?.interconnection ?? defaultInterconnection();
@@ -159,11 +162,15 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
   const subPanelName = subPanel ? `${subPanel.item} ${subPanel.size}`.trim() : undefined;
   const serviceSource = ic.serviceType === "Added load to existing service" ? ic.pointOfConnection || "Existing service" : "Utility transformer";
   const hasL2 = result.rows.some((r) => !r.synthetic && r.category === "L2");
+  const clientL2 = !!per.l2ClientPowered && hasL2;
+  const clientPanelName = clientL2 ? `${CLIENT_L2_PANEL_ITEM} — existing, retained` : undefined;
   const hasDc = result.rows.some((r) => !r.synthetic && r.category === "DCFC");
   const branchOcpd = (category: string) => new Set(result.rows.filter((r) => !r.synthetic && r.category === category && r.ocpdA > 0).map((r) => r.ocpdA));
   const dcOcpd = branchOcpd("DCFC");
   const l2Ocpd = branchOcpd("L2");
   if (existingBoard) add(existingBoard, "Switchboard", 1, 480, result.panel.bus480?.suggestedBusA, serviceSource, "New main breaker for the EV load", true);
+  // Client-powered Level 2: the client's own panel feeds the units — by others, not priced; its rating is the spare capacity the engine needs of it.
+  if (clientL2) add(CLIENT_L2_PANEL_ITEM, "Panelboard", 1, 208, result.panel.bus208?.autoBusA, "Client's existing service", "Level 2 branches", true);
   for (const g of gear) {
     if (g.qty <= 0) continue;
     const amps = /a$/i.test(g.size.trim()) ? parseNumber(g.size) : undefined;
@@ -174,7 +181,7 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
     let feeds: string | undefined;
     if (type === "Switchboard") {
       fedFrom = serviceSource;
-      feeds = [hasDc ? "DC charger branches" : "", stepDownName ? stepDownName : "", !stepDownName && hasL2 ? "Level 2 branches" : ""].filter(Boolean).join(", ") || "Charger branches";
+      feeds = [hasDc ? "DC charger branches" : "", stepDownName ? stepDownName : "", !stepDownName && hasL2 && !clientL2 ? "Level 2 branches" : ""].filter(Boolean).join(", ") || "Charger branches";
     } else if (type === "Transformer") {
       fedFrom = mainName;
       feeds = subPanelName ?? "Level 2 panel";
@@ -183,11 +190,11 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
       feeds = "Level 2 branches";
     } else if (/^main breaker/i.test(g.item)) {
       fedFrom = mainName;
-      feeds = [hasDc ? "DC charger branches" : "", stepDownName ?? (hasL2 ? "Level 2 branches" : "")].filter(Boolean).join(", ") || "Charger branches";
+      feeds = [hasDc ? "DC charger branches" : "", stepDownName ?? (hasL2 && !clientL2 ? "Level 2 branches" : "")].filter(Boolean).join(", ") || "Charger branches";
     } else if (/breaker/i.test(g.item)) {
       // A branch breaker matches the engine's OCPD for a DC or Level 2 circuit; anything else on the main is the step-down's primary device.
       if (amps !== undefined && l2Ocpd.has(amps) && (volts === undefined || volts < 300)) {
-        fedFrom = subPanelName ?? stepDownName ?? mainName;
+        fedFrom = clientPanelName ?? subPanelName ?? stepDownName ?? mainName;
         feeds = "Level 2 units";
       } else if (amps !== undefined && dcOcpd.has(amps)) {
         fedFrom = mainName;

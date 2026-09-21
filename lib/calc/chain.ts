@@ -159,8 +159,9 @@ export function buildServiceChain(
         cfg.transformerToSubpanelFt,
       );
     }
-  } else if (panel.bus208) {
+  } else if (panel.bus208 && !panel.bus208.clientPowered) {
     // 208V-only site: service straight from the utility TX to the main panel.
+    // (Client-powered Level 2 has no service of ours to run.)
     segment(
       "SVC Utility→Panel",
       "Utility TX → Main panel",
