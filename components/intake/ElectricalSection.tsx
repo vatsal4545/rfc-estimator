@@ -1,5 +1,6 @@
 "use client";
 
+import { DESIGN_AMBIENT_DEFAULT_C } from "@/lib/intake/cells";
 import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import { feederFloorA } from "@/lib/calc/chain";
@@ -149,8 +150,8 @@ export function ElectricalSection() {
           <Field label="Spacing per extra unit (ft)" hint="Added per further unit of the same level">
             <input type="number" className={inputCls} value={input.stepFt} onChange={(e) => setQuick({ stepFt: Number(e.target.value) })} />
           </Field>
-          <Field label="Design ambient (°C)" hint="Site data for the intake's Electrical!B10 — ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs. Every charger-run verdict on the intake waits for it; the estimator sizes without it.">
-            <input type="number" className={inputCls} value={project.intake?.designAmbientC ?? ""} placeholder="e.g. 40" onChange={(e) => setAmbient(e.target.value)} />
+          <Field label="Design ambient (°C)" hint={`Intake Electrical!B10 — the sheet sizes and prices nothing without it, so the download always carries a value: what you type here (ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs), else ${DESIGN_AMBIENT_DEFAULT_C} °C, the NEC 310.16 table ambient the estimator sizes on.`}>
+            <input type="number" className={inputCls} value={project.intake?.designAmbientC ?? ""} placeholder={`${DESIGN_AMBIENT_DEFAULT_C} (default)`} onChange={(e) => setAmbient(e.target.value)} />
           </Field>
           <Field label="Trench surface" hint="Intake B8 — what the trench cuts through">
             <select className={selectCls} value={project.intake?.trenchSurface ?? ""} onChange={(e) => setIntake({ trenchSurface: e.target.value || undefined })}>

@@ -101,6 +101,22 @@ export const EQUIPMENT_TABLE = {
  * sits thirty rows higher than at 3.7.x; no other tab moved. A 3.3.0–3.7.x
  * file is read through ELECTRICAL_LEGACY_SHIFT.
  */
+/**
+ * The design ambient written to Electrical!B10 (and B126 for a feeder we
+ * provide) when nobody has typed the site's figure. 30 °C is the NEC 310.16
+ * table ambient — no correction — which is exactly how the estimator sizes
+ * every conductor, so with this value the sheet and the estimator pick the
+ * same wire. A hotter site (ASHRAE 2% design dry-bulb, or a duct-bank
+ * temperature) is typed on 3 · Electrical and travels instead.
+ */
+export const DESIGN_AMBIENT_DEFAULT_C = 30;
+
+/** The design ambient in force for a project: the typed site figure, else the default. */
+export function designAmbientOf(intake: { designAmbientC?: number | null } | undefined | null): { value: number; typed: boolean } {
+  const v = intake?.designAmbientC;
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? { value: v, typed: true } : { value: DESIGN_AMBIENT_DEFAULT_C, typed: false };
+}
+
 export const ELECTRICAL_CELLS = {
   // Block A — sizing basis
   material: "B6",
@@ -109,10 +125,11 @@ export const ELECTRICAL_CELLS = {
   trenchDepthIn: "B9",
   /**
    * SITE DATA the sheet insists on: every charger-run verdict reads "SET THE
-   * DESIGN AMBIENT" until it is typed, and the auto conductor column is blank
-   * without it. The estimator sizes at NEC 310.16 without an ambient
-   * correction, so this travels only when someone types it on the app's
-   * Electrical section (project.intake.designAmbientC).
+   * DESIGN AMBIENT" until it holds a number, the auto conductor column is
+   * blank without it and the wire line prices at $0. The fill therefore
+   * ALWAYS writes it: the value typed on the app's Electrical section
+   * (project.intake.designAmbientC) or, failing that, DESIGN_AMBIENT_DEFAULT_C
+   * — with a warning in the handoff report so the site figure gets typed.
    */
   ambientC: "B10",
   insulationC: "B11",

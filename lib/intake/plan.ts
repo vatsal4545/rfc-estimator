@@ -32,7 +32,9 @@ import {
   DISPENSER_RUN_TABLE,
   DISTRIBUTION_FEEDER_TABLE,
   DISTRIBUTION_TABLE,
+  DESIGN_AMBIENT_DEFAULT_C,
   ELECTRICAL_CELLS,
+  designAmbientOf,
   EQUIPMENT_SINGLES,
   EQUIPMENT_TABLE,
   EXISTING_CAPTURE_ROWS,
@@ -342,9 +344,17 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Electrical", ELECTRICAL_CELLS.conduit, s.conduitType === "EMT" ? "EMT" : "PVC");
   if (method === "hybrid") warnings.push("Hybrid install: the intake carries one conduit type — EMT written; the trenched service section is not distinguishable on the intake.");
   put("Electrical", ELECTRICAL_CELLS.allowableVdFraction, s.maxVoltageDropFraction);
-  const ambientC = it?.designAmbientC ?? null;
-  if (ambientC !== null && Number.isFinite(ambientC)) put("Electrical", ELECTRICAL_CELLS.ambientC, ambientC);
-  else leftBlank.push("Electrical B10 design ambient (C) — site data the sheet insists on: every charger-run verdict reads SET THE DESIGN AMBIENT until it is typed. Enter it on the Electrical section (ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs).");
+  // The sheet does nothing without a design ambient (every charger-run verdict
+  // waits for B10 and the wire line prices at $0), so one is always written:
+  // the site figure typed on 3 · Electrical, else the NEC 310.16 table ambient
+  // the estimator itself sizes on — flagged so the site figure gets typed.
+  const ambient = designAmbientOf(it);
+  const ambientC = ambient.value;
+  put("Electrical", ELECTRICAL_CELLS.ambientC, ambientC);
+  if (!ambient.typed)
+    warnings.push(
+      `Electrical B10 design ambient written as ${DESIGN_AMBIENT_DEFAULT_C} °C — the NEC 310.16 table ambient, the estimator's own sizing basis, not a site figure. Type the site's ASHRAE 2% design dry-bulb (or the duct-bank temperature for buried runs) on 3 · Electrical if it is hotter; the sheet will then size some runs up.`,
+    );
   if (it?.trenchSurface?.trim()) put("Electrical", ELECTRICAL_CELLS.trenchSurface, it.trenchSurface.trim());
   if (it?.trenchDepthIn !== undefined && it?.trenchDepthIn !== null) put("Electrical", ELECTRICAL_CELLS.trenchDepthIn, it.trenchDepthIn);
   if (!it?.trenchSurface?.trim() || it?.trenchDepthIn === undefined || it?.trenchDepthIn === null) leftBlank.push("Electrical B8 trench surface, B9 trench depth — site facts the estimator does not model; the template's Mixed / 24 in stand unless an imported intake carried them.");
@@ -433,8 +443,8 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   if (svc) {
     put("Electrical", `${SERVICE_FEEDER_ROW.conductor}${SERVICE_FEEDER_ROW.row}`, snapConductorToIntake(svc.selectedWire, INTAKE_FEEDER_SIZES).size);
     put("Electrical", `${SERVICE_FEEDER_ROW.sets}${SERVICE_FEEDER_ROW.row}`, svc.resolvedRunsPerUnit);
-    if (ambientC !== null && Number.isFinite(ambientC)) put("Electrical", ELECTRICAL_CELLS.feederAmbientC, ambientC);
-    else leftBlank.push("Electrical B126 design ambient for the service feeder — the run's own site figure, needed for its ampacity check when Zero Impact Energy provides it.");
+    // The feeder's own verdict asks for B126 whenever we provide the run; the site ambient stands for it unless a duct-bank figure is typed later.
+    put("Electrical", ELECTRICAL_CELLS.feederAmbientC, ambientC);
   }
 
   // Block F — the Rule 29 block.

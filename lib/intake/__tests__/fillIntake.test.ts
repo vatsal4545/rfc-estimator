@@ -135,8 +135,9 @@ describe("filling the CEO's intake from a project", async () => {
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
     expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Revisions", "Version"]);
-    expect(report.leftBlank.some((s) => s.startsWith("Electrical B10"))).toBe(true);
-    expect(report.warnings).toEqual([]);
+    expect(report.leftBlank.some((s) => s.startsWith("Electrical B10"))).toBe(false); // B10 is always written now
+    expect(report.warnings).toHaveLength(1); // only the "design ambient defaulted" flag
+    expect(report.warnings[0]).toMatch(/^Electrical B10 design ambient written as 30 °C/);
   });
 
   it("Version and Project tabs", () => {
@@ -182,7 +183,12 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Electrical", "B6")).toBe(project.setup.feederMaterial);
     expect(wb.get("Electrical", "B7")).toBe("PVC");
     expect(wb.get("Electrical", "B13")).toBe(project.setup.maxVoltageDropFraction);
-    expect(wb.get("Electrical", "B10")).toBeNull(); // design ambient is site data — left for a human unless typed
+    // Design ambient: nothing on the sheet works without B10, so an untyped project gets the NEC 310.16 table ambient (the estimator's own basis), flagged.
+    expect(project.intake?.designAmbientC ?? null).toBeNull();
+    expect(wb.get("Electrical", "B10")).toBe(30);
+    expect(report.warnings.some((w) => /B10 design ambient written as 30 °C/.test(w))).toBe(true);
+    expect(wb.get("Electrical", "K18")).toBeTruthy(); // the sheet's auto conductor resolves — it is blank while B10 is
+    expect(wb.get("Electrical", "B56")).toBeGreaterThan(0); // and the charger-run material prices
     // Charger runs: units 1–4 are the TP5 cabinets (Equipment line 1), units 5–6 the Level 2 duals (line 2) — rows 18–23.
     expect(dcRows).toHaveLength(4);
     dcRows.forEach((r, i) => {

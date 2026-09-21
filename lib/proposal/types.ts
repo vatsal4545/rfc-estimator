@@ -108,7 +108,9 @@ export interface IntakeInput {
    * Design ambient temperature (C) for the charger runs — the intake's
    * Electrical!B10, site data with no house default (ASHRAE 2% design
    * dry-bulb, or the duct-bank temperature for buried runs). The estimator
-   * sizes without an ambient correction; this travels to the intake only.
+   * sizes without an ambient correction; this travels to the intake only —
+   * and when it is blank the fill writes DESIGN_AMBIENT_DEFAULT_C (30 °C, the
+   * NEC 310.16 table ambient) so the sheet sizes and prices at all.
    */
   designAmbientC?: number | null;
   /** Document control for the handoff (the intake's Version tab): this file's revision, who completed it, what changed. */

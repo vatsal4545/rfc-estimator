@@ -252,3 +252,17 @@ charger; when every run is marked as sharing a trench the longest run owns
 it; the Revenue subscription verdict stands down on a demand-charge
 schedule; presentation tidy-ups. Refdata regenerated (37 rate schedules —
 EV-HP Primary joined at 3.7.1). 468 tests.
+
+## 2026-09-21 — The intake always carries a design ambient
+
+CEO: "without design ambient on these sheets in the electrical section it
+won't work." True — every charger-run verdict on the sheet reads SET THE
+DESIGN AMBIENT, the auto conductor column is blank and the wire line prices
+at $0 until Electrical!B10 holds a number, and the fill used to leave it
+blank unless someone typed it. Now the fill always writes B10 (and B126 for
+a service feeder we provide): the site figure typed on 3 · Electrical, else
+`DESIGN_AMBIENT_DEFAULT_C` = 30 °C — the NEC 310.16 table ambient, which is
+exactly the (uncorrected) basis the estimator sizes on, so the sheet and the
+estimator pick the same wire. A defaulted value is flagged in the handoff
+report so the ASHRAE 2% design dry-bulb or duct-bank temperature gets typed
+when it is hotter; the sheet then sizes some runs up, as it should.
