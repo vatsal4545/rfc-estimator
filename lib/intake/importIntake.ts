@@ -37,7 +37,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, INTAKE_TEXT, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, EXISTING_CELLS, INTAKE_TEMPLATE, REVISIONS_TABLE, conductorFromIntake, joinApplicationSubmitted } from "./cells";
+import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, INTAKE_TEXT, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, ELECTRICAL_LEGACY_SHIFT, EXISTING_CELLS, INTAKE_TEMPLATE, RENTAL_TABLE, REVISIONS_TABLE, conductorFromIntake, electricalUsesLegacyRows, joinApplicationSubmitted, legacyElectricalRef, rateBasisFromRatePer } from "./cells";
 import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
@@ -109,9 +109,14 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const sheets = new Map<string, string | undefined>(INTAKE_SHEETS.map((s) => [s, resolveSheet(wb, s)]));
   for (const s of INTAKE_SHEETS) if (!sheets.get(s)) warnings.push(`Sheet "${s}" not found in the workbook — its fields were not imported.`);
 
+  // A 3.3.0–3.7.x file keeps every Electrical block below the charger-run
+  // table thirty rows lower (block B had sixty rows); read it where it is.
+  const versionSheet = sheets.get("Version");
+  const legacyElectrical = electricalUsesLegacyRows(String((versionSheet && wb.get(versionSheet, "B4")) ?? ""));
   const cell = (sheet: string, ref: string): CellValue => {
     const name = sheets.get(sheet);
-    return name ? wb.get(name, ref) : null;
+    if (!name) return null;
+    return wb.get(name, sheet === "Electrical" && legacyElectrical ? legacyElectricalRef(ref) : ref);
   };
   const num = (sheet: string, ref: string): number | undefined => {
     const v = cell(sheet, ref);
@@ -154,7 +159,13 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     const [major, minor] = templateVersion.split(".").map(Number);
     const beforeRebuild = Number.isFinite(major) && Number.isFinite(minor) && (major < 3 || (major === 3 && minor < 3));
     warnings.push(
-      `Template ${templateVersion} — the importer is written to the ${INTAKE_TEMPLATE.version} layout${beforeRebuild ? "; the Electrical tab was rebuilt at 3.3.0, so its run distances, feeder, distribution schedule and Rule 29 block are not where this importer looks" : "; some fields may have moved"}.`,
+      `Template ${templateVersion} — the importer is written to the ${INTAKE_TEMPLATE.version} layout${
+        beforeRebuild
+          ? "; the Electrical tab was rebuilt at 3.3.0, so its run distances, feeder, distribution schedule and Rule 29 block are not where this importer looks"
+          : legacyElectrical
+            ? `; its Electrical blocks below the charger-run table are read thirty rows lower, where 3.3.0–3.7.x kept them (block B held sixty runs before 3.8.0)`
+            : "; some fields may have moved"
+      }.`,
     );
   }
   if (!templateVersion) warnings.push("No template version on the Version tab — is this an EVSE Project Intake?");
@@ -267,6 +278,16 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     if (str("Electrical", `${CHARGER_RUN_TABLE.sharesTrench}${row}`).toLowerCase() === "yes") runsSharingTrench++;
     if (equipmentLine.get(lineNo)?.role === "level_2") l2Dist.push(d);
     else dcDist.push(d);
+  }
+  if (legacyElectrical) {
+    // A 3.3.0–3.7.x file had sixty run rows; runs 31–60 have no row in the 3.8.0 map and are reported, not read.
+    const electricalSheet = sheets.get("Electrical");
+    let beyond = 0;
+    for (let r = CHARGER_RUN_TABLE.lastRow + 1; r <= ELECTRICAL_LEGACY_SHIFT.lastLegacyChargerRow; r++) {
+      const v = electricalSheet ? wb.get(electricalSheet, `${CHARGER_RUN_TABLE.distanceFt}${r}`) : null;
+      if (typeof v === "number" && v > 0) beyond++;
+    }
+    if (beyond > 0) warnings.push(`${beyond} charger run(s) on rows ${CHARGER_RUN_TABLE.lastRow + 1}–${ELECTRICAL_LEGACY_SHIFT.lastLegacyChargerRow} of this ${templateVersion} file — the ${INTAKE_TEMPLATE.version} table holds thirty runs, so those distances were not read.`);
   }
   const sharedTrenchRuns = runsWithDistance > 0 && runsSharingTrench === runsWithDistance;
   const typedConductors = Object.values(takeoffEdits).filter((e) => e.sizeOverride).length;
@@ -425,11 +446,19 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const autoCadSets = num("Construction", "B32");
   const eeSets = num("Construction", "B33");
   const pmHours = num("Construction", "B34");
-  const rentals: { name: string; qty?: number; unitCost?: number; days?: number; include: boolean }[] = [];
+  const rentals: { name: string; qty?: number; unitCost?: number; duration?: number; ratePer?: string; include: boolean }[] = [];
   for (let r = 39; r <= 52; r++) {
     const name = str("Construction", `A${r}`);
     if (!name) continue;
-    rentals.push({ name, qty: num("Construction", `B${r}`), unitCost: num("Construction", `C${r}`), days: num("Construction", `D${r}`), include: include(`E${r}`) });
+    rentals.push({
+      name,
+      qty: num("Construction", `${RENTAL_TABLE.qty}${r}`),
+      unitCost: num("Construction", `${RENTAL_TABLE.unitCost}${r}`),
+      duration: num("Construction", `${RENTAL_TABLE.duration}${r}`),
+      // 3.8.0: the unit the rate is per (day / week / month); blank on an older file, whose rows were per day.
+      ratePer: str("Construction", `${RENTAL_TABLE.ratePer}${r}`).toLowerCase() || undefined,
+      include: include(`E${r}`),
+    });
   }
   const fee = (row: number) => (include(`E${row}`) ? (num("Construction", `B${row}`) ?? 0) * (num("Construction", `D${row}`) ?? 0) : 0);
   const feeQty = (row: number) => (include(`E${row}`) ? (num("Construction", `B${row}`) ?? 0) : 0);
@@ -848,20 +877,30 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   for (const r of rentals) {
     const key = r.name.toLowerCase().replace(/[^a-z]/g, "");
     const target = RENTAL_NAMES[key];
-    const hasInput = r.qty !== undefined || r.days !== undefined;
+    const hasInput = r.qty !== undefined || r.duration !== undefined;
     if (!hasInput && r.include) continue;
     if (target) {
       const item = equipment.find((e) => e.name === target);
       if (!item) continue;
-      const perWeek = /per week/i.test(item.rateBasis);
       if (!r.include) item.qty = 0;
-      else {
-        // The sheet's rows are per day; the estimator's fencing is per ft per week — carried as an exact conversion both ways.
+      else if (r.ratePer) {
+        // 3.8.0: the row says what its rate is per and the duration is in that
+        // unit, so both travel as typed and the estimator's basis follows F.
         if (r.qty !== undefined) {
           item.qty = r.qty;
           if (target === "Temporary fencing") item.qtyOverride = r.qty;
         }
-        if (r.days !== undefined) item.durationValue = perWeek ? r.days / 7 : r.days;
+        if (r.duration !== undefined) item.durationValue = r.duration;
+        if (r.unitCost !== undefined && r.unitCost > 0 && (r.qty ?? 0) > 0) item.rate = r.unitCost;
+        item.rateBasis = rateBasisFromRatePer(r.ratePer, item.rateBasis);
+      } else {
+        // Before 3.8.0 the rows were per day; the estimator's fencing is per ft per week — carried as an exact conversion both ways.
+        const perWeek = /per week/i.test(item.rateBasis);
+        if (r.qty !== undefined) {
+          item.qty = r.qty;
+          if (target === "Temporary fencing") item.qtyOverride = r.qty;
+        }
+        if (r.duration !== undefined) item.durationValue = perWeek ? r.duration / 7 : r.duration;
         // A live row's typed rate is what the CEO's engine prices with, so the estimator prices with it too (the sheet's rows are per day).
         if (r.unitCost !== undefined && r.unitCost > 0 && (r.qty ?? 0) > 0) {
           item.rate = perWeek ? r.unitCost * 7 : r.unitCost;
@@ -870,8 +909,9 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
       }
       mapped.push(`Rental ${target}: qty ${item.qty}, ${item.durationValue} × ${item.rateBasis}${r.unitCost !== undefined && (r.qty ?? 0) > 0 ? ` at the intake's ${money(r.unitCost)}` : ""}`);
     } else if (r.include && (r.qty ?? 0) > 0) {
-      equipment.push({ name: r.name, qty: r.qty ?? 1, rate: r.unitCost ?? 0, rateBasis: "per day", durationValue: r.days ?? 1, delivery: 0 });
-      mapped.push(`Rental ${r.name} added: ${r.qty} × ${money(r.unitCost ?? 0)}/day × ${r.days ?? 1} days`);
+      const basis = rateBasisFromRatePer(r.ratePer ?? "day");
+      equipment.push({ name: r.name, qty: r.qty ?? 1, rate: r.unitCost ?? 0, rateBasis: basis, durationValue: r.duration ?? 1, delivery: 0 });
+      mapped.push(`Rental ${r.name} added: ${r.qty} × ${money(r.unitCost ?? 0)} ${basis} × ${r.duration ?? 1}`);
     }
   }
   project.equipment = equipment;
@@ -952,7 +992,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (gfiEa !== undefined) sticky.add("peripherals.gfiTestQty");
   if (dumpLots !== undefined) sticky.add("peripherals.dumpWasteCost");
   if (gprEa !== undefined) sticky.add("peripherals.gpr");
-  if (rentals.some((r) => r.qty !== undefined || r.days !== undefined)) sticky.add("equipment");
+  if (rentals.some((r) => r.qty !== undefined || r.duration !== undefined)) sticky.add("equipment");
   if (scopeSentence) sticky.add("setup.scopeOfWork");
   if (sticky.size) project.sticky = [...sticky];
   project.intake = intake;

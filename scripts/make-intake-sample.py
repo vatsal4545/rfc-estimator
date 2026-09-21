@@ -3,7 +3,7 @@
 replacement-site scenario and save it as the importer's test fixture:
 
     python3 scripts/make-intake-sample.py
-    → lib/intake/__fixtures__/intake-sample-3.7.2.xlsx
+    → lib/intake/__fixtures__/intake-sample-3.8.0.xlsx
 
 Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, replacing a
 failing 2018 installation with twelve months of metered history, a Rule 29
@@ -16,8 +16,8 @@ import os
 import openpyxl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx")
-OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.7.2.xlsx")
+SRC = os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx")
+OUT = os.path.join(ROOT, "lib", "intake", "__fixtures__", "intake-sample-3.8.0.xlsx")
 
 wb = openpyxl.load_workbook(SRC)
 
@@ -45,10 +45,12 @@ put("Equipment", {
 })
 
 # The Electrical tab as rebuilt at template 3.3.0: block A sizing basis (B6–B13),
-# ONE charger-run table at rows 18–77 generated from the Equipment tab (unit k
+# ONE charger-run table at rows 18–47 (thirty rows since 3.8.0) generated from the Equipment tab (unit k
 # of the schedule is row 17 + k: here units 1–4 are the TP5 cabinets on line 1,
-# units 5–6 the Level 2 duals on line 2), the service block at rows 140–160,
-# the distribution schedule at rows 165–176 and the Rule 29 block at 185–202.
+# units 5–6 the Level 2 duals on line 2), the service block at rows 110–130,
+# the distribution schedule at rows 135–146, the Rule 29 block at 155–172 and
+# block I feeders at 212–223 — every block below the run table thirty rows
+# higher than at 3.7.x.
 elec = {"B6": "Cu", "B7": "PVC", "B8": "Asphalt", "B9": 24, "B10": 40}
 for i, dist in enumerate([80, 95, 110, 125]):
     r = 18 + i
@@ -57,18 +59,18 @@ for i, dist in enumerate([60, 75]):
     r = 22 + i
     elec.update({f"F{r}": dist, f"L{r}": "8 AWG", f"M{r}": 2})
 elec.update({
-    "B140": 1, "B142": 3200, "B144": "No", "B148": "Existing MSB", "B149": 200, "B150": 120,
-    "B155": "Utility — EV infrastructure rule", "B157": 40,
-    "A165": "EVSE disconnects", "B165": "EVSE disconnect", "C165": 4, "D165": 480, "E165": 3, "F165": 600, "G165": "MSB",
-    "H165": "TP5 cabinets", "I165": "Pad", "J165": "Zero Impact Energy", "K165": "Vendor quote", "L165": 12000,
-    "A166": "EV distribution panel", "B166": "Panelboard", "C166": 1, "D166": 480, "E166": 3, "F166": 400, "G166": "Existing MSB",
-    "H166": "EVSE disconnects", "I166": "Electrical room", "J166": "Zero Impact Energy", "K166": "Priced elsewhere in this workbook",
-    # Block I (3.7.2) — the feeders between the items on the schedule: the existing board to the new EV panel
+    "B110": 1, "B112": 3200, "B114": "No", "B118": "Existing MSB", "B119": 200, "B120": 120,
+    "B125": "Utility — EV infrastructure rule", "B127": 40,
+    "A135": "EVSE disconnects", "B135": "EVSE disconnect", "C135": 4, "D135": 480, "E135": 3, "F135": 600, "G135": "MSB",
+    "H135": "TP5 cabinets", "I135": "Pad", "J135": "Zero Impact Energy", "K135": "Vendor quote", "L135": 12000,
+    "A136": "EV distribution panel", "B136": "Panelboard", "C136": 1, "D136": 480, "E136": 3, "F136": 400, "G136": "Existing MSB",
+    "H136": "EVSE disconnects", "I136": "Electrical room", "J136": "Zero Impact Energy", "K136": "Priced elsewhere in this workbook",
+    # Block I (3.7.0) — the feeders between the items on the schedule: the existing board to the new EV panel
     # (floor = the panel's 400 A rating), and the panel to the disconnects in two typed sets of 350 KCMIL.
-    "B242": "Existing MSB", "C242": "EV distribution panel", "H242": 60,
-    "B243": "EV distribution panel", "C243": "EVSE disconnects", "H243": 25, "I243": 2, "K243": "350 KCMIL",
-    "B185": "Added load to existing service", "B186": "Underground", "B187": 150, "B188": "No", "B191": 3500,
-    "B192": "Unknown — design not yet submitted", "B195": "Unknown", "B197": "Yes", "B198": "Yes", "B199": "Yes", "B200": "Yes",
+    "B212": "Existing MSB", "C212": "EV distribution panel", "H212": 60,
+    "B213": "EV distribution panel", "C213": "EVSE disconnects", "H213": 25, "I213": 2, "K213": "350 KCMIL",
+    "B155": "Added load to existing service", "B156": "Underground", "B157": 150, "B158": "No", "B161": 3500,
+    "B162": "Unknown — design not yet submitted", "B165": "Unknown", "B167": "Yes", "B168": "Yes", "B169": "Yes", "B170": "Yes",
 })
 put("Electrical", elec)
 
@@ -76,7 +78,7 @@ put("Construction", {
     "B5": 34, "B6": 2750, "B7": 0.1, "B8": 0.2, "B10": 0.15,
     "B14": 6, "B17": 400, "B19": 2, "B20": 1, "B21": 12, "B25": 1, "B26": 1, "B27": 1,
     "B32": 3, "B33": 3, "B34": 35,
-    "B40": 1, "D40": 30, "B41": 1, "D41": 4, "B50": 1, "D50": 10,
+    "B40": 1, "D40": 30, "B41": 1, "D41": 4, "B50": 1, "D50": 10, "F50": "week",  # 3.8.0: F is the unit the rate is per; the generator is quoted weekly
     "B72": 0.2,
     "B81": 1, "B82": 1, "B83": 1, "B84": 0, "B85": 1, "D85": 850,
 })

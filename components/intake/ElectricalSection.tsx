@@ -204,7 +204,7 @@ export function ElectricalSection() {
         </div>
       </Section>
 
-      <Section title="AC runs — one per AC-connected unit" subtitle="The engine's sizing per unit: design current, breaker, conductor, parallel sets, conduit and the voltage-drop verdict. These fill the intake's charger-run table (Electrical rows 18–77, one row per unit, DC and Level 2 in Equipment order) — distance, sets, and the conductor and conduit as overrides beside the sheet's own sizing.">
+      <Section title="AC runs — one per AC-connected unit" subtitle="The engine's sizing per unit: design current, breaker, conductor, parallel sets, conduit and the voltage-drop verdict. These fill the intake's charger-run table (Electrical rows 18–47 since template 3.8.0, one row per unit, DC and Level 2 in Equipment order; thirty rows) — distance, sets, and the conductor and conduit as overrides beside the sheet's own sizing.">
         {dcRows.length === 0 ? (
           <div className="text-sm text-zinc-500">No DC units yet — add charger lines on 2 · Equipment.</div>
         ) : (
@@ -317,7 +317,7 @@ export function ElectricalSection() {
       <InterconnectionSection />
 
       {l2Rows.length > 0 && (
-        <Section title="Level 2 circuits" subtitle="One circuit per run, at the unit's distance. On the intake a dual pedestal is one charger-run row with two sets (Electrical rows 18–77).">
+        <Section title="Level 2 circuits" subtitle="One circuit per run, at the unit's distance. On the intake a dual pedestal is one charger-run row with two sets (Electrical rows 18–47).">
           <div className={wrap}>
             <table className={table}>
               <thead className={theadCls}>
@@ -353,7 +353,7 @@ export function ElectricalSection() {
 
       <Section
         title="Distribution equipment schedule"
-        subtitle="Intake Electrical block E (rows 165–176). The engine lists its own gear with the estimator's catalog price in the cost column — the sheet's gear total is the sum of that column, nothing else. Edit the schedule to describe the real lineup: a typed row prices itself from the catalog by type and rating; pick “Vendor quote” to type the vendor's figure instead. Then price the switchgear line at the schedule so the estimate and the sheet agree."
+        subtitle="Intake Electrical block E (rows 135–146 since template 3.8.0). The engine lists its own gear with the estimator's catalog price in the cost column — the sheet's gear total is the sum of that column, nothing else. Edit the schedule to describe the real lineup: a typed row prices itself from the catalog by type and rating; pick “Vendor quote” to type the vendor's figure instead. Then price the switchgear line at the schedule so the estimate and the sheet agree."
       >
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
           <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${schedule.typed ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}>{schedule.typed ? "typed" : "auto"}</span>
@@ -509,15 +509,15 @@ export function ElectricalSection() {
                 Price the switchgear line at the schedule ({money(estimated.total)})
               </button>
             )}
-            <span className="text-xs text-zinc-500">Writes the register: switchgear line = the schedule&apos;s total, sub-panels / transformers / breakers line = 0 (they are on the schedule). The sheet&apos;s B178 carries the same total.</span>
+            <span className="text-xs text-zinc-500">Writes the register: switchgear line = the schedule&apos;s total, sub-panels / transformers / breakers line = 0 (they are on the schedule). The sheet&apos;s B148 carries the same total.</span>
           </div>
         )}
-        {cabinets && <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">Distributed system: the cabinets&apos; AC feeders are sized here; the cabinet-to-dispenser DC runs are not in the takeoff yet and stay blank on the intake (rows 174–205).</div>}
+        {cabinets && <div className="mt-3 text-xs text-amber-800 dark:text-amber-300">Distributed system: the cabinets&apos; AC feeders are sized here; the cabinet-to-dispenser DC runs are not in the takeoff yet and stay blank on the intake (block C, rows 65–96).</div>}
       </Section>
 
       <Section
         title="Distribution feeders — between the items on the schedule"
-        subtitle="The wire between the boxes (intake 3.7.0 Electrical block I, rows 242–253), priced into the wire line on both sides. Nothing typed = the engine's switchgear → transformer → sub-panel pair. Type the site's own feeders to replace it: the floor is the rating of the item fed unless you type one, the engine sizes at floor ÷ 1.25 the way the sheet does, and the sheet reads the conductor and sets as overrides."
+        subtitle="The wire between the boxes (intake Electrical block I, rows 212–223 since template 3.8.0), priced into the wire line on both sides. Nothing typed = the engine's switchgear → transformer → sub-panel pair. Type the site's own feeders to replace it: the floor is the rating of the item fed unless you type one, the engine sizes at floor ÷ 1.25 the way the sheet does, and the sheet reads the conductor and sets as overrides."
       >
         {feederRows.length === 0 && typedFeeders.length === 0 ? (
           <div className="text-sm text-zinc-500">No feeders to price: a single-voltage site with no step-down transformer has none between the boxes. Add one below if the schedule has a panel or remote disconnect fed by its own run.</div>

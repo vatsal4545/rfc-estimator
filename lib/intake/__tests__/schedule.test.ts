@@ -14,7 +14,7 @@ import { projectFromIntake } from "../importIntake";
 import { GEAR_LINE_KEY, SUBPANELS_LINE_KEY, catalogPriceFor, clearGearQuotePricing, distributionScheduleOf, engineDistributionSchedule, estimatedGearTotal, gearPricedAtSchedule, priceGearAtSchedule, scheduledGearTotal, withCatalogPrice } from "../schedule";
 import { readWorkbook } from "../xlsx";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
 
 function site() {
   const dc = findSku("TP5-360-480-2-300")!;
@@ -33,7 +33,7 @@ describe("distribution schedule as data", () => {
     expect(rows.some((r) => r.type === "Transformer")).toBe(true);
     expect(rows.some((r) => r.type === "Subpanel")).toBe(true);
     expect(rows.every((r) => r.fedFrom.trim() !== "")).toBe(true);
-    // Every piece of gear carries the estimator's catalog price, so the sheet's B178 (the sum of column L) is the estimator's gear.
+    // Every piece of gear carries the estimator's catalog price, so the sheet's B148 (the sum of column L) is the estimator's gear.
     const gearRows = rows.filter((r) => ["Switchboard", "Transformer", "Subpanel", "Other"].includes(r.type) && !/pad|well|pull box/i.test(r.item));
     expect(gearRows.length).toBeGreaterThan(3);
     expect(gearRows.every((r) => (r.quotedCost ?? 0) > 0 && (r.costBasis === "RefData rate" || r.costBasis === "Allowance"))).toBe(true);
@@ -43,20 +43,20 @@ describe("distribution schedule as data", () => {
     const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, computeProposal(project, result)!, { today: "2026-09-18" });
     const wb = await readWorkbook(bytes);
     rows.forEach((r, i) => {
-      expect(wb.get("Electrical", `A${165 + i}`)).toBe(r.item);
-      expect(wb.get("Electrical", `B${165 + i}`)).toBe(r.type);
-      expect(wb.get("Electrical", `L${165 + i}`)).toBe(r.quotedCost);
+      expect(wb.get("Electrical", `A${135 + i}`)).toBe(r.item);
+      expect(wb.get("Electrical", `B${135 + i}`)).toBe(r.type);
+      expect(wb.get("Electrical", `L${135 + i}`)).toBe(r.quotedCost);
     });
-    expect(wb.get("Electrical", "B178")).toBeCloseTo(gearLines, 2);
-    expect(String(wb.get("Electrical", "B179"))).toMatch(/^OK/);
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(gearLines, 2);
+    expect(String(wb.get("Electrical", "B149"))).toMatch(/^OK/);
     // The 3,200 A frame is the estimator's Larson-based allowance; the sheet's own table stops at what it knows.
     expect(rows[0].costBasis).toBe(rows[0].ratingA === 3200 ? "Allowance" : rows[0].costBasis);
     expect(distributionScheduleOf(project, result)).toEqual({ rows, typed: false });
     // Block I names the transformer and sub-panel rows, so the sheet resolves their volts.
-    expect(wb.get("Electrical", "C242")).toBe(rows.find((r) => r.type === "Transformer")!.item);
-    expect(wb.get("Electrical", "B242")).toBe(rows[0].item);
-    expect(wb.get("Electrical", "D242")).toBe(480);
-    expect(wb.get("Electrical", "D243")).toBe(208);
+    expect(wb.get("Electrical", "C212")).toBe(rows.find((r) => r.type === "Transformer")!.item);
+    expect(wb.get("Electrical", "B212")).toBe(rows[0].item);
+    expect(wb.get("Electrical", "D212")).toBe(480);
+    expect(wb.get("Electrical", "D213")).toBe(208);
   });
 
   it("a typed row prices itself from the catalog by type and rating until a vendor quote is chosen", () => {
@@ -103,12 +103,12 @@ describe("distribution schedule as data", () => {
     const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, computeProposal(project, result)!, { today: "2026-09-18" });
     const wb = await readWorkbook(bytes);
     // The rows travel as typed; the sheet's own gear total is the quotes; the register row says the same; block I still finds the transformer row.
-    expect(wb.get("Electrical", "A165")).toBe(rows[0].item);
-    expect(wb.get("Electrical", "L165")).toBe(5700);
-    expect(wb.get("Electrical", "B178")).toBeCloseTo(expected, 2);
+    expect(wb.get("Electrical", "A135")).toBe(rows[0].item);
+    expect(wb.get("Electrical", "L135")).toBe(5700);
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(expected, 2);
     expect(wb.get("Overrides", "B10")).toBeCloseTo(expected, 2);
-    expect(wb.get("Electrical", "C242")).toBe(rows[tx].item);
-    expect(wb.get("Electrical", "B242")).toBe(rows[0].item);
+    expect(wb.get("Electrical", "C212")).toBe(rows[tx].item);
+    expect(wb.get("Electrical", "B212")).toBe(rows[0].item);
     // And back to the catalog.
     const back = clearGearQuotePricing(project);
     expect(gearPricedAtSchedule(back)).toBe(false);
@@ -122,7 +122,7 @@ describe("distribution schedule as data", () => {
     const stale = { ...project, intake: { ...(project.intake ?? defaultIntake()), distributionSchedule: rows } };
     const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), stale, result, computeProposal(stale, result)!, { today: "2026-09-18" });
     const wb = await readWorkbook(bytes);
-    expect(wb.get("Electrical", "B178")).toBe(0); // what every app-filled intake said until today
+    expect(wb.get("Electrical", "B148")).toBe(0); // what every app-filled intake said until today
     const { project: back, report } = projectFromIntake(wb, { ...defaultProject(), commercial: defaultCommercial() });
     expect(back.intake?.distributionSchedule).toBeUndefined();
     expect(report.mapped.some((m) => /regenerated with the estimator's catalog prices/.test(m))).toBe(true);
@@ -130,7 +130,7 @@ describe("distribution schedule as data", () => {
     const { bytes: b2 } = await fillIntakeWorkbook(readFileSync(TEMPLATE), back, again, computeProposal(back, again)!, { today: "2026-09-18" });
     const wb2 = await readWorkbook(b2);
     const gearLines = again.costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
-    expect(wb2.get("Electrical", "B178")).toBeCloseTo(gearLines, 2);
+    expect(wb2.get("Electrical", "B148")).toBeCloseTo(gearLines, 2);
     expect(gearLines).toBeGreaterThan(0);
   });
 });

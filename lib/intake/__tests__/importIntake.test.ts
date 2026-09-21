@@ -11,8 +11,8 @@ import { defaultCommercial } from "../../proposal/defaults";
 import { importIntakeFile, looksLikeIntake, projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.2.xlsx");
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
 
 describe("importing a completed intake workbook", async () => {
   const base = { ...defaultProject(), commercial: defaultCommercial() };
@@ -22,8 +22,8 @@ describe("importing a completed intake workbook", async () => {
   const proposal = computeProposal(project, estimate)!;
 
   it("recognises the workbook and records its version", () => {
-    expect(report.templateVersion).toBe("3.7.2");
-    expect(report.contentHash).toBe("b83387921f8472c2");
+    expect(report.templateVersion).toBe("3.8.0");
+    expect(report.contentHash).toBe("3a564d9eb659391e");
     expect(report.fileVersion).toBe("Rev A");
     expect(report.completedBy).toBe("Test CPM");
     expect(report.dateCompleted).toBe("2026-09-02");
@@ -57,7 +57,7 @@ describe("importing a completed intake workbook", async () => {
     expect(it.projectReference).toBe("BW-TEST-001");
     expect(it.county).toBe("Los Angeles");
     expect(it.cca).toBe("Clean Power Alliance");
-    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.7\.2 Rev A completed by Test CPM on 2026-09-02/);
+    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.8\.0 Rev A completed by Test CPM on 2026-09-02/);
   });
 
   it("Equipment and Electrical → Quick Estimate lines, distances, materials and gear", () => {
@@ -150,7 +150,7 @@ describe("importing a completed intake workbook", async () => {
     expect(rental("Mini excavator")).toMatchObject({ qty: 1, durationValue: 30, rateBasis: "per day" }); // intake days and the intake's per-day rate (the template's C40)
     expect(rental("Mini excavator").rate).toBeCloseTo(98.5667, 3);
     expect(rental("Dump truck")).toMatchObject({ qty: 1, durationValue: 4 });
-    expect(rental("Generator rental")).toMatchObject({ qty: 1, rate: 220, durationValue: 10 }); // not in the standard list → appended at the intake's rate
+    expect(rental("Generator rental")).toMatchObject({ qty: 1, rate: 220, durationValue: 10, rateBasis: "per week" }); // not in the standard list → appended at the intake's rate, per the unit in F (3.8.0)
     expect(report.skipped.some((s) => /Rebar/.test(s))).toBe(false); // nothing entered for rebar
   });
 
@@ -276,5 +276,32 @@ describe("importing a completed intake workbook", async () => {
     expect(computeEstimate(blank.project).costs.totalCost).toBeGreaterThanOrEqual(0);
     const fake = { sheetNames: ["Sheet1"], has: () => false, get: () => null, formula: () => undefined, cells: () => new Map() };
     expect(looksLikeIntake(fake)).toBe(false);
+  });
+});
+
+// A file filled on 3.3.0–3.7.x keeps every Electrical block below the charger-run
+// table thirty rows lower (block B held sixty runs). The importer reads it there.
+describe("a 3.7.2 file — the Electrical tab at its pre-3.8.0 rows", async () => {
+  const LEGACY = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.2.xlsx");
+  const base = { ...defaultProject(), commercial: defaultCommercial() };
+  const legacy = projectFromIntake(await readWorkbook(readFileSync(LEGACY)), base);
+  const current = projectFromIntake(await readWorkbook(readFileSync(FIXTURE)), base);
+
+  it("reads the service block, the schedule, block I and the Rule 29 block where 3.7.2 kept them", () => {
+    expect(legacy.report.templateVersion).toBe("3.7.2");
+    expect(legacy.report.warnings.some((w) => /read thirty rows lower/.test(w))).toBe(true);
+    expect(legacy.project.intake!.interconnection!.pointOfConnection).toBe("Existing MSB");
+    expect(legacy.project.setup.gearOverrides?.switchgear480A).toBe(3200);
+    expect(legacy.project.setup.serviceChain?.utilityToSwitchgearFt).toBe(0);
+    expect(legacy.project.intake!.distributionSchedule).toEqual(current.project.intake!.distributionSchedule);
+    expect(legacy.project.setup.serviceChain!.feeders).toEqual(current.project.setup.serviceChain!.feeders);
+    expect(legacy.project.intake!.interconnection).toEqual(current.project.intake!.interconnection);
+    expect(legacy.project.takeoffEdits).toEqual(current.project.takeoffEdits);
+  });
+
+  it("rentals without a rate unit (no column F before 3.8.0) are read as per-day rows", () => {
+    const rental = (name: string) => legacy.project.equipment.find((e) => e.name === name)!;
+    expect(rental("Mini excavator")).toMatchObject({ qty: 1, durationValue: 30, rateBasis: "per day" });
+    expect(rental("Generator rental")).toMatchObject({ qty: 1, rate: 220, durationValue: 10, rateBasis: "per day" });
   });
 });

@@ -134,7 +134,7 @@ matching sheets with live formulas (`lib/exportModel.ts`).
 
 ### Intake import, replacement sites, Rule 29 and the override register
 
-- **Import a completed intake** (Intake tab): a filled EVSE Project Intake 3.6.0
+- **Import a completed intake** (Intake tab): a filled EVSE Project Intake 3.8.0 (3.3.0–3.7.x files are read at their older Electrical rows)
   workbook becomes a new project — chargers and run distances, labour, D&E
   units, site-works quantities and rentals, pass-through fees, commercial and
   financing terms, revenue / tariff / carbon / deal assumptions, the existing

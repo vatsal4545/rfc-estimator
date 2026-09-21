@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.7.2 — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.8.0 — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -9,17 +9,17 @@ import { DESIGN_UNIT_RATES } from "../calc/designFees";
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.7.2",
+  version: "3.8.0",
   /**
    * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
-   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0, 3.7.0 and 3.7.2 — so it
+   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0, 3.7.0, 3.7.2 and 3.8.0 — so it
    * is not a reliable content digest. The version string is what actually
    * gates a fill.
    */
-  contentHash: "b83387921f8472c2",
-  file: "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx",
+  contentHash: "3a564d9eb659391e",
+  file: "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -96,7 +96,10 @@ export const EQUIPMENT_TABLE = {
  * (auto) and, since 3.7.0, block I the distribution feeders between the items
  * on the schedule. 3.5.0 moved nothing — it locked every non-blue cell; 3.6.0
  * and 3.7.0 only appended; 3.7.1–3.7.2 repaired dropdowns and the nine
- * unbalanced formulas without moving a cell.
+ * unbalanced formulas without moving a cell. 3.8.0 cut block B from sixty
+ * charger runs to thirty (rows 18–47), so every block below it on THIS tab
+ * sits thirty rows higher than at 3.7.x; no other tab moved. A 3.3.0–3.7.x
+ * file is read through ELECTRICAL_LEGACY_SHIFT.
  */
 export const ELECTRICAL_CELLS = {
   // Block A — sizing basis
@@ -117,11 +120,11 @@ export const ELECTRICAL_CELLS = {
   /** Allowable voltage drop as a fraction (0.03 = 3%) — the estimator's maxVoltageDropFraction. */
   allowableVdFraction: "B13",
   // Block D — service and switchgear
-  boards: "B140",
-  switchgearPricedA: "B142",
-  loadManagement: "B144",
+  boards: "B110",
+  switchgearPricedA: "B112",
+  loadManagement: "B114",
   /** SIZING cap: conductors, gear and power per position are sized on this. */
-  cappedKw: "B145",
+  cappedKw: "B115",
   /**
    * BILLING setpoint, new at 3.0.0 — what the EMS holds the peak fifteen-minute
    * draw to. Nothing is sized on it. Kept separate from cappedKw above because
@@ -129,35 +132,35 @@ export const ELECTRICAL_CELLS = {
    * buy a demand-charge saving. The estimator models neither, so this is
    * reported rather than written.
    */
-  demandSetpointKw: "B147",
-  pointOfConnection: "B148",
-  spareCapacityA: "B149",
-  switchgearToPoleFt: "B150",
+  demandSetpointKw: "B117",
+  pointOfConnection: "B118",
+  spareCapacityA: "B119",
+  switchgearToPoleFt: "B120",
   // Service feeder block
-  governingRule: "B154",
-  feederBy: "B155",
-  feederAmbientC: "B156",
-  txToSwitchgearFt: "B157",
+  governingRule: "B124",
+  feederBy: "B125",
+  feederAmbientC: "B126",
+  txToSwitchgearFt: "B127",
   // Block F — Rule 29 block
-  serviceType: "B185",
-  serviceRoute: "B186",
-  distanceToPoiFt: "B187",
+  serviceType: "B155",
+  serviceRoute: "B156",
+  distanceToPoiFt: "B157",
   /** A dropdown since 3.3.0 (Yes / No / In preparation); the date has its own row below. */
-  applicationSubmitted: "B188",
-  applicationDate: "B189",
-  utilityProjectNumber: "B190",
-  interconnectFee: "B191",
-  rule15Indicated: "B192",
-  rule15Allowance: "B193",
-  contributionAboveAllowance: "B194",
-  rule16: "B195",
-  itcc: "B196",
-  padLocationAgreed: "B197",
-  proofOfCommitment: "B198",
-  acceptsOandM: "B199",
-  acceptsActivation: "B200",
-  designSubmitted: "B201",
-  designReturned: "B202",
+  applicationSubmitted: "B158",
+  applicationDate: "B159",
+  utilityProjectNumber: "B160",
+  interconnectFee: "B161",
+  rule15Indicated: "B162",
+  rule15Allowance: "B163",
+  contributionAboveAllowance: "B164",
+  rule16: "B165",
+  itcc: "B166",
+  padLocationAgreed: "B167",
+  proofOfCommitment: "B168",
+  acceptsOandM: "B169",
+  acceptsActivation: "B170",
+  designSubmitted: "B171",
+  designReturned: "B172",
 } as const;
 
 /**
@@ -171,11 +174,12 @@ export const ELECTRICAL_CELLS = {
  * is how the sheet carries a unit fed by more than one circuit — a dual
  * Level 2 pedestal on two branches, a power cabinet on two inputs — so the
  * estimator's circuits per unit land there. Unit k of the schedule is row
- * firstRow + k − 1.
+ * firstRow + k − 1. Thirty rows since 3.8.0 (sixty before); the sheet prices
+ * nothing on a row with no charger.
  */
 export const CHARGER_RUN_TABLE = {
   firstRow: 18,
-  lastRow: 77,
+  lastRow: 47,
   circuit: "E",
   distanceFt: "F",
   sharesTrench: "G",
@@ -194,15 +198,15 @@ export const CHARGER_RUN_TABLE = {
  * scheduled (the sheet says NOT USED otherwise). Rows are built from the
  * cabinet lines: dispenser k is row firstRow + k − 1.
  */
-export const DISPENSER_RUN_TABLE = { firstRow: 95, lastRow: 126, distanceFt: "C", conductor: "E", ground: "F", conduit: "G", sharedTrench: "H" } as const;
+export const DISPENSER_RUN_TABLE = { firstRow: 65, lastRow: 96, distanceFt: "C", conductor: "E", ground: "F", conduit: "G", sharedTrench: "H" } as const;
 
 /** The transformer-to-switchgear feeder (one lateral). */
-export const SERVICE_FEEDER_ROW = { row: 160, material: "B", conductor: "I", sets: "J" } as const;
+export const SERVICE_FEEDER_ROW = { row: 130, material: "B", conductor: "I", sets: "J" } as const;
 
 /** Block E — distribution equipment schedule. */
 export const DISTRIBUTION_TABLE = {
-  firstRow: 165,
-  lastRow: 176,
+  firstRow: 135,
+  lastRow: 146,
   item: "A",
   type: "B",
   qty: "C",
@@ -222,15 +226,15 @@ export const DISTRIBUTION_TABLE = {
  * the schedule that nothing else carried until now (existing board to the new
  * EV panel, breaker to transformer primary, transformer secondary to the
  * Level 2 panel, panel to panel). One row per feeder; FROM and TO are items
- * on the schedule (column A of block E — the dropdowns list A165:A176), the
+ * on the schedule (column A of block E — the dropdowns list A135:A146), the
  * floor is the rating of the item fed unless column G types one, and the
  * sheet sizes conductor, ground, conduit and material itself. Its material
- * total (B256) joins the wire line on the Pricing tab, so the estimator's
+ * total (B226) joins the wire line on the Pricing tab, so the estimator's
  * feeder segments must land here for the two to agree.
  */
 export const DISTRIBUTION_FEEDER_TABLE = {
-  firstRow: 242,
-  lastRow: 253,
+  firstRow: 212,
+  lastRow: 223,
   from: "B",
   to: "C",
   floorA: "G",
@@ -249,7 +253,30 @@ export const DISTRIBUTION_FEEDER_TABLE = {
 } as const;
 
 /** Block I's summary rows (all formulas). */
-export const DISTRIBUTION_FEEDER_CELLS = { count: "B255", material: "B256", distanceFt: "B257", verdict: "B258", coverage: "B259" } as const;
+export const DISTRIBUTION_FEEDER_CELLS = { count: "B225", material: "B226", distanceFt: "B227", verdict: "B228", coverage: "B229" } as const;
+
+/**
+ * Reading a 3.3.0–3.7.x file with this map: the Electrical tab's rows from the
+ * first row below the charger-run table (48 at 3.8.0) sat thirty rows lower
+ * (block B had sixty rows, 18–77). Charger runs 31–60 of such a file have no
+ * row here and are reported, not read.
+ */
+export const ELECTRICAL_LEGACY_SHIFT = { firstMovedRow: 48, rows: 30, lastLegacyChargerRow: 77 } as const;
+
+/** Whether a template version reads the Electrical tab at its pre-3.8.0 (3.3.0–3.7.x) row positions. */
+export function electricalUsesLegacyRows(templateVersion: string): boolean {
+  const [major, minor] = templateVersion.split(".").map(Number);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
+  return major === 3 && minor >= 3 && minor < 8;
+}
+
+/** An Electrical-tab cell address of the current map, moved to where a 3.3.0–3.7.x file kept it. */
+export function legacyElectricalRef(ref: string): string {
+  const m = /^(\$?[A-Z]{1,3}\$?)(\d+)$/.exec(ref);
+  if (!m) return ref;
+  const row = Number(m[2]);
+  return row >= ELECTRICAL_LEGACY_SHIFT.firstMovedRow ? `${m[1]}${row + ELECTRICAL_LEGACY_SHIFT.rows}` : ref;
+}
 
 /** The Rule 29 block's "application submitted" dropdown since 3.3.0. */
 export const APPLICATION_SUBMITTED_OPTIONS = ["Yes", "No", "In preparation"] as const;
@@ -310,8 +337,32 @@ export const SITE_WORKS_COLS = { qty: "B", include: "E" } as const;
 /** The template's design unit rates (Construction!D32 / D33) — see lib/calc/designFees. */
 export const DESIGN_SET_RATES = { autoCad: DESIGN_UNIT_RATES.autoCad, ee: DESIGN_UNIT_RATES.ee } as const;
 
-/** Rentals: name in A (the template's own labels), qty B, unit cost C, days D, include E. */
-export const RENTAL_TABLE = { firstRow: 39, lastRow: 52, name: "A", qty: "B", unitCost: "C", days: "D", include: "E" } as const;
+/**
+ * Rentals: name in A (the template's own labels), qty B, unit cost C,
+ * duration D, include E and, since 3.8.0, the unit the rate is per in F (day /
+ * week / month) — the duration is in that unit, and the sheet prices
+ * qty × unit cost × duration regardless of it (Pricing!B12).
+ */
+export const RENTAL_TABLE = { firstRow: 39, lastRow: 52, name: "A", qty: "B", unitCost: "C", duration: "D", include: "E", ratePer: "F" } as const;
+/** The F-column dropdown, in the sheet's spelling. */
+export const RENTAL_RATE_PER = ["day", "week", "month"] as const;
+export type RentalRatePer = (typeof RENTAL_RATE_PER)[number];
+
+/** The intake's rate unit for an estimator rate basis ("per ft per week" → week, "per month" → month, "each way" and "per day" → day). */
+export function rentalRatePerOf(rateBasis: string): RentalRatePer {
+  const b = rateBasis.toLowerCase();
+  if (/\bweek/.test(b)) return "week";
+  if (/\bmonth/.test(b)) return "month";
+  return "day";
+}
+
+/** The estimator's rate basis for an intake rate unit, keeping a per-unit-of-quantity basis (fencing is per ft) — "per ft per week" with F = day becomes "per ft per day". */
+export function rateBasisFromRatePer(ratePer: string, priorBasis?: string): string {
+  const unit = (RENTAL_RATE_PER as readonly string[]).includes(ratePer.trim().toLowerCase()) ? ratePer.trim().toLowerCase() : "day";
+  const prior = (priorBasis ?? "").toLowerCase();
+  const perQty = /^per (ft|foot|lf|sq ft|each|ea)\b/.exec(prior);
+  return perQty ? `per ${perQty[1]} per ${unit}` : `per ${unit}`;
+}
 
 /** Pass-through fees: quantity B, unit cost D, include E. */
 export const FEE_ROWS = {

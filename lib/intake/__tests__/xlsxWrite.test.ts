@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readWorkbook } from "../xlsx";
 import { colIndex, escapeXml, isoToSerial, patchSheetXml, patchWorkbook } from "../xlsxWrite";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
 
 describe("xlsx writer", () => {
   it("writes strings, numbers, dates and new rows into the CEO's template and reads them back", async () => {
@@ -40,7 +40,7 @@ describe("xlsx writer", () => {
     expect(wb.get("Equipment", "I7")).toBe(4);
     expect(wb.get("Equipment", "I8")).toBeNull();
     // Untouched parts survive: the template identity, a formula, another sheet's constants.
-    expect(wb.get("Version", "B4")).toBe("3.7.2");
+    expect(wb.get("Version", "B4")).toBe("3.8.0");
     expect(wb.formula("Revenue", "B12")).toBe("Project!B22");
     expect(wb.get("RateLibrary", "F5")).toBe(0.35711);
     expect(wb.sheetNames).toHaveLength(19);

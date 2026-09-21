@@ -1,4 +1,4 @@
-// Plan the fill of the CEO's EVSE Project Intake 3.7.2 from a project — which
+// Plan the fill of the CEO's EVSE Project Intake 3.8.0 from a project — which
 // cell gets which value. Pure and light (no zip code), so the intake tabs can
 // preview it live; fillIntake.ts applies it to the template.
 //
@@ -50,6 +50,7 @@ import {
   RENTAL_ROW_NAMES,
   intakeRentalRow,
   RENTAL_TABLE,
+  rentalRatePerOf,
   REVENUE_CELLS,
   SCOPE_ROWS,
   SERVICE_FEEDER_ROW,
@@ -412,7 +413,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     if (written < count) warnings.push(`Equipment line ${rowNo - EQUIPMENT_TABLE.firstRow + 1}: ${count} unit(s) on the schedule but the estimate sizes ${written} — ${count - written} charger-run row(s) left without a distance.`);
   }
   if (!it?.sharedTrenchRuns && runFt > 0 && s.trenchLengthFt > 0 && s.trenchLengthFt < runFt) {
-    leftBlank.push(`Electrical G18–G77 shared-trench flags — the estimator digs ${Math.round(s.trenchLengthFt)} ft of trench for ${Math.round(runFt)} ft of charger runs; mark the runs that share another run's trench so the sheet's trench figure agrees.`);
+    leftBlank.push(`Electrical ${CHARGER_RUN_TABLE.sharesTrench}${CHARGER_RUN_TABLE.firstRow}–${CHARGER_RUN_TABLE.sharesTrench}${CHARGER_RUN_TABLE.lastRow} shared-trench flags — the estimator digs ${Math.round(s.trenchLengthFt)} ft of trench for ${Math.round(runFt)} ft of charger runs; mark the runs that share another run's trench so the sheet's trench figure agrees.`);
   }
   if (totalCabinets > 0) leftBlank.push(`Electrical rows ${DISPENSER_RUN_TABLE.firstRow}–${DISPENSER_RUN_TABLE.lastRow} cabinet-to-dispenser DC runs — the estimator sizes the cabinets' AC feeders only.`);
 
@@ -421,11 +422,11 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   put("Electrical", ELECTRICAL_CELLS.txToSwitchgearFt, s.serviceChain?.utilityToSwitchgearFt);
   put("Electrical", ELECTRICAL_CELLS.spareCapacityA, x?.infrastructure.spareA ?? undefined);
   const frame = result.panel.bus480 ?? result.panel.bus208;
-  // A retained board is not a priced one: the sheet's B142 is "size being priced", and 0 keeps RefData from pricing a switchboard the site already has.
+  // A retained board is not a priced one: the sheet's B112 is "size being priced", and 0 keeps RefData from pricing a switchboard the site already has.
   put("Electrical", ELECTRICAL_CELLS.switchgearPricedA, per.existingSwitchgear ? 0 : frame?.suggestedBusA);
   if (it?.switchgearToPoleFt !== undefined && it?.switchgearToPoleFt !== null) put("Electrical", ELECTRICAL_CELLS.switchgearToPoleFt, it.switchgearToPoleFt);
-  leftBlank.push("Electrical B150 distance to the pole (unless an imported intake carried it), B140 board count and B144–B145 load management — the estimator sizes one board at full nameplate; the template's 1 / No stand.");
-  leftBlank.push("Electrical B147 demand-limiting setpoint — the billing setpoint the EMS holds the peak fifteen-minute draw to. Nothing is sized on it and the estimator does not model it; blank leaves the template falling back to the sizing cap above.");
+  leftBlank.push("Electrical B120 distance to the pole (unless an imported intake carried it), B110 board count and B114–B115 load management — the estimator sizes one board at full nameplate; the template's 1 / No stand.");
+  leftBlank.push("Electrical B117 demand-limiting setpoint — the billing setpoint the EMS holds the peak fifteen-minute draw to. Nothing is sized on it and the estimator does not model it; blank leaves the template falling back to the sizing cap above.");
   put("Electrical", ELECTRICAL_CELLS.feederBy, ic.serviceFeederBy);
   const svc = feederOutOfScope(ic.serviceFeederBy) ? undefined : result.rows.find((r) => r.synthetic && r.loadTypeId.startsWith("SVC Utility"));
   if (!feederOutOfScope(ic.serviceFeederBy)) put("Electrical", `${SERVICE_FEEDER_ROW.material}${SERVICE_FEEDER_ROW.row}`, s.serviceChain?.material ?? svc?.material);
@@ -433,7 +434,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     put("Electrical", `${SERVICE_FEEDER_ROW.conductor}${SERVICE_FEEDER_ROW.row}`, snapConductorToIntake(svc.selectedWire, INTAKE_FEEDER_SIZES).size);
     put("Electrical", `${SERVICE_FEEDER_ROW.sets}${SERVICE_FEEDER_ROW.row}`, svc.resolvedRunsPerUnit);
     if (ambientC !== null && Number.isFinite(ambientC)) put("Electrical", ELECTRICAL_CELLS.feederAmbientC, ambientC);
-    else leftBlank.push("Electrical B156 design ambient for the service feeder — the run's own site figure, needed for its ampacity check when Zero Impact Energy provides it.");
+    else leftBlank.push("Electrical B126 design ambient for the service feeder — the run's own site figure, needed for its ampacity check when Zero Impact Energy provides it.");
   }
 
   // Block F — the Rule 29 block.
@@ -596,11 +597,14 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   for (const rr of RENTAL_ROW_NAMES) {
     const item = result.equipment.items.find((i) => rentalRowOf(i)?.row === rr.row);
     if (!item) continue;
-    const perWeek = /per week/i.test(item.rateBasis);
     put("Construction", `${RENTAL_TABLE.qty}${rr.row}`, item.qty);
-    // The sheet's rental rows are per day; the estimator's fencing is per ft per week.
-    put("Construction", `${RENTAL_TABLE.unitCost}${rr.row}`, perWeek ? round4(item.rate / 7) : item.rate);
-    put("Construction", `${RENTAL_TABLE.days}${rr.row}`, perWeek ? round4(item.durationValue * 7) : item.durationValue);
+    // Since 3.8.0 a row carries the unit its rate is per (F: day / week / month)
+    // with the duration in that unit, so the estimator's rate and duration
+    // travel as they are — fencing per ft per week stays weekly, a monthly
+    // container stays monthly. The sheet prices qty × rate × duration either way.
+    put("Construction", `${RENTAL_TABLE.unitCost}${rr.row}`, round4(item.rate));
+    put("Construction", `${RENTAL_TABLE.duration}${rr.row}`, round4(item.durationValue));
+    put("Construction", `${RENTAL_TABLE.ratePer}${rr.row}`, rentalRatePerOf(item.rateBasis));
     put("Construction", `${RENTAL_TABLE.include}${rr.row}`, yn(item.qty > 0 && !item.excluded));
   }
   const unmappedRentals = result.equipment.items.filter((i) => i.qty > 0 && !i.excluded && !rentalRowOf(i)).map((i) => i.name);

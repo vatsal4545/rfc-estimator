@@ -342,7 +342,7 @@ export function UtilityTariffSection() {
   );
 }
 
-/** 3 · Electrical — the utility interconnection / Rule 29 block (intake 3.6.0 Electrical rows 185–202, feeder B155). */
+/** 3 · Electrical — the utility interconnection / Rule 29 block (intake 3.8.0 Electrical rows 155–172, feeder B125). */
 export function InterconnectionSection() {
   const x = useIntakeEditing();
   const { project, setProject, numOrNull, ic, icResult, setIc } = x;

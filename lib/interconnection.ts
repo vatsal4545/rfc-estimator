@@ -1,4 +1,4 @@
-// Utility interconnection — the intake's Rule 29 block (Electrical rows 48-67)
+// Utility interconnection — the intake's Rule 29 block (Electrical block F, rows 155–172 at template 3.8.0)
 // and the Best Western model's Utility_Rule29 sheet. Which regime governs the
 // connection (PG&E Electric Rule 29, SDG&E Rule 45, a publicly owned
 // utility's own line-extension policy, Michigan tariffs), what the utility
@@ -29,12 +29,12 @@ export interface InterconnectionInput {
   acceptsActivation: "" | "Yes" | "No";
   designSubmitted: string;
   designReturned: string;
-  /** Who provides the transformer-to-switchgear run (intake Electrical!B155). "Existing — retained" (3.6.0): the feeder stays, so it is neither sized nor costed. */
+  /** Who provides the transformer-to-switchgear run (intake Electrical!B125 at 3.8.0; B155 at 3.3.0–3.7.x). "Existing — retained" (3.6.0): the feeder stays, so it is neither sized nor costed. */
   serviceFeederBy: "" | "Utility — EV infrastructure rule" | "Zero Impact Energy" | "Existing — retained";
   pointOfConnection: string;
 }
 
-/** The intake's Electrical!B155 dropdown, in its order. */
+/** The intake's Electrical!B125 dropdown (3.8.0), in its order. */
 export const FEEDER_BY_OPTIONS: InterconnectionInput["serviceFeederBy"][] = ["Utility — EV infrastructure rule", "Zero Impact Energy", "Existing — retained"];
 
 /** The transformer-to-switchgear run is not ours to size or cost: the utility builds it under its EV rule, or it already exists and stays. */

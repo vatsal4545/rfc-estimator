@@ -29,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = (
     sys.argv[1]
     if len(sys.argv) > 1
-    else os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx")
+    else os.path.join(ROOT, "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx")
 )
 OUT = os.path.join(ROOT, "lib", "ref")
 

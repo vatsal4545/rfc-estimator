@@ -146,7 +146,7 @@ function utilityCivilRule(utility: string, counts: UtilityCivilCounts, feederByU
           : newTransformer
             ? "We build the service section, so the transformer pad and one pull box are ours; the utility supplies the transformer under its EV infrastructure rule."
             : "Level 2-only site on the existing service; the service box is ours.",
-        source: "PG&E Electric Rule 29 / SCE Rule 29 (EV infrastructure); Intake Electrical B119 'Who provides this run?'",
+        source: "PG&E Electric Rule 29 / SCE Rule 29 (EV infrastructure); Intake Electrical B125 'Who provides this run?'",
       };
     case "pou":
       return {

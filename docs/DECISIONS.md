@@ -224,3 +224,31 @@ opt-in, Overrides row 9. Yamashiro's rates set from Courtesy S1809768.
   panels, transformers or breakers, so gear stays on the estimator's catalog.
 - Castro Rev B: design ambient 30 °C typed (the sheet priced the wire line
   at $0 without it), schedule priced from the catalog.
+
+## 2026-09-21 — Intake 3.8.0: thirty charger runs, rentals carry their rate unit
+
+The CEO released 3.8.0 (2026-09-20, hash 3a564d9eb659391e). Two changes
+reach the app:
+
+- **Electrical block B holds thirty charger runs (rows 18–47), not sixty.**
+  Every block below it on that tab sits thirty rows higher: service block
+  110–130, distribution schedule 135–146 (total B148), Rule 29 block
+  155–172, block I feeders 212–223 (material B226). No other tab moved.
+  `lib/intake/cells.ts` is remapped; the importer reads a 3.3.0–3.7.x file
+  through `ELECTRICAL_LEGACY_SHIFT` (+30 from row 48) so Hilton, Yamashiro
+  and Castro revisions still come home, and warns when such a file carries
+  runs on rows 48–77 that the thirty-row table cannot hold. Filling still
+  refuses anything but 3.8.0.
+- **Rentals have a "Rate per" column (F: day / week / month)** and the
+  duration is in that unit; the sheet prices qty × rate × duration
+  regardless. The fill now writes the estimator's rate and duration as they
+  are with F saying the unit (fencing per ft per week stays weekly, a
+  monthly container stays monthly) — no more ÷7 into per-day rows. The
+  importer follows F on a 3.8.0 file and keeps the per-day reading for
+  older files.
+
+Also in 3.8.0, on the sheet only: block B prices nothing on a row with no
+charger; when every run is marked as sharing a trench the longest run owns
+it; the Revenue subscription verdict stands down on a demand-charge
+schedule; presentation tidy-ups. Refdata regenerated (37 rate schedules —
+EV-HP Primary joined at 3.7.1). 468 tests.

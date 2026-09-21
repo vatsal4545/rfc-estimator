@@ -18,7 +18,7 @@ import { projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 import { patchWorkbook } from "../xlsxWrite";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.7.2.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
 
 /** Best Western-shaped: 4 × TP5-360 dual + 2 × CTX-C40 dual on SCE, manual tariff, a deal structure, two register entries. */
 function bwProject(): Project {
@@ -131,7 +131,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("writes without a refusal and reports what it did", () => {
     expect(report.refused).toEqual([]);
-    expect(report.templateVersion).toBe("3.7.2");
+    expect(report.templateVersion).toBe("3.8.0");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
     expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Revisions", "Version"]);
@@ -145,7 +145,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Version", "B12")).toBe("Test CPM");
     expect(wb.get("Version", "B13")).toBe("BW-TEST-001");
     expect(wb.get("Version", "B14")).toMatch(/^Second issue after the site walk\. Filled by the RFC Estimator on 2026-09-02 for Best Western Hawthorne/);
-    expect(wb.get("Version", "B4")).toBe("3.7.2"); // untouched
+    expect(wb.get("Version", "B4")).toBe("3.8.0"); // untouched
     expect(wb.get("Project", "B5")).toBe("Best Western Hawthorne");
     expect(wb.get("Project", "B6")).toBe("Mohammad Noorali");
     expect(wb.get("Project", "B12")).toBe("Best Western Hawthorne");
@@ -204,27 +204,27 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.formula("Electrical", "J22")).toBeTruthy(); // breaker is the sheet's own auto column
     expect(wb.formula("Electrical", "K22")).toBeTruthy(); // so is the auto conductor beside the override
     // Service and switchgear.
-    expect(wb.get("Electrical", "B148")).toBe("Existing MSB");
-    expect(wb.get("Electrical", "B157")).toBe(project.setup.serviceChain!.utilityToSwitchgearFt);
-    expect(wb.get("Electrical", "B142")).toBe(3200); // the register's frame, written through the gear override
-    expect(wb.get("Electrical", "B155")).toBe("Utility — EV infrastructure rule");
+    expect(wb.get("Electrical", "B118")).toBe("Existing MSB");
+    expect(wb.get("Electrical", "B127")).toBe(project.setup.serviceChain!.utilityToSwitchgearFt);
+    expect(wb.get("Electrical", "B112")).toBe(3200); // the register's frame, written through the gear override
+    expect(wb.get("Electrical", "B125")).toBe("Utility — EV infrastructure rule");
     // Rule 29 block.
-    expect(wb.get("Electrical", "B185")).toBe("Added load to existing service");
-    expect(wb.get("Electrical", "B186")).toBe("Underground");
-    expect(wb.get("Electrical", "B187")).toBe(150);
-    expect(wb.get("Electrical", "B191")).toBe(3500);
-    expect(wb.get("Electrical", "B197")).toBe("Yes");
-    // Distribution gear priced from the estimator's catalog — the sheet's B178 is the sum of column L, so this is how the CEO's Pricing tab gets the gear.
-    expect(String(wb.get("Electrical", "A165"))).toMatch(/switchgear/i);
-    expect(wb.get("Electrical", "J165")).toBe("Zero Impact Energy");
-    expect(wb.get("Electrical", "K165")).toBe("Allowance"); // the 3,200 A frame is the estimator's Larson-based figure, not in the sheet's RefData
-    expect(wb.get("Electrical", "L165")).toBe(62200);
-    expect(wb.get("Electrical", "B178")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
-    expect(String(wb.get("Electrical", "B179"))).toMatch(/^OK/);
+    expect(wb.get("Electrical", "B155")).toBe("Added load to existing service");
+    expect(wb.get("Electrical", "B156")).toBe("Underground");
+    expect(wb.get("Electrical", "B157")).toBe(150);
+    expect(wb.get("Electrical", "B161")).toBe(3500);
+    expect(wb.get("Electrical", "B167")).toBe("Yes");
+    // Distribution gear priced from the estimator's catalog — the sheet's B148 is the sum of column L, so this is how the CEO's Pricing tab gets the gear.
+    expect(String(wb.get("Electrical", "A135"))).toMatch(/switchgear/i);
+    expect(wb.get("Electrical", "J135")).toBe("Zero Impact Energy");
+    expect(wb.get("Electrical", "K135")).toBe("Allowance"); // the 3,200 A frame is the estimator's Larson-based figure, not in the sheet's RefData
+    expect(wb.get("Electrical", "L135")).toBe(62200);
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
+    expect(String(wb.get("Electrical", "B149"))).toMatch(/^OK/);
     // Nothing landed where the 3.2.0 layout used to keep these.
     expect(wb.get("Electrical", "B5")).toBeNull();
     expect(wb.get("Electrical", "D12")).toBeNull();
-    expect(wb.get("Electrical", "B51")).toBeNull();
+    expect(wb.get("Electrical", "B48")).toBeNull(); // the blank row under the thirty charger runs
   });
 
   it("Construction tab: design and engineering as quantity × rate on rows 32–34, summing to the estimator's design total", () => {
@@ -254,15 +254,26 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Construction", "B27")).toBe(1); // dump lot
     const fencing = result.equipment.items.find((i) => i.name === "Temporary fencing")!;
     expect(wb.get("Construction", "B39")).toBe(fencing.qty);
-    expect(wb.get("Construction", "D39")).toBe(fencing.durationValue * 7);
+    expect(wb.get("Construction", "D39")).toBe(fencing.durationValue); // weeks, with F saying so (3.8.0) — no more ×7 into days
     expect(wb.get("Construction", "B40")).toBe(1); // mini excavator on a trench job
     expect(wb.get("Construction", "E40")).toBe("Y");
+    // 3.8.0: the rate travels in its own unit with F saying which — a monthly excavator stays monthly, fencing per ft per week stays weekly.
+    const excavator = project.equipment.find((e) => e.name === "Mini excavator")!;
+    expect(wb.get("Construction", "C40")).toBe(excavator.rate);
+    expect(wb.get("Construction", "D40")).toBe(excavator.durationValue);
+    expect(wb.get("Construction", "F40")).toBe("month");
+    const fence = project.equipment.find((e) => e.name === "Temporary fencing")!;
+    expect(fence.rateBasis).toBe("per ft per week");
+    expect(wb.get("Construction", "C39")).toBe(fence.rate);
+    expect(wb.get("Construction", "D39")).toBe(fence.durationValue);
+    expect(wb.get("Construction", "F39")).toBe("week");
+    expect(wb.get("Construction", "F42")).toBe("day"); // forklift, per day
     expect(wb.get("Construction", "B72")).toBe(0.2);
     expect(wb.get("Construction", "B81")).toBe(1);
     expect(wb.get("Construction", "D81")).toBeCloseTo(project.peripherals.permitFeeTotal + project.financial.planCheckPermitFee, 2);
     expect(wb.get("Construction", "D82")).toBe(project.peripherals.utilityAppFee);
     expect(wb.get("Construction", "B83")).toBe(1);
-    expect(wb.formula("Construction", "D83")).toBe("Electrical!$B$191"); // the template's own link, untouched
+    expect(wb.formula("Construction", "D83")).toBe("Electrical!$B$161"); // the template's own link, untouched
     expect(wb.get("Construction", "B84")).toBe(0);
   });
 
@@ -388,7 +399,7 @@ describe("filling the CEO's intake from a project", async () => {
 
   it("refuses a template the cell map was not written for", async () => {
     const doctored = await patchWorkbook(template, [{ sheet: "Version", ref: "B4", value: "3.3.0" }]);
-    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.7\.2/);
+    await expect(fillIntakeWorkbook(doctored.bytes, project, result, proposal)).rejects.toThrow(/does not match the app's cell map for 3\.8\.0/);
     expect(() => verifyIntakeTemplate({ sheetNames: [], has: () => false, get: () => null, formula: () => undefined, cells: () => new Map() })).toThrow();
   });
 
@@ -409,7 +420,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(conduitToIntake('1-1/4"')).toBe('(1 1/4")');
     expect(conduitToIntake('3"')).toBe('(3") ');
     expect(conduitToIntake('2-1/2"')).toBe('(2 1/2")');
-    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.7.2-rev-b.xlsx");
+    expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.8.0-rev-b.xlsx");
     const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.leftBlank.some((w) => /NOT carried/.test(w))).toBe(true);
@@ -457,9 +468,9 @@ describe("filling the intake for an add-load site (3.6.0 project type)", async (
     expect(wb.get("Existing", "B131")).toBeNull(); // no connector uplift
     expect(wb.get("Existing", "B174")).toBeNull(); // no removal scope
     expect(wb.get("Revenue", "B59")).toBe("Market benchmark — greenfield");
-    expect(wb.get("Electrical", "B155")).toBe("Existing — retained");
-    expect(wb.get("Electrical", "B185")).toBe("Added load to existing service");
-    expect(wb.get("Electrical", "B148")).toBe("Existing MSB");
+    expect(wb.get("Electrical", "B125")).toBe("Existing — retained");
+    expect(wb.get("Electrical", "B155")).toBe("Added load to existing service");
+    expect(wb.get("Electrical", "B118")).toBe("Existing MSB");
     expect(wb.get("Project", "B28")).toBe(1200); // Existing!B200 wants the Project tab's service size to agree
   });
 
@@ -498,17 +509,18 @@ describe("custom rental lines and the intake's 14 fixed rental rows", async () =
     expect(wb.get("Construction", "C50")).toBe(220);
     expect(wb.get("Construction", "D50")).toBe(3);
     expect(wb.get("Construction", "E50")).toBe("Y");
+    expect(wb.get("Construction", "F50")).toBe("day");
     expect(report.warnings.some((w) => /NOT on the intake: Scissor lift 26 ft/.test(w))).toBe(true);
     expect(report.warnings.some((w) => /override row 15/.test(w))).toBe(false); // nothing goes to Overrides by default
   });
 });
 
-// Intake 3.7.2 block I — the distribution feeders between the items on the
+// Intake block I (3.7.0; rows 212–223 since 3.8.0) — the distribution feeders between the items on the
 // schedule. The sheet prices this block into the Pricing tab's wire line, so
 // the estimator's feeder segments must land here: the chain's guessed pair
 // on a project built in the app, the engineer's typed rows on an import.
-describe("block I — distribution feeders (intake 3.7.2)", async () => {
-  const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.7.2.xlsx");
+describe("block I — distribution feeders (intake 3.8.0 rows 212–223)", async () => {
+  const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.0.xlsx");
   const template = readFileSync(TEMPLATE);
 
   it("writes the chain's switchgear → transformer → sub-panel pair against the names block E used, at the estimator's floor and conductor", async () => {
@@ -518,29 +530,29 @@ describe("block I — distribution feeders (intake 3.7.2)", async () => {
     const { bytes } = await fillIntakeWorkbook(template, project, result, proposal, { today: "2026-09-02" });
     const wb = await readWorkbook(bytes);
     const scheduleRow = (type: string) => {
-      for (let r = 165; r <= 176; r++) if (wb.get("Electrical", `B${r}`) === type) return String(wb.get("Electrical", `A${r}`));
+      for (let r = 135; r <= 146; r++) if (wb.get("Electrical", `B${r}`) === type) return String(wb.get("Electrical", `A${r}`));
       throw new Error(`no ${type} on the schedule`);
     };
     const tx = result.rows.find((r) => r.synthetic && r.loadTypeId === "FDR Switchgear→TX")!;
     const sp = result.rows.find((r) => r.synthetic && r.loadTypeId === "FDR TX→Sub-panel")!;
     expect(tx).toBeDefined();
-    expect(wb.get("Electrical", "B242")).toBe(wb.get("Electrical", "A165")); // the switchboard
-    expect(wb.get("Electrical", "C242")).toBe(scheduleRow("Transformer"));
-    expect(wb.get("Electrical", "H242")).toBe(15);
-    expect(wb.get("Electrical", "G242")).toBe(Math.ceil(tx.designAmps * project.setup.continuousLoadFactor)); // a transformer's schedule rating is kVA — the floor must be typed
-    expect(wb.get("Electrical", "I242")).toBe(tx.resolvedRunsPerUnit);
-    expect(wb.get("Electrical", "K242")).toBe(snapConductorToIntake(tx.selectedWire).size);
-    expect(wb.get("Electrical", "P242")).toBeNull(); // the sheet sizes its own conduit
-    expect(wb.get("Electrical", "B243")).toBe(scheduleRow("Transformer"));
-    expect(wb.get("Electrical", "C243")).toBe(scheduleRow("Subpanel"));
-    expect(wb.get("Electrical", "H243")).toBe(15);
-    expect(wb.get("Electrical", "G243")).toBe(Math.ceil(sp.designAmps * project.setup.continuousLoadFactor));
-    expect(wb.get("Electrical", "B244")).toBeNull();
-    expect(wb.get("Electrical", "B255")).toBe(2);
+    expect(wb.get("Electrical", "B212")).toBe(wb.get("Electrical", "A135")); // the switchboard
+    expect(wb.get("Electrical", "C212")).toBe(scheduleRow("Transformer"));
+    expect(wb.get("Electrical", "H212")).toBe(15);
+    expect(wb.get("Electrical", "G212")).toBe(Math.ceil(tx.designAmps * project.setup.continuousLoadFactor)); // a transformer's schedule rating is kVA — the floor must be typed
+    expect(wb.get("Electrical", "I212")).toBe(tx.resolvedRunsPerUnit);
+    expect(wb.get("Electrical", "K212")).toBe(snapConductorToIntake(tx.selectedWire).size);
+    expect(wb.get("Electrical", "P212")).toBeNull(); // the sheet sizes its own conduit
+    expect(wb.get("Electrical", "B213")).toBe(scheduleRow("Transformer"));
+    expect(wb.get("Electrical", "C213")).toBe(scheduleRow("Subpanel"));
+    expect(wb.get("Electrical", "H213")).toBe(15);
+    expect(wb.get("Electrical", "G213")).toBe(Math.ceil(sp.designAmps * project.setup.continuousLoadFactor));
+    expect(wb.get("Electrical", "B214")).toBeNull();
+    expect(wb.get("Electrical", "B225")).toBe(2);
     // The sheet resolves both rows against the schedule: volts, phases, and the floor in force.
-    expect(wb.get("Electrical", "D242")).toBe(480);
-    expect(wb.get("Electrical", "S242")).toBe(wb.get("Electrical", "G242"));
-    expect(wb.get("Electrical", "D243")).toBe(208);
+    expect(wb.get("Electrical", "D212")).toBe(480);
+    expect(wb.get("Electrical", "S212")).toBe(wb.get("Electrical", "G212"));
+    expect(wb.get("Electrical", "D213")).toBe(208);
   });
 
   it("carries an imported workbook's typed feeders back as typed, sized OK on the sheet, and prices them into the wire line", async () => {
@@ -552,36 +564,36 @@ describe("block I — distribution feeders (intake 3.7.2)", async () => {
     const { bytes, report } = await fillIntakeWorkbook(template, project, result, proposal, { today: "2026-09-18" });
     const wb = await readWorkbook(bytes);
     // Row 1 as typed (FROM, TO, distance; no floor) plus the engine's sets and conductor as overrides.
-    expect(wb.get("Electrical", "B242")).toBe("Existing MSB");
-    expect(wb.get("Electrical", "C242")).toBe("EV distribution panel");
-    expect(wb.get("Electrical", "H242")).toBe(60);
-    expect(wb.get("Electrical", "G242")).toBeNull();
+    expect(wb.get("Electrical", "B212")).toBe("Existing MSB");
+    expect(wb.get("Electrical", "C212")).toBe("EV distribution panel");
+    expect(wb.get("Electrical", "H212")).toBe(60);
+    expect(wb.get("Electrical", "G212")).toBeNull();
     const fdr = result.rows.filter((r) => r.synthetic && r.loadTypeId.startsWith("FDR"));
-    expect(wb.get("Electrical", "I242")).toBe(fdr[0].resolvedRunsPerUnit);
-    expect(wb.get("Electrical", "K242")).toBe(snapConductorToIntake(fdr[0].selectedWire).size);
+    expect(wb.get("Electrical", "I212")).toBe(fdr[0].resolvedRunsPerUnit);
+    expect(wb.get("Electrical", "K212")).toBe(snapConductorToIntake(fdr[0].selectedWire).size);
     // Row 2: the typed sets and conductor win.
-    expect(wb.get("Electrical", "B243")).toBe("EV distribution panel");
-    expect(wb.get("Electrical", "C243")).toBe("EVSE disconnects");
-    expect(wb.get("Electrical", "H243")).toBe(25);
-    expect(wb.get("Electrical", "I243")).toBe(2);
-    expect(wb.get("Electrical", "K243")).toBe("350 KCMIL");
-    expect(wb.get("Electrical", "B244")).toBeNull();
+    expect(wb.get("Electrical", "B213")).toBe("EV distribution panel");
+    expect(wb.get("Electrical", "C213")).toBe("EVSE disconnects");
+    expect(wb.get("Electrical", "H213")).toBe(25);
+    expect(wb.get("Electrical", "I213")).toBe(2);
+    expect(wb.get("Electrical", "K213")).toBe("350 KCMIL");
+    expect(wb.get("Electrical", "B214")).toBeNull();
     // The sheet, recalculated: both feeders resolve, size OK at the 40 °C design ambient, and cost money that reaches the Pricing tab.
-    expect(wb.get("Electrical", "F242")).toBe(400);
-    expect(wb.get("Electrical", "F243")).toBe(600);
-    expect(String(wb.get("Electrical", "R242"))).toMatch(/^OK/);
-    expect(String(wb.get("Electrical", "R243"))).toMatch(/^OK/);
-    expect(String(wb.get("Electrical", "B258"))).toMatch(/^OK/);
-    const feederMaterial = wb.get("Electrical", "B256") as number;
+    expect(wb.get("Electrical", "F212")).toBe(400);
+    expect(wb.get("Electrical", "F213")).toBe(600);
+    expect(String(wb.get("Electrical", "R212"))).toMatch(/^OK/);
+    expect(String(wb.get("Electrical", "R213"))).toMatch(/^OK/);
+    expect(String(wb.get("Electrical", "B228"))).toMatch(/^OK/);
+    const feederMaterial = wb.get("Electrical", "B226") as number;
     expect(feederMaterial).toBeGreaterThan(0);
-    expect(wb.get("Pricing", "B10")).toBeCloseTo(((wb.get("Electrical", "B86") as number) + (wb.get("Electrical", "B128") as number) + feederMaterial) * 1.2, 4);
+    expect(wb.get("Pricing", "B10")).toBeCloseTo(((wb.get("Electrical", "B56") as number) + (wb.get("Electrical", "B98") as number) + feederMaterial) * 1.2, 4); // charger-run + dispenser-run + feeder material, at the 3.8.0 rows
     // The chain follows the sheet's one material, so nothing to warn about.
     expect(report.warnings.filter((w) => /Block I prices its feeders/.test(w))).toEqual([]);
     // Round trip: the filled file imports to the same feeders (row 1 now carrying the engine's sets and conductor as typed), and fills identically.
     const back = projectFromIntake(wb, base).project;
     expect(back.setup.serviceChain!.feeders).toHaveLength(2);
     expect(back.setup.serviceChain!.feeders![1]).toEqual(project.setup.serviceChain!.feeders![1]);
-    expect(back.setup.serviceChain!.feeders![0]).toEqual({ ...project.setup.serviceChain!.feeders![0], sets: fdr[0].resolvedRunsPerUnit, conductorOverride: conductorFromIntake(String(wb.get("Electrical", "K242"))) });
+    expect(back.setup.serviceChain!.feeders![0]).toEqual({ ...project.setup.serviceChain!.feeders![0], sets: fdr[0].resolvedRunsPerUnit, conductorOverride: conductorFromIntake(String(wb.get("Electrical", "K212"))) });
     const again = computeEstimate(back);
     const { bytes: bytes2 } = await fillIntakeWorkbook(template, back, again, computeProposal(back, again)!, { today: "2026-09-18" });
     const wb2 = await readWorkbook(bytes2);
@@ -597,9 +609,9 @@ describe("block I — distribution feeders (intake 3.7.2)", async () => {
     expect(plan.warnings.some((w) => /Block I prices its feeders in the site material \(Electrical B6 = Cu\); the estimator's feeder segments are Al/.test(w))).toBe(true);
     const { bytes } = await fillIntakeWorkbook(template, project, result, proposal, { today: "2026-09-02" });
     const wb = await readWorkbook(bytes);
-    expect(wb.get("Electrical", "H242")).toBe(15); // the feeder is still scheduled…
-    expect(wb.get("Electrical", "G242")).toBeGreaterThan(0); // …at the estimator's floor…
-    expect(wb.get("Electrical", "K242")).toBeNull(); // …but an aluminium size would be misread as copper, so the sheet sizes its own
-    expect(wb.get("Electrical", "K243")).toBeNull();
+    expect(wb.get("Electrical", "H212")).toBe(15); // the feeder is still scheduled…
+    expect(wb.get("Electrical", "G212")).toBeGreaterThan(0); // …at the estimator's floor…
+    expect(wb.get("Electrical", "K212")).toBeNull(); // …but an aluminium size would be misread as copper, so the sheet sizes its own
+    expect(wb.get("Electrical", "K213")).toBeNull();
   });
 });
