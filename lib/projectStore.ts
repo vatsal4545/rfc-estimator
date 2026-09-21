@@ -328,13 +328,7 @@ export function createProjectStore(storage: StorageLike) {
     const body = loadProject(id);
     const src = readIndex().find((m) => m.id === id);
     if (!body || !src) return null;
-    // A copy is a new job: the source's override register (a site's "incurred"
-    // figures rode into another site's intake this way) and its document
-    // control (revision letter, history, handoff flags) do not come along.
-    const { overrides: _overrides, ...rest } = body;
-    void _overrides;
-    const intake = rest.intake ? { ...rest.intake, fileVersion: undefined, revisions: undefined, revisionNotes: undefined, writeOverrideRegister: undefined, carryEstimatorOverrides: undefined } : rest.intake;
-    return createProject({ ...rest, intake }, `${displayName(src)} (copy)`);
+    return createProject(body, `${displayName(src)} (copy)`);
   };
 
   const getActiveId = (): string | null => storage.getItem(ACTIVE_KEY);

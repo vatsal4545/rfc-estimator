@@ -134,7 +134,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(report.templateVersion).toBe("3.8.0");
     expect(report.fileVersion).toBe("Rev B");
     expect(report.filled).toBeGreaterThan(150);
-    expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Project", "Revenue", "Revisions", "Version"]); // no Overrides: the register stays in the app unless asked for
+    expect(Object.keys(report.bySheet).sort()).toEqual(["Carbon", "Commercial", "Construction", "Deal_Structure", "Electrical", "Equipment", "Existing", "Overrides", "Project", "Revenue", "Revisions", "Version"]);
     expect(report.leftBlank.some((s) => s.startsWith("Electrical B10"))).toBe(false); // B10 is always written now
     expect(report.warnings).toHaveLength(1); // only the "design ambient defaulted" flag
     expect(report.warnings[0]).toMatch(/^Electrical B10 design ambient written as 30 °C/);
@@ -195,21 +195,16 @@ describe("filling the CEO's intake from a project", async () => {
       const row = 18 + i;
       expect(wb.formula("Electrical", `A${row}`)).toBeTruthy(); // the sheet names the charger itself
       expect(wb.get("Electrical", `F${row}`)).toBe(80 + 15 * i);
-      // A DC cabinet on parallel sets: the set count travels; the conductor and conduit are the sheet's own (no typed override pins them).
-      expect(wb.get("Electrical", `L${row}`)).toBeNull();
+      expect(wb.get("Electrical", `L${row}`)).toBe(conductorToIntake(r.selectedWire));
       expect(wb.get("Electrical", `M${row}`)).toBe(r.resolvedRunsPerUnit);
-      expect(r.resolvedRunsPerUnit).toBeGreaterThan(1);
-      expect(wb.get("Electrical", `R${row}`)).toBeNull();
-      expect(wb.get("Electrical", `K${row}`)).toBeTruthy(); // the sheet sized it
+      expect(wb.get("Electrical", `R${row}`)).toBe(conduitToIntake(r.conduitSize));
       expect(wb.get("Electrical", `E${row}`)).toBeNull(); // its own circuit
     });
     // A dual Level 2 pedestal is one unit on two branches: one row, two sets, at the unit's distance.
     expect(l2Rows).toHaveLength(2);
     expect(wb.get("Electrical", "F22")).toBe(60);
-    // A dual Level 2 pedestal is two 40 A circuits in the estimator but ONE 80 A circuit on the sheet — "sets" there means parallel conductors (NEC 310.10(G): not below 1/0), so neither the count nor the estimator's 8 AWG is written.
-    expect(wb.get("Electrical", "M22")).toBeNull();
-    expect(wb.get("Electrical", "L22")).toBeNull();
-    expect(l2Rows[0].resolvedRunsPerUnit).toBe(2);
+    expect(wb.get("Electrical", "M22")).toBe(2);
+    expect(wb.get("Electrical", "L22")).toBe(conductorToIntake(l2Rows[0].selectedWire));
     expect(wb.get("Electrical", "F23")).toBe(75);
     expect(wb.get("Electrical", "F24")).toBeNull();
     expect(wb.formula("Electrical", "J22")).toBeTruthy(); // breaker is the sheet's own auto column
@@ -337,20 +332,13 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Existing", "C150")).toBe(0.85);
   });
 
-  it("Overrides tab: blank by default — the register travels only when the handoff asks for it", async () => {
+  it("Overrides tab: by default only the register's own entries travel — the CEO prices from the intake's derivation", () => {
     expect(wb.get("Overrides", "B9")).toBeNull();
     expect(wb.get("Overrides", "B10")).toBeNull();
     expect(wb.get("Overrides", "B16")).toBeNull();
-    // Since 2026-09-21 even the register's own entries stay in the app unless the handoff asks for them — an override on the sheet is a deliberate act.
-    expect(wb.get("Overrides", "B19")).toBeNull();
-    expect(wb.get("Overrides", "B22")).toBeNull();
-    expect(report.overrides).toEqual([]);
-    expect(report.leftBlank.some((s) => /Overrides register — 2 entries on the app's Overrides tab stay in the app/.test(s))).toBe(true);
-    const withRegister = await fillIntakeWorkbook(template, project, result, proposal, { today: "2026-09-02", writeRegister: true });
-    const wbReg = await readWorkbook(withRegister.bytes);
-    expect(wbReg.get("Overrides", "B19")).toBe(3200); // typed on the app's register
-    expect(wbReg.get("Overrides", "B22")).toBe(1400);
-    expect(withRegister.report.overrides.map((o) => o.row)).toEqual([19, 22]);
+    expect(wb.get("Overrides", "B19")).toBe(3200); // typed on the app's register
+    expect(wb.get("Overrides", "B22")).toBe(1400);
+    expect(report.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(String(wb.get("Version", "B14"))).not.toMatch(/Overrides tab/);
   });
 
@@ -405,9 +393,9 @@ describe("filling the CEO's intake from a project", async () => {
     expect(p.existing!.projectType).toBe("replace");
     expect(p.existing!.history).toHaveLength(3);
     expect(p.existing!.revenueBasis).toBe("historical");
-    // Nothing came back through the register — it was not written (default) — so the app's Overrides tab of the re-import is empty.
+    // Only the register's own entries came back — the estimator's figures were not written to the Overrides tab.
     const keys = (p.overrides ?? []).map((o) => o.key);
-    expect(keys).toEqual([]);
+    expect(keys).toEqual(["switchgearA", "kwhPerDay"]);
     // With nothing carried in the register, the re-imported estimate is the estimator's own re-derivation from the
     // intake's inputs (typed distances, conductors and quantities) — the frame override still lands.
     const again = computeEstimate(p);
@@ -439,7 +427,7 @@ describe("filling the CEO's intake from a project", async () => {
     expect(conduitToIntake('3"')).toBe('(3") ');
     expect(conduitToIntake('2-1/2"')).toBe('(2 1/2")');
     expect(intakeFileName(project)).toBe("best-western-hawthorne-evse-intake-3.8.0-rev-b.xlsx");
-    const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false, writeRegister: true });
+    const plan = planIntakeFill(project, result, proposal, { today: "2026-09-02", carryOverrides: false });
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.leftBlank.some((w) => /NOT carried/.test(w))).toBe(true);
     expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(false);
@@ -564,8 +552,7 @@ describe("block I — distribution feeders (intake 3.8.0 rows 212–223)", async
     expect(wb.get("Electrical", "B213")).toBe(scheduleRow("Transformer"));
     expect(wb.get("Electrical", "C213")).toBe(scheduleRow("Subpanel"));
     expect(wb.get("Electrical", "H213")).toBe(15);
-    expect(wb.get("Electrical", "G213")).toBeNull(); // the secondary feeder's floor is the panel it lands in — the sheet's own default (NEC 240.21(C))
-    expect(sp.designAmps).toBeCloseTo(sp.ocpdA / project.setup.continuousLoadFactor, 6); // and the estimator sized it to that panel's main, not the transformer's full secondary FLA
+    expect(wb.get("Electrical", "G213")).toBe(Math.ceil(sp.designAmps * project.setup.continuousLoadFactor));
     expect(wb.get("Electrical", "B214")).toBeNull();
     expect(wb.get("Electrical", "B225")).toBe(2);
     // The sheet resolves both rows against the schedule: volts, phases, and the floor in force.
@@ -616,7 +603,7 @@ describe("block I — distribution feeders (intake 3.8.0 rows 212–223)", async
     const again = computeEstimate(back);
     const { bytes: bytes2 } = await fillIntakeWorkbook(template, back, again, computeProposal(back, again)!, { today: "2026-09-18" });
     const wb2 = await readWorkbook(bytes2);
-    for (const c of ["B212", "C212", "G212", "H212", "I212", "K212", "B213", "C213", "H213", "I213", "K213", "B214", "B226"]) expect(wb2.get("Electrical", c)).toEqual(wb.get("Electrical", c));
+    for (const c of ["B242", "C242", "G242", "H242", "I242", "K242", "B243", "C243", "H243", "I243", "K243", "B244", "B256"]) expect(wb2.get("Electrical", c)).toEqual(wb.get("Electrical", c));
   });
 
   it("when the chain's material differs from the site material, leaves the conductor to the sheet and says why the two sides price differently", async () => {

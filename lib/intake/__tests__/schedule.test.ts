@@ -100,9 +100,9 @@ describe("distribution schedule as data", () => {
     expect(result.costs.lines.find((l) => l.name === "Main Distribution Switchgear")!.base).toBeCloseTo(expected, 2);
     expect(result.costs.lines.find((l) => l.name === "Electrical Sub-Panels, Transformers, Breakers")!.base).toBe(0);
     expect(subBefore).toBeGreaterThan(0);
-    const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, computeProposal(project, result)!, { today: "2026-09-18", writeRegister: true });
+    const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, computeProposal(project, result)!, { today: "2026-09-18" });
     const wb = await readWorkbook(bytes);
-    // The rows travel as typed; the sheet's own gear total is the quotes; the register row says the same (register asked for); block I still finds the transformer row.
+    // The rows travel as typed; the sheet's own gear total is the quotes; the register row says the same; block I still finds the transformer row.
     expect(wb.get("Electrical", "A135")).toBe(rows[0].item);
     expect(wb.get("Electrical", "L135")).toBe(5700);
     expect(wb.get("Electrical", "B148")).toBeCloseTo(expected, 2);

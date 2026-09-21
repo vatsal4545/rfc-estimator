@@ -228,10 +228,9 @@ describe("Gear overrides cascade through the service chain", () => {
     expect(after.panel.transformer!.primaryBreakerA).toBeGreaterThan(
       before.panel.transformer!.primaryBreakerA,
     );
-    // Secondary feeder (TX → sub-panel) is capped by the panel's main (NEC 240.21(C)), so a bigger transformer does not enlarge it past the panel.
+    // Secondary feeder (TX → sub-panel) re-sizes from the bigger unit's FLA.
     const seg = (r: typeof after) => r.rows.find((x) => x.id === "chain-FDR TX→Sub-panel")!;
-    expect(seg(after).designAmps).toBeGreaterThanOrEqual(seg(before).designAmps);
-    expect(seg(after).designAmps).toBeCloseTo(after.panel.bus208!.suggestedBusA / p.setup.continuousLoadFactor, 6);
+    expect(seg(after).designAmps).toBeGreaterThan(seg(before).designAmps);
   });
 
   it("an undersized override raises a panel note", () => {

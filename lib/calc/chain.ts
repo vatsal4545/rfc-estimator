@@ -149,18 +149,12 @@ export function buildServiceChain(
         panel.transformer.primaryBreakerA,
         cfg.switchgearToTransformerFt,
       );
-      // Secondary conductors land in the sub-panel and are protected by its
-      // main at the panel's rating (NEC 240.21(C)), so they are sized to that
-      // device — not to the full secondary FLA of a transformer that, being
-      // the next standard kVA up, can out-deliver the panel (150 kVA = 416 A
-      // into a 400 A panel sized a 521 A floor and 2 × 300 kcmil for nothing).
       const secondaryFla = (panel.transformer.suggestedKva * 1000) / (208 * SQRT3);
-      const secondaryDesignAmps = Math.min(secondaryFla, panel.bus208.suggestedBusA / cf);
       segment(
         "FDR TX→Sub-panel",
         "Step-down TX → Sub-panel",
         208,
-        secondaryDesignAmps,
+        secondaryFla,
         panel.bus208.suggestedBusA,
         cfg.transformerToSubpanelFt,
       );

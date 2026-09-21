@@ -126,17 +126,6 @@ export interface IntakeInput {
    * the estimator's figures as overrides, with reasons.
    */
   carryEstimatorOverrides?: boolean;
-  /**
-   * Whether the entries on the app's own Overrides tab travel into the
-   * intake's register at all. Default FALSE since 2026-09-21: the CEO wants
-   * the Overrides tab of a filled intake left blank unless a figure is
-   * deliberately being forced with its basis stated — register entries that
-   * rode along from a copied or imported project ("incurred" on a site with
-   * no incurred cost) were the problem. Only the Commercial tab's two
-   * pass-throughs (rows 17–18, which the sheet's Pricing reads) travel
-   * without it. Tick it on the handoff tab to send the register.
-   */
-  writeOverrideRegister?: boolean;
   /** Site facts the intake records and the estimator does not model — carried through a round trip as typed (Electrical!B8, B9, B150). */
   trenchSurface?: string;
   trenchDepthIn?: number | null;

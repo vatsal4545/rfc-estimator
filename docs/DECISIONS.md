@@ -286,39 +286,3 @@ retained" — on the distribution schedule, the Level 2 breakers fed from it,
 a sentence appended to Equipment!B27, and the Overrides row-10 reason. The
 importer reads the row back into the flag, so a round trip keeps it.
 475 tests.
-
-## 2026-09-21 — The override register stays in the app unless asked for
-
-CWKT LLC (I-271591) Rev A went to the CEO with three register rows reasoned
-"incurred" (design $84,630, rentals $45,272.50, permits $2,941.62) on a site
-with no incurred cost — they had ridden in with the project body when it
-was duplicated in the library from another job. The CEO's review priced
-the damage ($107,671 on the proposal) and asked, as on Rohnert Park, that
-an override either state what it is made of or come out.
-
-- The fill no longer writes the app's Overrides-tab entries into the
-  sheet's register by default. `intake.writeOverrideRegister` (checkbox on
-  Version & handoff, off) sends them; "carry the estimator's figures"
-  implies it. Only the Commercial tab's pass-throughs (rows 17–18, which
-  the sheet's Pricing reads) travel regardless. Held-back entries are
-  reported in the handoff. Yamashiro Rev C (incurred costs deliberately in
-  the register, with their composition) stands — regenerate it with the
-  box ticked.
-- Duplicating a project drops the source's register and document control.
-- The handoff warns when register rows 9–14 travel: the sheet's own
-  Pricing reads only rows 15–18, and marks row 15 up.
-
-Also from the same review, the fill's own defects:
-
-- Charger-run "sets" travel only for a genuine parallel set (or a typed
-  count): the sheet reads sets as parallel conductors and NEC 310.10(G)
-  stops at 1/0, so a dual Level 2 pedestal (two 40 A circuits here, one
-  80 A circuit there) no longer goes out as "2 sets of 8 AWG". Conductor
-  and conduit overrides travel only when a size was typed on the row; an
-  override that repeats the auto size only pins it.
-- The transformer → sub-panel feeder: the engine sizes it to the panel's
-  main (NEC 240.21(C)) rather than the transformer's full secondary FLA,
-  and the fill leaves its block I floor to the sheet's default (the panel's
-  rating) — 150 kVA into a 400 A panel no longer sizes 2 × 300 kcmil on a
-  521 A floor.
-- Every string written is trimmed ("Vatsal " on Prepared by).
