@@ -225,7 +225,9 @@ describe("filling the CEO's intake from a project", async () => {
     expect(wb.get("Electrical", "J135")).toBe("Zero Impact Energy");
     expect(wb.get("Electrical", "K135")).toBe("Allowance"); // the 3,200 A frame is the estimator's Larson-based figure, not in the sheet's RefData
     expect(wb.get("Electrical", "L135")).toBe(62200);
-    expect(wb.get("Electrical", "B148")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers"), 2);
+    // …plus the utility substructures, vendor-quoted so the Electrical tab carries their money.
+    const per = project.peripherals;
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(base("Main Distribution Switchgear") + base("Electrical Sub-Panels, Transformers, Breakers") + per.transformerPadCost + per.cableWellCost + per.pullBoxQty * per.pullBoxUnitCost, 2);
     expect(String(wb.get("Electrical", "B149"))).toMatch(/^OK/);
     // Nothing landed where the 3.2.0 layout used to keep these.
     expect(wb.get("Electrical", "B5")).toBeNull();
@@ -431,6 +433,35 @@ describe("filling the CEO's intake from a project", async () => {
     expect(plan.overrides.map((o) => o.row)).toEqual([19, 22]);
     expect(plan.leftBlank.some((w) => /NOT carried/.test(w))).toBe(true);
     expect(plan.warnings.some((w) => /NOT carried/.test(w))).toBe(false);
+  });
+});
+
+describe("design ambient typed in the wrong unit", () => {
+  // The Palo Alto Rev A file carried 75 in Electrical!B10 — a Fahrenheit
+  // reading in the Celsius cell. The sheet's ambient table stops at 65 °C, so
+  // the correction collapsed to 0.5, every DC run read UNDERSIZED and the
+  // secondary feeder went to 750 kcmil. The fill still writes what was typed
+  // (it is the user's figure) but the handoff report says what it is.
+  const withAmbient = (c: number | null): Project => {
+    const p = bwProject();
+    return { ...p, intake: { ...(p.intake ?? defaultIntake()), designAmbientC: c } };
+  };
+  const planFor = (c: number | null) => {
+    const project = withAmbient(c);
+    const result = computeEstimate(project);
+    return planIntakeFill(project, result, computeProposal(project, result), { today: "2026-09-02" });
+  };
+
+  it("flags 75 as Fahrenheit and names the Celsius figure", () => {
+    const plan = planFor(75);
+    expect(plan.writes.find((w) => w.sheet === "Electrical" && w.ref === "B10")?.value).toBe(75);
+    const flag = plan.warnings.find((w) => /READS AS FAHRENHEIT/.test(w));
+    expect(flag).toMatch(/75 °F is 24 °C/);
+  });
+
+  it("says nothing about a plausible site figure", () => {
+    expect(planFor(27).warnings.some((w) => /FAHRENHEIT/.test(w))).toBe(false);
+    expect(planFor(27).writes.find((w) => w.sheet === "Electrical" && w.ref === "B10")?.value).toBe(27);
   });
 });
 

@@ -100,6 +100,8 @@ export function computePeripherals(
   autoGear?: GearSelection[],
   /** The largest breaker feeding a DC charger (panel schedule) — sets the disconnect default. Falls back to the largest 480 V breaker on the gear list. */
   largestDcBreakerA?: number,
+  /** The gear we set (engine): a DC charger of ours means our switchgear and its pad; a step-down means its pad. Absent, both follow the charger mix. */
+  gearShape?: { switchgear: boolean; stepDown: boolean },
 ): PeripheralsResult {
   const gearList = autoGear ?? input.gear;
   const gearTotals = gearList.map((g) => ({ ...g, unitCost: gearUnitCost(g), total: g.qty * gearUnitCost(g) }));
@@ -231,13 +233,14 @@ export function computePeripherals(
   // bank); pure surface EMT anchors to the existing slab — no pour. The
   // switchgear pad rides with any DCFC scope, the step-down TX + sub-panel
   // pad only exists on mixed-voltage sites, and every bollard adds a footing.
-  const mixedVoltage = rollups.nDCFC > 0 && rollups.nL2 > 0 && !input.l2ClientPowered;
+  const mixedVoltage = gearShape ? gearShape.stepDown : rollups.nDCFC > 0 && rollups.nL2 > 0 && !input.l2ClientPowered;
+  const switchgearPad = gearShape ? gearShape.switchgear : rollups.nDCFC > 0;
   const padYards =
     method === "surface"
       ? 0
       : rollups.nDCFC * CIVIL_RATES.ydPerDcfcPad +
         (method === "trench" ? rollups.nL2 * CIVIL_RATES.ydPerL2Pad : 0) +
-        (rollups.nDCFC > 0 && !input.existingSwitchgear ? CIVIL_RATES.ydSwitchgearPad : 0) +
+        (switchgearPad && !input.existingSwitchgear ? CIVIL_RATES.ydSwitchgearPad : 0) +
         (mixedVoltage ? CIVIL_RATES.ydXfmrSubPanelPad : 0) +
         input.bollardsQty * CIVIL_RATES.ydPerBollard;
   const concreteQty = input.concreteYardsOverride ?? (padYards > 0 ? Math.ceil(padYards) : 0);

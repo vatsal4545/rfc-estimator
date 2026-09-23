@@ -226,10 +226,19 @@ export interface TakeoffRowInput {
   genKey?: string;
   /** Row added by hand on the Takeoff tab — carried through every rebuild as is. */
   manual?: boolean;
+  /**
+   * This charger is CLIENT POWERED: fed from the client's existing panel or
+   * board, not from our service. Its load leaves our buses (so our switchgear,
+   * step-down and sub-panel size without it), its branch breaker is still
+   * priced (landed in the client's gear) and its branch circuit stays. Any
+   * number of chargers can carry it — two of twenty, say. The engine also sets
+   * it on every Level 2 row when peripherals.l2ClientPowered is on.
+   */
+  clientPowered?: boolean;
 }
 
 /** A hand edit to a generated takeoff row, keyed by the row's genKey. `removed` drops the row. */
-export type TakeoffEdit = Partial<Pick<TakeoffRowInput, "loadTypeId" | "location" | "units" | "oneWayDistFt" | "runsPerUnitOverride" | "sizeOverride" | "ocpdOverrideA" | "conduitOverride">> & {
+export type TakeoffEdit = Partial<Pick<TakeoffRowInput, "loadTypeId" | "location" | "units" | "oneWayDistFt" | "runsPerUnitOverride" | "sizeOverride" | "ocpdOverrideA" | "conduitOverride" | "clientPowered">> & {
   removed?: boolean;
 };
 
@@ -330,6 +339,8 @@ export interface GearSelection {
   voltage: string;
   qty: number;
   costOverride?: number;
+  /** Branch breakers for client-powered chargers — priced, but landed in the client's existing panel or board. */
+  clientPowered?: boolean;
 }
 
 export interface HardwareItem {

@@ -83,7 +83,7 @@ describe("Level 2 client powered — the client's 208 V panel feeds the Level 2 
     expect(panelRow).toMatchObject({ type: "Panelboard", volts: 208, whoProvides: "By others", costBasis: "By others", quotedCost: null });
     expect(rows.some((r) => r.type === "Transformer")).toBe(false);
     expect(rows.some((r) => r.type === "Subpanel" && !r.item.startsWith(CLIENT_L2_PANEL_ITEM))).toBe(false);
-    const l2Breaker = rows.find((r) => /breaker/i.test(r.item) && r.feeds === "Level 2 units")!;
+    const l2Breaker = rows.find((r) => /breaker/i.test(r.item) && r.feeds.startsWith("Level 2 units"))!;
     expect(l2Breaker.fedFrom).toBe(panelRow.item);
     const reason = estimatorOverrideRows(client, c, computeProposal(client, c)).find((r) => r.row === 10)!.reason;
     expect(reason).toMatch(/client powered/);
@@ -101,8 +101,11 @@ describe("Level 2 client powered — the client's 208 V panel feeds the Level 2 
     expect(types.filter((t) => t === "Subpanel" || t === "Panelboard")).toEqual(["Panelboard"]); // only the client's panel
     expect(String(wb.get("Equipment", "B27"))).toMatch(/client powered/);
     const imported = projectFromIntake(wb, { ...defaultProject(), commercial: defaultCommercial() });
-    expect(imported.project.peripherals.l2ClientPowered).toBe(true);
+    // Each Level 2 run comes home tagged "Client powered n" in column E — the same flag, per charger.
     const again = computeEstimate(imported.project);
+    const l2 = again.rows.filter((r) => !r.synthetic && r.category === "L2");
+    expect(l2.length).toBeGreaterThan(0);
+    expect(l2.every((r) => r.clientPowered)).toBe(true);
     expect(again.panel.transformer).toBeUndefined();
     expect(again.panel.suggestedGear.some((g) => g.item === "Sub-panel" || g.item === "Distribution panel")).toBe(false);
   });

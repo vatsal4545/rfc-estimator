@@ -37,7 +37,13 @@ describe("distribution schedule as data", () => {
     const gearRows = rows.filter((r) => ["Switchboard", "Transformer", "Subpanel", "Other"].includes(r.type) && !/pad|well|pull box/i.test(r.item));
     expect(gearRows.length).toBeGreaterThan(3);
     expect(gearRows.every((r) => (r.quotedCost ?? 0) > 0 && (r.costBasis === "RefData rate" || r.costBasis === "Allowance"))).toBe(true);
-    expect(rows.filter((r) => /pad|well|pull box/i.test(r.item)).every((r) => r.costBasis === "Priced elsewhere in this workbook" && r.quotedCost === null)).toBe(true);
+    // The utility substructures are vendor-quoted rows with their money, so the sheet's Electrical tab shows it; the estimator carries them on its Utility line.
+    const subs = rows.filter((r) => /pad|well|pull box/i.test(r.item));
+    expect(subs.length).toBeGreaterThan(0);
+    expect(subs.every((r) => r.costBasis === "Vendor quote" && (r.quotedCost ?? 0) > 0)).toBe(true);
+    const subsTotal = subs.reduce((t, r) => t + (r.quotedCost ?? 0), 0);
+    const per = project.peripherals;
+    expect(subsTotal).toBeCloseTo(per.transformerPadCost + per.cableWellCost + per.pullBoxQty * per.pullBoxUnitCost, 2);
     const gearLines = result.costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
     expect(scheduledGearTotal(rows)).toBeCloseTo(gearLines, 2);
     const { bytes } = await fillIntakeWorkbook(readFileSync(TEMPLATE), project, result, computeProposal(project, result)!, { today: "2026-09-18" });
@@ -47,7 +53,7 @@ describe("distribution schedule as data", () => {
       expect(wb.get("Electrical", `B${135 + i}`)).toBe(r.type);
       expect(wb.get("Electrical", `L${135 + i}`)).toBe(r.quotedCost);
     });
-    expect(wb.get("Electrical", "B148")).toBeCloseTo(gearLines, 2);
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(gearLines + subsTotal, 2);
     expect(String(wb.get("Electrical", "B149"))).toMatch(/^OK/);
     // The 3,200 A frame is the estimator's Larson-based allowance; the sheet's own table stops at what it knows.
     expect(rows[0].costBasis).toBe(rows[0].ratingA === 3200 ? "Allowance" : rows[0].costBasis);
@@ -86,7 +92,8 @@ describe("distribution schedule as data", () => {
     rows.push({ item: "EV panelboard — Siemens P1842MC400AT 400 A", type: "Panelboard", qty: 1, volts: 480, phases: 3, ratingA: 400, fedFrom: rows[0].item, feeds: "Chargers", location: "Outdoor", whoProvides: "Zero Impact Energy", costBasis: "Vendor quote", quotedCost: 5320 });
     rows.push({ item: "(E) Restaurant panel 800 A — existing, retained", type: "Switchboard", qty: 1, volts: 208, phases: 3, ratingA: 800, fedFrom: rows[0].item, feeds: "Restaurant", location: "Existing", whoProvides: "By others", costBasis: "By others", quotedCost: null });
     // Vendor quotes replace the catalog on those rows; the other rows keep their catalog price. The by-others row is never our money.
-    const expected = rows.filter((r) => r.whoProvides !== "By others").reduce((t, r) => t + (r.quotedCost ?? 0), 0);
+    const substructures = rows.filter((r) => /pad|well|pull box/i.test(r.item)).reduce((t, r) => t + (r.quotedCost ?? 0), 0);
+    const expected = rows.filter((r) => r.whoProvides !== "By others").reduce((t, r) => t + (r.quotedCost ?? 0), 0) - substructures;
     expect(scheduledGearTotal(rows)).toBeCloseTo(expected, 2);
     expect(scheduledGearTotal([...rows, { ...rows[rows.length - 1], quotedCost: 99999 }])).toBeCloseTo(expected, 2);
     expect(estimatedGearTotal(rows).filled).toEqual([]);
@@ -105,7 +112,7 @@ describe("distribution schedule as data", () => {
     // The rows travel as typed; the sheet's own gear total is the quotes; the register row says the same; block I still finds the transformer row.
     expect(wb.get("Electrical", "A135")).toBe(rows[0].item);
     expect(wb.get("Electrical", "L135")).toBe(5700);
-    expect(wb.get("Electrical", "B148")).toBeCloseTo(expected, 2);
+    expect(wb.get("Electrical", "B148")).toBeCloseTo(expected + substructures, 2);
     expect(wb.get("Overrides", "B10")).toBeCloseTo(expected, 2);
     expect(wb.get("Electrical", "C212")).toBe(rows[tx].item);
     expect(wb.get("Electrical", "B212")).toBe(rows[0].item);
@@ -130,7 +137,8 @@ describe("distribution schedule as data", () => {
     const { bytes: b2 } = await fillIntakeWorkbook(readFileSync(TEMPLATE), back, again, computeProposal(back, again)!, { today: "2026-09-18" });
     const wb2 = await readWorkbook(b2);
     const gearLines = again.costs.lines.filter((l) => l.name === "Main Distribution Switchgear" || l.name === "Electrical Sub-Panels, Transformers, Breakers").reduce((t, l) => t + l.base, 0);
-    expect(wb2.get("Electrical", "B148")).toBeCloseTo(gearLines, 2);
+    const per = back.peripherals;
+    expect(wb2.get("Electrical", "B148")).toBeCloseTo(gearLines + per.transformerPadCost + per.cableWellCost + per.pullBoxQty * per.pullBoxUnitCost, 2);
     expect(gearLines).toBeGreaterThan(0);
   });
 });

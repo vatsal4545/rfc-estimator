@@ -1,6 +1,6 @@
 "use client";
 
-import { DESIGN_AMBIENT_DEFAULT_C } from "@/lib/intake/cells";
+import { DESIGN_AMBIENT_DEFAULT_C, ambientLooksFahrenheit, fahrenheitToC } from "@/lib/intake/cells";
 import { tableWrapCls, theadCls } from "../ui";
 import { INSTALL_METHOD_INFO, TERRAIN_INFO, defaultQuickInput, normalizeQuickInput } from "@/lib/calc/autoplan";
 import { feederFloorA } from "@/lib/calc/chain";
@@ -8,6 +8,7 @@ import type { DistributionFeeder, InstallMethod, Material, QuickEstimateInput, T
 import { DISTRIBUTION_COST_BASES, DISTRIBUTION_PROVIDERS, DISTRIBUTION_TYPES, clearGearQuotePricing, distributionScheduleOf, emptyScheduleRow, estimatedGearTotal, gearPricedAtSchedule, priceGearAtSchedule, scheduledGearTotal, withCatalogPrice } from "@/lib/intake/schedule";
 import type { DistributionScheduleRow } from "@/lib/proposal/types";
 import { utilityCivilFor } from "@/lib/calc/utilityCivil";
+import { clientPoweredCounts, clientPoweredPhrase } from "@/lib/calc/clientPowered";
 import type { StickyPath } from "@/lib/intake/rebuild";
 import { feederOutOfScope, feederScopeNote } from "@/lib/interconnection";
 import { defaultIntake } from "@/lib/proposal/defaults";
@@ -83,7 +84,7 @@ export function ElectricalSection() {
     ? project.intake.distributionSchedule.map((r) => ({ name: r.item, type: r.type, volts: r.volts, phases: r.phases, ratingA: r.ratingA }))
     : result.panel.suggestedGear
         .filter((g) => g.qty > 0)
-        .map((g) => ({ name: `${g.item} ${g.size}`.trim(), type: g.item, volts: Number(String(g.voltage).replace(/[^\d.]/g, "")) || null, phases: 3, ratingA: /a$/i.test(g.size.trim()) ? Number(g.size.replace(/[^\d.]/g, "")) || null : null }));
+        .map((g) => ({ name: `${g.item} ${g.size}${g.clientPowered ? " (client powered)" : ""}`.trim(), type: g.item, volts: Number(String(g.voltage).replace(/[^\d.]/g, "")) || null, phases: 3, ratingA: /a$/i.test(g.size.trim()) ? Number(g.size.replace(/[^\d.]/g, "")) || null : null }));
   const setFeeders = (feeders: DistributionFeeder[]) =>
     setSetup({
       serviceChain: {
@@ -121,7 +122,41 @@ export function ElectricalSection() {
     return i < 0 ? "—" : String(i + 1);
   };
   const cabinets = input.lines.some((l) => l.count > 0 && l.loadTypeId.startsWith("Power cabinet"));
-  const civil = utilityCivilFor(s.utility, result.rollups, feederByUtility, project.intake?.interconnection?.serviceType === "Added load to existing service");
+  // Client-powered chargers: fed from the client's existing gear — the substructures follow only the chargers we power.
+  const client = clientPoweredCounts(result.rows, project.loadTypes);
+  const l2AllClient = !!project.peripherals.l2ClientPowered;
+  const civil = utilityCivilFor(s.utility, { nDCFC: Math.max(0, result.rollups.nDCFC - client.dc), nL2: Math.max(0, result.rollups.nL2 - client.l2) }, feederByUtility, project.intake?.interconnection?.serviceType === "Added load to existing service");
+  /** Tick a charger as client powered; the flag rides the row's takeoff edit, so every rebuild keeps it. */
+  const setClientPowered = (id: string, on: boolean) =>
+    rebuild((p) => {
+      const row = p.takeoff.find((r) => r.id === id);
+      const takeoff = p.takeoff.map((r) => (r.id === id ? { ...r, clientPowered: on || undefined } : r));
+      if (!row?.genKey) return { ...p, takeoff };
+      const edits = { ...(p.takeoffEdits ?? {}) };
+      const e = { ...(edits[row.genKey] ?? {}) };
+      if (on) e.clientPowered = true;
+      else delete e.clientPowered;
+      if (Object.keys(e).length) edits[row.genKey] = e;
+      else delete edits[row.genKey];
+      return { ...p, takeoff, takeoffEdits: Object.keys(edits).length ? edits : undefined };
+    });
+  const clientBox = (id: string, on: boolean, locked = false) => (
+    <input
+      type="checkbox"
+      aria-label="Client powered"
+      title={locked ? "Every Level 2 unit is client powered (the switch above)" : "Fed from the client's existing panel or board"}
+      checked={on}
+      disabled={locked}
+      onChange={(e) => setClientPowered(id, e.target.checked)}
+    />
+  );
+  const clientSummary =
+    client.total > 0 ? (
+      <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        <span className="font-medium">{clientPoweredPhrase(client)}.</span> Their load is off our switchgear{client.l2 ? ", step-down and sub-panel" : ""}, so our gear is sized on the other {client.chargers - client.total}; their branch breakers and circuits stay priced.
+        {(result.panel.clientSupply ?? []).map((c) => ` The client's ${c.voltage === 480 ? "480 V board" : "208 V panel"} needs ${num(c.demandAmps, 0)} A spare for ${c.circuitCount} circuit(s).`).join("")} On the intake each one&apos;s charger-run row reads &ldquo;Client powered n&rdquo; in column E, and the distribution schedule lists the client&apos;s gear (by others) with those breakers in it.
+      </div>
+    ) : null;
 
   return (
     <div>
@@ -152,6 +187,11 @@ export function ElectricalSection() {
           </Field>
           <Field label="Design ambient (°C)" hint={`Intake Electrical!B10 — the sheet sizes and prices nothing without it, so the download always carries a value: what you type here (ASHRAE 2% design dry-bulb, or the duct-bank temperature for buried runs), else ${DESIGN_AMBIENT_DEFAULT_C} °C, the NEC 310.16 table ambient the estimator sizes on.`}>
             <input type="number" className={inputCls} value={project.intake?.designAmbientC ?? ""} placeholder={`${DESIGN_AMBIENT_DEFAULT_C} (default)`} onChange={(e) => setAmbient(e.target.value)} />
+            {typeof project.intake?.designAmbientC === "number" && ambientLooksFahrenheit(project.intake.designAmbientC) && (
+              <div className="mt-1 text-xs text-red-600">
+                {project.intake.designAmbientC} reads as Fahrenheit — that is {fahrenheitToC(project.intake.designAmbientC)} °C. Above 60 °C the intake&apos;s ambient table runs out and every DC run reads UNDERSIZED.
+              </div>
+            )}
           </Field>
           <Field label="Trench surface" hint="Intake B8 — what the trench cuts through">
             <select className={selectCls} value={project.intake?.trenchSurface ?? ""} onChange={(e) => setIntake({ trenchSurface: e.target.value || undefined })}>
@@ -206,6 +246,7 @@ export function ElectricalSection() {
       </Section>
 
       <Section title="AC runs — one per AC-connected unit" subtitle="The engine's sizing per unit: design current, breaker, conductor, parallel sets, conduit and the voltage-drop verdict. These fill the intake's charger-run table (Electrical rows 18–47 since template 3.8.0, one row per unit, DC and Level 2 in Equipment order; thirty rows) — distance, sets, and the conductor and conduit as overrides beside the sheet's own sizing.">
+        {clientSummary}
         {dcRows.length === 0 ? (
           <div className="text-sm text-zinc-500">No DC units yet — add charger lines on 2 · Equipment.</div>
         ) : (
@@ -222,6 +263,7 @@ export function ElectricalSection() {
                   <th className={thNum}>Sets</th>
                   <th className={th}>Conduit</th>
                   <th className={th}>Verdict</th>
+                  <th className={th} title="Fed from the client's existing 480 V board — load off our switchgear, breaker and circuit still priced">Client powered</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -238,6 +280,7 @@ export function ElectricalSection() {
                     <td className={td}>
                       <Pill ok={!r.flag || r.flag === "OK"}>{r.flag || "OK"}</Pill>
                     </td>
+                    <td className={`${td} text-center`}>{clientBox(r.id, !!r.clientPowered)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -261,7 +304,7 @@ export function ElectricalSection() {
               {bus480 ? `${num(bus480.connectedAmps, 0)} A · demand ${num(bus480.demandAmps, 0)} A` : bus208 ? `${num(bus208.connectedAmps, 0)} A at 208 V` : "—"}
             </div>
           </Field>
-          <Field label="Step-down transformer" hint={project.peripherals.l2ClientPowered ? "None — Level 2 client powered" : "Only on a mixed 480/208 V site"}>
+          <Field label="Step-down transformer" hint={project.peripherals.l2ClientPowered ? "None — Level 2 client powered" : client.l2 ? `Sized on our Level 2 units only — ${client.l2} client powered` : "Only on a mixed 480/208 V site"}>
             <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">
               {result.panel.transformer ? `${num(result.panel.transformer.suggestedKva)} kVA` : project.peripherals.l2ClientPowered && bus208 ? "none — client powered" : "none"}
             </div>
@@ -327,9 +370,9 @@ export function ElectricalSection() {
               onChange={(e) => rebuild((p) => ({ ...p, peripherals: { ...p.peripherals, l2ClientPowered: e.target.checked || undefined } }))}
             />
             <span>
-              <span className="font-medium">Level 2 chargers client powered</span>
+              <span className="font-medium">All Level 2 chargers client powered</span>
               <span className="ml-2 text-xs text-zinc-500">
-                Fed from the client&apos;s existing 208 V panel: the step-down transformer and the 208 V sub-panel are removed from the estimate (with their pad and bollards); the Level 2 branch breakers and circuits stay and are priced.
+                Every Level 2 unit fed from the client&apos;s existing 208 V panel: the step-down transformer and the 208 V sub-panel are removed from the estimate (with their pad and bollards); the Level 2 branch breakers and circuits stay and are priced. For only some of them, leave this off and tick those units in the Client powered column.
                 {bus208?.clientPowered ? ` The client's panel needs ${num(bus208.demandAmps, 0)} A of spare capacity for ${bus208.circuitCount} circuit(s).` : ""}
                 {" "}On the intake this travels as a &ldquo;by others&rdquo; panel row on the distribution schedule and in the scope sentence — the sheet has no cell for it.
               </span>
@@ -347,6 +390,7 @@ export function ElectricalSection() {
                   <th className={thNum}>Breaker (A)</th>
                   <th className={thNum}>Distance (ft)</th>
                   <th className={th}>Conductor</th>
+                  <th className={th} title="Fed from the client's existing 208 V panel — load off our step-down and sub-panel, breaker and circuit still priced">Client powered</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -360,6 +404,7 @@ export function ElectricalSection() {
                     <td className={tdNum}>{num(r.ocpdA)}</td>
                     <td className={tdNum}>{num(r.oneWayDistFt)}</td>
                     <td className={td}>{r.selectedWire} {r.material}</td>
+                    <td className={`${td} text-center`}>{clientBox(r.id, !!r.clientPowered, l2AllClient)}</td>
                   </tr>
                 ))}
               </tbody>

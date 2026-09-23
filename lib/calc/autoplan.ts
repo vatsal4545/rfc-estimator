@@ -10,6 +10,7 @@
 import { applyTypedDesignSets } from "./designFees";
 import { computeEstimate } from "./engine";
 import { INSTALL_METHOD_INFO, SURFACE_FT_PER_CREW_DAY, effectiveInstallMethod } from "./install";
+import { type ClientPoweredCounts, clientPoweredCounts, clientPoweredPhrase } from "./clientPowered";
 import { applyTakeoffEdits, generateTakeoffRows } from "./quickstart";
 import { utilityCivilFor } from "./utilityCivil";
 import { findLoadType } from "./tables";
@@ -477,23 +478,7 @@ export function buildQuickProject(
     // Typed distribution feeders (intake block I) are the site's, not the plan's — they survive a rebuild.
     ...(p.setup.serviceChain?.feeders?.length ? { feeders: p.setup.serviceChain.feeders } : {}),
   };
-  // Hybrid digs only the service section. The step-down TX and 208V
-  // sub-panel legs exist only on mixed-voltage sites (chain.ts builds them
-  // when both levels are present) — single-voltage sites dig just the
-  // utility-to-gear leg.
-  const mixedVoltage = counts.nDCFC > 0 && counts.nL2 > 0 && !p.peripherals.l2ClientPowered;
-  const serviceFt =
-    counts.nChargers === 0
-      ? 0
-      : chainCfg.utilityToSwitchgearFt +
-        (mixedVoltage ? chainCfg.switchgearToTransformerFt + chainCfg.transformerToSubpanelFt : 0);
-  const trenchFt = trenchedFt(method, routeFt, serviceFt);
-  const surfaceFt = method === "trench" ? 0 : routeFt;
-  const laborDays = estimateLaborDays(counts, trenchFt, input.terrain, surfaceFt);
-  // CBC 11B-228.3.2: L2 and DCFC are separate "facilities" — table applied per level, then summed.
-  const ada = adaStallBreakdownByLevel(counts.nL2, counts.nDCFC).combined;
-
-  // --- Takeoff + service chain + auto gear -------------------------------
+  // --- Takeoff ------------------------------------------------------------
   // Each level runs its own distance ladder from its own first-run input:
   // L2 banks and DCFC banks sit in different spots on real sites.
   const isL2 = (id: string) => findLoadType(p.loadTypes, id)?.category === "L2";
@@ -509,11 +494,34 @@ export function buildQuickProject(
     base.takeoffEdits,
     base.takeoff,
   );
+  // Client-powered chargers hang off the client's gear, not ours: the gear
+  // pads, gear bollards, feeder legs and utility substructures follow only
+  // the chargers we power.
+  const client = clientPoweredCounts(p.takeoff, p.loadTypes, p.peripherals.l2ClientPowered);
+  const own = { nDCFC: Math.max(0, counts.nDCFC - client.dc), nL2: Math.max(0, counts.nL2 - client.l2) };
+
+  // Hybrid digs only the service section. The step-down TX and 208V
+  // sub-panel legs exist only on mixed-voltage sites (chain.ts builds them
+  // when both levels are present) — single-voltage sites dig just the
+  // utility-to-gear leg.
+  const mixedVoltage = own.nDCFC > 0 && own.nL2 > 0;
+  const serviceFt =
+    counts.nChargers === 0
+      ? 0
+      : chainCfg.utilityToSwitchgearFt +
+        (mixedVoltage ? chainCfg.switchgearToTransformerFt + chainCfg.transformerToSubpanelFt : 0);
+  const trenchFt = trenchedFt(method, routeFt, serviceFt);
+  const surfaceFt = method === "trench" ? 0 : routeFt;
+  const laborDays = estimateLaborDays(counts, trenchFt, input.terrain, surfaceFt);
+  // CBC 11B-228.3.2: L2 and DCFC are separate "facilities" — table applied per level, then summed.
+  const ada = adaStallBreakdownByLevel(counts.nL2, counts.nDCFC).combined;
+
+  // --- Service chain + auto gear ------------------------------------------
   p.setup = {
     ...p.setup,
     clientName: input.clientName,
     siteAddress: input.siteAddress,
-    scopeOfWork: scopeText(input, p.loadTypes, trenchFt > 0, !!p.peripherals.l2ClientPowered),
+    scopeOfWork: scopeText(input, p.loadTypes, trenchFt > 0, client),
     conduitType: method === "trench" ? "PVC" : "EMT",
     installMethod: method,
     surfaceRouteFt: surfaceFt,
@@ -526,7 +534,7 @@ export function buildQuickProject(
   // --- Civil / peripherals -------------------------------------------------
   const feederByUtility = (base.intake?.interconnection?.serviceFeederBy ?? "").startsWith("Utility");
   const existingService = base.intake?.interconnection?.serviceType === "Added load to existing service";
-  const civil = utilityCivilFor(p.setup.utility, counts, feederByUtility, existingService);
+  const civil = utilityCivilFor(p.setup.utility, own, feederByUtility, existingService);
   const gprDays = input.includePrivateScan && trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / RATE_CARD.gprFtPerDay)) : 0;
   const customItems = (p.peripherals.customItems ?? []).filter((c) => c.name !== GPR_ITEM_NAME);
   if (gprDays > 0) {
@@ -539,7 +547,7 @@ export function buildQuickProject(
     customItems,
     bollardsQty:
       counts.nChargers * BOLLARD_RULE.perCharger +
-      (counts.nDCFC > 0 && !p.peripherals.existingSwitchgear ? BOLLARD_RULE.switchgear : 0) +
+      (own.nDCFC > 0 && !p.peripherals.existingSwitchgear ? BOLLARD_RULE.switchgear : 0) +
       (mixedVoltage ? BOLLARD_RULE.stepDownSubPanel : 0),
     dataBoxQty: counts.nChargers > 0 ? 1 : 0,
     christyBoxQty: trenchFt > 0 ? Math.max(1, Math.ceil(trenchFt / 200)) : 0,
@@ -657,7 +665,14 @@ export function buildQuickProject(
   return p;
 }
 
-function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: boolean, l2ClientPowered = false): string {
+/** The scope sentence's client-powered clause: which chargers the client's existing gear feeds. */
+function clientScopeSentence(c?: ClientPoweredCounts): string {
+  if (!c || c.total === 0) return "";
+  const gear = [c.dc ? "480 V switchboard" : "", c.l2 ? "208 V panel" : ""].filter(Boolean).join(" and ");
+  return ` ${clientPoweredPhrase(c)}, fed from the client's existing ${gear} — their branch breakers and circuits by us, no gear of ours for them.`;
+}
+
+function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: boolean, client?: ClientPoweredCounts): string {
   const parts = input.lines
     .filter((l) => l.count > 0 && findLoadType(loadTypes, l.loadTypeId))
     .map((l) => `${l.count} × ${l.loadTypeId}`);
@@ -672,7 +687,7 @@ function scopeText(input: QuickEstimateInput, loadTypes: LoadType[], hasTrench: 
   const method = INSTALL_METHOD_INFO[input.installMethod ?? "trench"];
   return `Turnkey EVCS install: ${parts.join(" + ")} on a ${TERRAIN_INFO[input.terrain].label.toLowerCase()}, ${method.label.toLowerCase()}${
     services.length ? `, incl. ${services.join(", ")}` : ""
-  }.${l2ClientPowered ? " Level 2 units client powered from the client's existing 208 V panel — no step-down transformer or sub-panel." : ""}`;
+  }.${clientScopeSentence(client)}`;
 }
 
 // ---------------------------------------------------------------------------

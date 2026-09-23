@@ -9,6 +9,7 @@
 // summary. So the estimator's construction and engineering numbers land
 // there — in force, but never hidden.
 
+import { clientPoweredCounts, clientPoweredPhrase } from "../calc/clientPowered";
 import { SITE_WORKS_LINES } from "../calc/costs";
 import type { EstimateResult, Project } from "../calc/types";
 import { computeExisting, hasExistingChargers, keepsExistingService } from "../existing";
@@ -104,11 +105,13 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
     const bus480 = result.panel.bus480;
     const bus208 = result.panel.bus208;
     const tx = result.panel.transformer;
+    const client = clientPoweredCounts(result.rows, project.loadTypes);
     const gearBits = [
       bus480 ? (per.existingSwitchgear ? `${num(bus480.suggestedBusA)} A main breaker into the existing switchgear (board retained, not priced)` : `${num(bus480.suggestedBusA)} A 480 V switchgear`) : "",
       tx ? `${num(tx.suggestedKva)} kVA step-down` : "",
       bus208 ? (bus208.clientPowered ? `Level 2 client powered — branch breakers into the client's existing 208 V panel, no step-down or sub-panel` : `${num(bus208.suggestedBusA)} A 208 V sub-panel`) : "",
       (per.disconnectQty ?? 0) > 0 ? `${num(per.disconnectQty ?? 0)} EVSE disconnect(s) at ${money(result.peripherals.disconnectUnitCost)}` : "",
+      client.total > 0 && !bus208?.clientPowered ? `${clientPoweredPhrase(client)} — their breakers into the client's existing gear, off our bus` : "",
     ].filter(Boolean);
     put(
       OVERRIDE_ROWS.switchgear,

@@ -41,7 +41,7 @@ const SCENARIOS: Scenario[] = [
     firstL2: 90,
     step: 20,
     terrain: "hilly",
-    expectCivil: { pad: 5000, well: 3500, pullBoxes: 2 },
+    expectCivil: { pad: 3500, well: 1000, pullBoxes: 2 },
   },
   {
     name: "SDG&E retail — 6 × 160 kW + 4 dual L2, flat, short runs, manual tariff",
@@ -52,7 +52,7 @@ const SCENARIOS: Scenario[] = [
     firstL2: 40,
     step: 12,
     terrain: "flat",
-    expectCivil: { pad: 5000, well: 3500, pullBoxes: 1 },
+    expectCivil: { pad: 3500, well: 1000, pullBoxes: 1 },
   },
   {
     name: "PG&E depot — 2 × 240 kW + 8 single L2, sloped, utility builds the service run",
@@ -126,7 +126,7 @@ describe.each(SCENARIOS)("scenario: $name", (sc) => {
     expect(project.peripherals.pullBoxQty).toBe(sc.expectCivil.pullBoxes);
     expect(project.peripherals.serviceBoxQty).toBe(1);
     expect(rule.transformerPadCost).toBe(sc.expectCivil.pad);
-    near(c.lines.find((l) => l.name === "Utility")!.base, project.peripherals.utilityAppFee + sc.expectCivil.pad + sc.expectCivil.well + sc.expectCivil.pullBoxes * 2500);
+    near(c.lines.find((l) => l.name === "Utility")!.base, project.peripherals.utilityAppFee + sc.expectCivil.pad + sc.expectCivil.well + sc.expectCivil.pullBoxes * 10000);
     expect(result.peripherals.lines.hardware.find((h) => h.name.startsWith("Christy box, traffic-rated"))!.qty * 600).toBe(600);
   });
 

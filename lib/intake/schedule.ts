@@ -120,8 +120,26 @@ export function emptyScheduleRow(): DistributionScheduleRow {
  * Everything here is priced on the estimator's gear line, so the cost basis
  * says so and no quoted cost is written — the sheet never prices it twice.
  */
+/** The utility substructure rows the engine schedules — priced on the estimator's Utility line, not its gear line. */
+export const SUBSTRUCTURE_ITEMS = {
+  pad: "Transformer pad (customer-furnished, utility sets the transformer)",
+  well: "Cable well / secondary handhole",
+  pullBox: "Utility pull box, traffic-rated",
+} as const;
+
+/** Which substructure a schedule row is, by its item name (the importer reads the vendor's figure back). */
+export function substructureOf(row: Pick<DistributionScheduleRow, "item">): keyof typeof SUBSTRUCTURE_ITEMS | undefined {
+  const t = row.item.trim().toLowerCase();
+  if (t.startsWith("transformer pad")) return "pad";
+  if (t.startsWith("cable well")) return "well";
+  if (t.startsWith("utility pull box")) return "pullBox";
+  return undefined;
+}
+
 /** The schedule row that carries "Level 2 client powered" onto the intake, which has no cell for it. The importer reads it back. */
 export const CLIENT_L2_PANEL_ITEM = "Client's existing 208 V panel (Level 2 client powered)";
+/** The same for client-powered DC chargers: the client's existing 480 V board feeds them. */
+export const CLIENT_DC_BOARD_ITEM = "Client's existing 480 V switchboard (DC client powered)";
 
 export function engineDistributionSchedule(project: Project, result: EstimateResult): DistributionScheduleRow[] {
   const per = project.peripherals;
@@ -161,16 +179,22 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
   const subPanel = gear.find((g) => g.qty > 0 && (gearType(g.item) === "Subpanel" || gearType(g.item) === "Panelboard"));
   const subPanelName = subPanel ? `${subPanel.item} ${subPanel.size}`.trim() : undefined;
   const serviceSource = ic.serviceType === "Added load to existing service" ? ic.pointOfConnection || "Existing service" : "Utility transformer";
-  const hasL2 = result.rows.some((r) => !r.synthetic && r.category === "L2");
-  const clientL2 = !!per.l2ClientPowered && hasL2;
+  // Client-powered chargers (any number of them) hang off the client's own gear — listed by others, with the spare capacity the engine needs of it.
+  const client208 = result.panel.clientSupply?.find((c) => c.voltage === 208);
+  const client480 = result.panel.clientSupply?.find((c) => c.voltage === 480);
+  const hasL2 = result.rows.some((r) => !r.synthetic && r.category === "L2" && !r.clientPowered);
+  const clientL2 = !!client208;
   const clientPanelName = clientL2 ? `${CLIENT_L2_PANEL_ITEM} — existing, retained` : undefined;
-  const hasDc = result.rows.some((r) => !r.synthetic && r.category === "DCFC");
+  const clientBoardName = client480 ? `${CLIENT_DC_BOARD_ITEM} — existing, retained` : undefined;
+  const hasDc = result.rows.some((r) => !r.synthetic && r.category === "DCFC" && !r.clientPowered);
   const branchOcpd = (category: string) => new Set(result.rows.filter((r) => !r.synthetic && r.category === category && r.ocpdA > 0).map((r) => r.ocpdA));
   const dcOcpd = branchOcpd("DCFC");
   const l2Ocpd = branchOcpd("L2");
   if (existingBoard) add(existingBoard, "Switchboard", 1, 480, result.panel.bus480?.suggestedBusA, serviceSource, "New main breaker for the EV load", true);
   // Client-powered Level 2: the client's own panel feeds the units — by others, not priced; its rating is the spare capacity the engine needs of it.
-  if (clientL2) add(CLIENT_L2_PANEL_ITEM, "Panelboard", 1, 208, result.panel.bus208?.autoBusA, "Client's existing service", "Level 2 branches", true);
+  const unitsNote = (c: { units: number }) => `${c.units} client-powered charger${c.units === 1 ? "" : "s"}`;
+  if (client480) add(CLIENT_DC_BOARD_ITEM, "Switchboard", 1, 480, Math.ceil(client480.demandAmps), "Client's existing service", `DC branches — ${unitsNote(client480)}`, true);
+  if (client208) add(CLIENT_L2_PANEL_ITEM, "Panelboard", 1, 208, Math.ceil(client208.demandAmps), "Client's existing service", `Level 2 branches — ${unitsNote(client208)}`, true);
   for (const g of gear) {
     if (g.qty <= 0) continue;
     const amps = /a$/i.test(g.size.trim()) ? parseNumber(g.size) : undefined;
@@ -191,6 +215,11 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
     } else if (/^main breaker/i.test(g.item)) {
       fedFrom = mainName;
       feeds = [hasDc ? "DC charger branches" : "", stepDownName ?? (hasL2 && !clientL2 ? "Level 2 branches" : "")].filter(Boolean).join(", ") || "Charger branches";
+    } else if (/breaker/i.test(g.item) && g.clientPowered) {
+      // Priced by us, landed in the client's gear.
+      const l2 = (volts ?? 480) < 300;
+      fedFrom = (l2 ? clientPanelName : clientBoardName) ?? mainName;
+      feeds = l2 ? "Level 2 units (client powered)" : "DC chargers (client powered)";
     } else if (/breaker/i.test(g.item)) {
       // A branch breaker matches the engine's OCPD for a DC or Level 2 circuit; anything else on the main is the step-down's primary device.
       if (amps !== undefined && l2Ocpd.has(amps) && (volts === undefined || volts < 300)) {
@@ -206,17 +235,20 @@ export function engineDistributionSchedule(project: Project, result: EstimateRes
     } else {
       fedFrom = mainName;
     }
-    add(name, type, g.qty, volts, amps, fedFrom, feeds, type === "Switchboard" && !!per.existingSwitchgear, gearPrice(g));
+    add(g.clientPowered ? `${name} (in the client's ${(volts ?? 480) < 300 ? "panel" : "board"})` : name, type, g.qty, volts, amps, fedFrom, feeds, type === "Switchboard" && !!per.existingSwitchgear, gearPrice(g));
   }
   if ((per.disconnectQty ?? 0) > 0) {
     const largestDc = Math.max(0, ...result.rows.filter((r) => !r.synthetic && r.category === "DCFC").map((r) => r.ocpdA));
     add("EVSE disconnect (NEC 625.43)", "EVSE disconnect", per.disconnectQty!, 480, largestDc || undefined, mainName, "DC chargers", false, { unitCost: per.disconnectUnitCost ?? disconnectRateFor(largestDc), basis: DISTRIBUTION_COST_BASES[4] });
   }
   for (const item of per.customItems ?? []) if (/\(quoted\)$/.test(item.name) && item.qty > 0 && item.name !== GPR_ITEM_NAME) add(item.name.replace(/\s*\(quoted\)$/, ""), "Other", item.qty, undefined, undefined, mainName);
-  // Customer-furnished utility substructures, so the CEO sees them on his schedule; their money travels in override row 14.
-  if (per.transformerPadCost > 0) add("Transformer pad (customer-furnished, utility sets the transformer)", "Other", 1, undefined, undefined, "Utility primary", mainName);
-  if (per.cableWellCost > 0) add("Cable well / secondary handhole", "Other", 1, undefined, undefined, "Utility transformer", mainName);
-  if (per.pullBoxQty > 0) add("Utility pull box, traffic-rated", "Other", per.pullBoxQty, undefined, undefined, "Utility transformer", mainName);
+  // Customer-furnished utility substructures, priced as vendor quotes so the
+  // Electrical tab shows their money (B148 → Pricing B9). The estimator carries
+  // them on its Utility line, so the gear totals below leave these rows out.
+  const quote = (unitCost: number) => ({ unitCost, basis: DISTRIBUTION_COST_BASES[0] });
+  if (per.transformerPadCost > 0) add(SUBSTRUCTURE_ITEMS.pad, "Other", 1, undefined, undefined, "Utility primary", mainName, false, quote(per.transformerPadCost));
+  if (per.cableWellCost > 0) add(SUBSTRUCTURE_ITEMS.well, "Other", 1, undefined, undefined, "Utility transformer", mainName, false, quote(per.cableWellCost));
+  if (per.pullBoxQty > 0) add(SUBSTRUCTURE_ITEMS.pullBox, "Other", per.pullBoxQty, undefined, undefined, "Utility transformer", mainName, false, quote(per.pullBoxUnitCost));
   return rows;
 }
 
@@ -226,9 +258,10 @@ export function distributionScheduleOf(project: Project, result: EstimateResult)
   return typed.length ? { rows: typed, typed: true } : { rows: engineDistributionSchedule(project, result), typed: false };
 }
 
-const ours = (r: DistributionScheduleRow) => r.whoProvides.trim().toLowerCase() !== "by others" && r.costBasis.trim().toLowerCase() !== "by others";
+/** A row we provide whose money belongs on the gear line — the utility substructures ride the estimator's Utility line instead. */
+const ours = (r: DistributionScheduleRow) => r.whoProvides.trim().toLowerCase() !== "by others" && r.costBasis.trim().toLowerCase() !== "by others" && !substructureOf(r);
 
-/** The money on the rows we provide — vendor quotes and catalog prices alike; what the sheet's B178 sums. */
+/** The gear money on the rows we provide — vendor quotes and catalog prices alike; the sheet's B148 less the utility substructures. */
 export function scheduledGearTotal(rows: DistributionScheduleRow[]): number {
   return round2(rows.filter(ours).reduce((t, r) => t + Math.max(0, r.quotedCost ?? 0), 0));
 }

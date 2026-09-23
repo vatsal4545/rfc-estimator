@@ -136,7 +136,7 @@ function QuickGenerate({ open, setOpen }: { open: boolean; setOpen: (v: boolean)
   );
 }
 
-const EDITABLE: (keyof TakeoffEdit)[] = ["loadTypeId", "location", "units", "oneWayDistFt", "runsPerUnitOverride", "sizeOverride", "ocpdOverrideA", "conduitOverride"];
+const EDITABLE: (keyof TakeoffEdit)[] = ["loadTypeId", "location", "units", "oneWayDistFt", "runsPerUnitOverride", "sizeOverride", "ocpdOverrideA", "conduitOverride", "clientPowered"];
 
 /** The part of a row patch that a rebuild should re-apply. */
 function editOf(patch: Partial<TakeoffRowInput>): TakeoffEdit {

@@ -30,13 +30,16 @@
 
 import { UTILITIES } from "../ref/utilities";
 
+// Sept 2026 (the shop's figures, 2026-09-23): pad $3,500, cable well $1,000,
+// pull box $10,000 each. They travel to the intake's distribution schedule as
+// vendor-quoted rows so the Electrical tab shows the money.
 export const UTILITY_CIVIL_RATES = {
   /** Three-phase precast transformer pad, set on compacted base rock, grounded. */
-  transformerPad: 5000,
+  transformerPad: 3500,
   /** Utility pull box / secondary handhole, traffic-rated precast, installed. */
-  pullBoxEach: 2500,
+  pullBoxEach: 10000,
   /** Cable well under the transformer pad (SMUD) or the service handhole (SDG&E), installed. */
-  cableWell: 3500,
+  cableWell: 1000,
   /** Christy concrete box with traffic lid at the point of connection / service conduit route. */
   serviceBox: 600,
 } as const;

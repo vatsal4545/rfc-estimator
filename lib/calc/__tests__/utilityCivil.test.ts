@@ -22,7 +22,7 @@ describe("customer-furnished utility substructures", () => {
   it("SDG&E: the Applicant installs pad, handhole and pull box", () => {
     const r = utilityCivilFor("SDG&E — San Diego Gas & Electric", dc);
     expect(r.regime).toBe("sdge");
-    expect(r).toMatchObject({ transformerPadCost: 5000, cableWellCost: 3500, pullBoxQty: 1, serviceBoxQty: 1 });
+    expect(r).toMatchObject({ transformerPadCost: 3500, cableWellCost: 1000, pullBoxQty: 1, serviceBoxQty: 1 });
     expect(r.source).toMatch(/106-35140F/);
   });
 
@@ -30,14 +30,14 @@ describe("customer-furnished utility substructures", () => {
     const utilityRun = utilityCivilFor("PG&E — Pacific Gas and Electric", dc, true);
     expect(utilityRun).toMatchObject({ regime: "ca-iou-ev-rule", transformerPadCost: 0, cableWellCost: 0, pullBoxQty: 0, serviceBoxQty: 1 });
     const ourRun = utilityCivilFor("SCE — Southern California Edison", dc, false);
-    expect(ourRun).toMatchObject({ transformerPadCost: 5000, cableWellCost: 0, pullBoxQty: 1, serviceBoxQty: 1 });
+    expect(ourRun).toMatchObject({ transformerPadCost: 3500, cableWellCost: 0, pullBoxQty: 1, serviceBoxQty: 1 });
   });
 
   it("other public utilities follow the customer-built pattern; no utility keeps the pad allowance only", () => {
-    expect(utilityCivilFor("LADWP — Los Angeles Dept of Water & Power", dc)).toMatchObject({ regime: "pou", transformerPadCost: 5000, cableWellCost: 3500, pullBoxQty: 1 });
+    expect(utilityCivilFor("LADWP — Los Angeles Dept of Water & Power", dc)).toMatchObject({ regime: "pou", transformerPadCost: 3500, cableWellCost: 1000, pullBoxQty: 1 });
     expect(utilityCivilRegime("Anaheim Public Utilities").regime).toBe("pou");
     expect(utilityCivilRegime("DTE Electric Company").regime).toBe("pou");
-    expect(utilityCivilFor("", dc)).toMatchObject({ regime: "unknown", transformerPadCost: 5000, cableWellCost: 0, pullBoxQty: 0, serviceBoxQty: 1 });
+    expect(utilityCivilFor("", dc)).toMatchObject({ regime: "unknown", transformerPadCost: 3500, cableWellCost: 0, pullBoxQty: 0, serviceBoxQty: 1 });
     expect(utilityCivilFor("", { nDCFC: 0, nL2: 0 }).serviceBoxQty).toBe(0);
   });
 
@@ -54,10 +54,10 @@ describe("customer-furnished utility substructures", () => {
     const base: Project = { ...defaultProject(), setup: { ...defaultProject().setup, utility: "SMUD — Sacramento Municipal Utility District" } };
     const quick = { ...defaultQuickInput(), lines: [{ loadTypeId: "DCFC 360kW Dual", count: 4 }, { loadTypeId: "L2 Dual 40A", count: 2 }] };
     const p = buildQuickProject(quick, base, "t", HARDWARE_ALLOWANCE);
-    expect(p.peripherals).toMatchObject({ transformerPadCost: 5000, cableWellCost: 3500, pullBoxQty: 2, pullBoxUnitCost: 2500, serviceBoxQty: 1, serviceBoxUnitCost: 600 });
+    expect(p.peripherals).toMatchObject({ transformerPadCost: 3500, cableWellCost: 1000, pullBoxQty: 2, pullBoxUnitCost: 10000, serviceBoxQty: 1, serviceBoxUnitCost: 600 });
     const est = computeEstimate(p);
     const utilityLine = est.costs.lines.find((l) => l.name === "Utility")!;
-    expect(utilityLine.base).toBeCloseTo(p.peripherals.utilityAppFee + 5000 + 3500 + 2 * 2500, 2);
+    expect(utilityLine.base).toBeCloseTo(p.peripherals.utilityAppFee + 3500 + 1000 + 2 * 10000, 2);
     const box = est.peripherals.lines.hardware.find((h) => h.name.startsWith("Christy box, traffic-rated"))!;
     expect(box.qty).toBe(1);
     expect(box.unitCost).toBe(600);

@@ -1,4 +1,5 @@
 import { buildServiceChain } from "./chain";
+import { isClientPowered } from "./clientPowered";
 import { computeCosts, engineOverridesOf } from "./costs";
 import { computeEquipment } from "./equipment";
 import { computeMaterials } from "./materials";
@@ -12,9 +13,12 @@ import type { EstimateResult, Project } from "./types";
 export function computeEstimate(project: Project): EstimateResult {
   // Pass 1: charger/manual rows size on their own; the panel schedule (buses,
   // transformer, gear) derives from them.
+  // A client-powered charger (its own flag, or every Level 2 unit under
+  // peripherals.l2ClientPowered) carries the flag on its computed row.
   const manualRows = project.takeoff
     .filter((r) => !r.synthetic)
-    .map((row) => computeTakeoffRow(row, project.setup, project.loadTypes));
+    .map((row) => computeTakeoffRow(row, project.setup, project.loadTypes))
+    .map((r) => (isClientPowered(r, project.peripherals.l2ClientPowered) ? { ...r, clientPowered: true } : r.clientPowered ? { ...r, clientPowered: undefined } : r));
   const panel = computePanelSchedule(manualRows, project.loadTypes, project.setup.gearOverrides, { existingSwitchgear: project.peripherals.existingSwitchgear, l2ClientPowered: project.peripherals.l2ClientPowered });
 
   // Pass 2: the service chain (utility TX -> switchgear -> step-down TX ->
@@ -34,6 +38,8 @@ export function computeEstimate(project: Project): EstimateResult {
     materials.conduitLines,
     project.peripherals.useAutoGear ? panel.suggestedGear : undefined,
     Math.max(0, ...panel.branches.filter((b) => b.voltage >= 480).map((b) => b.breakerA)),
+    // Pads follow the gear we set: a switchgear pad when our 480 V board exists, a step-down pad when our transformer does.
+    { switchgear: manualRows.some((r) => r.category === "DCFC" && !r.clientPowered), stepDown: !!panel.transformer },
   );
   const equipment = computeEquipment(project.equipment, project.setup, rollups);
   const costs = computeCosts(materials, peripherals, equipment, project.financial, engineOverridesOf(project.overrides));

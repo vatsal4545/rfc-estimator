@@ -26,6 +26,18 @@ export interface BranchCircuit {
   breakerA: number;
   wire: string;
   conduit: string;
+  /** Fed from the client's existing gear — the breaker is priced and landed there, the load is not on our bus. */
+  clientPowered?: boolean;
+}
+
+/** What the client's existing panel or board carries for the client-powered chargers — the spare capacity it needs. */
+export interface ClientSupply {
+  voltage: 208 | 480;
+  units: number;
+  circuitCount: number;
+  connectedAmps: number;
+  /** Connected × 125 % (NEC 625.41/625.42 continuous): the spare capacity the client's gear needs. */
+  demandAmps: number;
 }
 
 export interface BusSummary {
@@ -59,6 +71,8 @@ export interface PanelSchedule {
     primaryBreakerA: number; // 125% of the selected transformer's rated primary FLA
   };
   suggestedGear: GearSelection[];
+  /** Client-powered chargers, by voltage (absent when every charger is ours). */
+  clientSupply?: ClientSupply[];
   notes: string[];
 }
 
@@ -80,6 +94,8 @@ export function computePanelSchedule(
 ): PanelSchedule {
   const notes: string[] = [];
   const chargerRows = rows.filter((r) => r.category === "L2" || r.category === "DCFC");
+  // Client-powered chargers keep their breakers but not their load on our buses.
+  const isClient = (r: TakeoffRowComputed) => !!r.clientPowered || (!!opts.l2ClientPowered && r.category === "L2");
 
   const branches: BranchCircuit[] = chargerRows.map((r) => {
     const lt = findLoadType(loadTypes, r.loadTypeId);
@@ -100,6 +116,7 @@ export function computePanelSchedule(
       breakerA: r.ocpdA,
       wire: r.selectedWire,
       conduit: r.conduitSize,
+      ...(isClient(r) ? { clientPowered: true } : {}),
     };
   });
 
@@ -108,8 +125,32 @@ export function computePanelSchedule(
     return lt?.unitInputAmps ?? r.designAmps;
   }
 
-  const rows480 = chargerRows.filter((r) => r.volts === 480);
-  const rows208 = chargerRows.filter((r) => r.volts === 208);
+  const ownRows = chargerRows.filter((r) => !isClient(r));
+  const clientRows = chargerRows.filter(isClient);
+  const rows480 = ownRows.filter((r) => r.volts === 480);
+  // Every Level 2 unit client powered keeps the 208 V bus as the client's panel (sized as its spare capacity, not bought).
+  const all208Client = clientRows.some((r) => r.volts === 208) && !ownRows.some((r) => r.volts === 208);
+  const rows208 = all208Client ? chargerRows.filter((r) => r.volts === 208) : ownRows.filter((r) => r.volts === 208);
+  const ownBranches = branches.filter((b) => !b.clientPowered);
+
+  const clientSupply: ClientSupply[] = [];
+  for (const voltage of [480, 208] as const) {
+    const at = clientRows.filter((r) => r.volts === voltage);
+    if (!at.length) continue;
+    const va = at.reduce((s, r) => s + r.units * unitInputAmps(r) * r.volts * (r.phases === 3 ? SQRT3 : 1), 0);
+    const connectedAmps = va / (voltage * SQRT3);
+    clientSupply.push({
+      voltage,
+      units: at.reduce((s, r) => s + Math.max(1, r.units), 0),
+      circuitCount: branches.filter((b) => b.clientPowered && b.voltage === voltage).reduce((s, b) => s + b.circuits, 0),
+      connectedAmps,
+      demandAmps: connectedAmps * 1.25,
+    });
+  }
+  for (const c of clientSupply)
+    notes.push(
+      `${c.units} charger(s) client powered at ${c.voltage} V — fed from the client's existing ${c.voltage === 480 ? "480 V switchboard" : "208 V panel"}, which needs ${Math.ceil(c.demandAmps)} A of spare capacity; their ${c.circuitCount} branch breaker(s) are priced and landed in it, their circuits stay ours.`,
+    );
 
   let bus208: BusSummary | undefined;
   let transformer: PanelSchedule["transformer"];
@@ -134,13 +175,13 @@ export function computePanelSchedule(
     const overrideA = overrides?.subpanel208A;
     bus208 = {
       voltage: 208,
-      circuitCount: branches.filter((b) => b.voltage === 208).reduce((s, b) => s + b.circuits, 0),
+      circuitCount: (all208Client ? branches : ownBranches).filter((b) => b.voltage === 208).reduce((s, b) => s + b.circuits, 0),
       connectedAmps,
       demandAmps,
       suggestedBusA: overrideA && overrideA > 0 ? overrideA : autoBusA,
       autoBusA,
       overridden: !!overrideA && overrideA > 0,
-      ...(opts.l2ClientPowered ? { clientPowered: true } : {}),
+      ...(all208Client ? { clientPowered: true } : {}),
     };
     if (bus208.overridden && bus208.suggestedBusA < demandAmps) {
       notes.push(`208V panel override ${bus208.suggestedBusA}A is below the ${Math.ceil(demandAmps)}A demand (NEC 625 continuous) — undersized.`);
@@ -151,12 +192,10 @@ export function computePanelSchedule(
   }
 
   const has480Service = rows480.length > 0;
-  if (bus208 && opts.l2ClientPowered) {
-    // The client's existing 208 V panel feeds the Level 2 units: no step-down,
+  if (bus208?.clientPowered) {
+    // The client's existing 208 V panel feeds every Level 2 unit: no step-down,
     // no sub-panel, and none of that load on our 480 V bus.
-    notes.push(
-      `Level 2 chargers client powered — fed from the client's existing 208 V panel. No step-down transformer or 208 V sub-panel is priced; the panel needs ${Math.ceil(bus208.demandAmps)} A of spare capacity (${bus208.circuitCount} branch breaker(s) priced and landed in it).`,
-    );
+    notes.push("Level 2 chargers client powered — no step-down transformer or 208 V sub-panel is priced.");
   } else if (bus208 && has480Service) {
     // Step-down transformer for the L2 load, fed from the 480V gear.
     const connectedKva = (bus208.connectedAmps * 208 * SQRT3) / 1000;
@@ -198,7 +237,7 @@ export function computePanelSchedule(
     bus480 = {
       voltage: 480,
       circuitCount:
-        branches.filter((b) => b.voltage === 480).reduce((s, b) => s + b.circuits, 0) +
+        ownBranches.filter((b) => b.voltage === 480).reduce((s, b) => s + b.circuits, 0) +
         (transformer ? 1 : 0),
       connectedAmps: withTransformer,
       demandAmps,
@@ -227,22 +266,24 @@ export function computePanelSchedule(
     suggestedGear.push({ item: "Transformer", size: `${transformer.suggestedKva}KVA`, voltage: "208V", qty: 1 });
   }
   // Branch breakers grouped by size + voltage.
-  const breakerGroups = new Map<string, { size: number; voltage: number; qty: number }>();
+  // (The client-powered chargers' breakers are their own group: priced the same, landed in the client's gear.)
+  const breakerGroups = new Map<string, { size: number; voltage: number; qty: number; client: boolean }>();
   for (const b of branches) {
     if (b.breakerA === 0) continue;
-    const key = `${b.breakerA}|${b.voltage}`;
-    const g = breakerGroups.get(key) ?? { size: b.breakerA, voltage: b.voltage, qty: 0 };
+    const client = !!b.clientPowered;
+    const key = `${b.breakerA}|${b.voltage}|${client}`;
+    const g = breakerGroups.get(key) ?? { size: b.breakerA, voltage: b.voltage, qty: 0, client };
     g.qty += b.circuits;
     breakerGroups.set(key, g);
   }
   if (transformer) {
-    const key = `${transformer.primaryBreakerA}|480`;
-    const g = breakerGroups.get(key) ?? { size: transformer.primaryBreakerA, voltage: 480, qty: 0 };
+    const key = `${transformer.primaryBreakerA}|480|false`;
+    const g = breakerGroups.get(key) ?? { size: transformer.primaryBreakerA, voltage: 480, qty: 0, client: false };
     g.qty += 1;
     breakerGroups.set(key, g);
   }
-  for (const g of Array.from(breakerGroups.values()).sort((a, b) => b.voltage - a.voltage || b.size - a.size)) {
-    suggestedGear.push({ item: "Branch breaker", size: `${g.size}A`, voltage: `${g.voltage}V`, qty: g.qty });
+  for (const g of Array.from(breakerGroups.values()).sort((a, b) => Number(a.client) - Number(b.client) || b.voltage - a.voltage || b.size - a.size)) {
+    suggestedGear.push({ item: "Branch breaker", size: `${g.size}A`, voltage: `${g.voltage}V`, qty: g.qty, ...(g.client ? { clientPowered: true } : {}) });
   }
 
   const unpriced = suggestedGear.filter((g) => {
@@ -255,5 +296,5 @@ export function computePanelSchedule(
     );
   }
 
-  return { branches, bus480, bus208, transformer, suggestedGear, notes };
+  return { branches, bus480, bus208, transformer, suggestedGear, ...(clientSupply.length ? { clientSupply } : {}), notes };
 }

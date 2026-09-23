@@ -117,6 +117,26 @@ export function designAmbientOf(intake: { designAmbientC?: number | null } | und
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? { value: v, typed: true } : { value: DESIGN_AMBIENT_DEFAULT_C, typed: false };
 }
 
+/**
+ * Hottest design ambient that can plausibly be a Celsius figure. No inhabited
+ * site has an ASHRAE 2% dry-bulb above about 50 °C and a duct bank does not
+ * reach 60 °C, so a larger number in the °C field is almost always a
+ * Fahrenheit reading (75 °F, the Palo Alto file's entry, is 24 °C). The
+ * sheet's ambient table stops at 65 °C; past it the correction collapses,
+ * every DC run reads UNDERSIZED and the secondary feeder balloons.
+ */
+export const DESIGN_AMBIENT_MAX_PLAUSIBLE_C = 60;
+
+/** True when a typed design ambient reads as Fahrenheit in the Celsius field. */
+export function ambientLooksFahrenheit(c: number): boolean {
+  return Number.isFinite(c) && c > DESIGN_AMBIENT_MAX_PLAUSIBLE_C;
+}
+
+/** The Celsius equivalent of a Fahrenheit reading, to the nearest degree. */
+export function fahrenheitToC(f: number): number {
+  return Math.round(((f - 32) * 5) / 9);
+}
+
 export const ELECTRICAL_CELLS = {
   // Block A — sizing basis
   material: "B6",
@@ -209,6 +229,15 @@ export const CHARGER_RUN_TABLE = {
   stream: "V",
   line: "W",
 } as const;
+
+/**
+ * Column E (Circuit) tag on a client-powered charger's run row, numbered so
+ * every tag is unique — a unique circuit name sizes and prices exactly like a
+ * blank one (the sheet only pools rows that share a name). The importer reads
+ * the tag back as the charger's client-powered flag.
+ */
+export const CLIENT_POWERED_CIRCUIT = "Client powered";
+export const isClientPoweredCircuit = (text: string) => text.trim().toLowerCase().startsWith(CLIENT_POWERED_CIRCUIT.toLowerCase());
 
 /**
  * Block C — cabinet-to-dispenser DC runs, used only when a power cabinet is

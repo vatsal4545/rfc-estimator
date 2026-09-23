@@ -26,6 +26,7 @@ import { findSku } from "../ref/priceBook";
 import {
   CARBON_CELLS,
   CHARGER_RUN_TABLE,
+  CLIENT_POWERED_CIRCUIT,
   INTAKE_TEMPLATE,
   COMMERCIAL_CELLS,
   CONSTRUCTION_CELLS,
@@ -35,7 +36,9 @@ import {
   DISTRIBUTION_TABLE,
   DESIGN_AMBIENT_DEFAULT_C,
   ELECTRICAL_CELLS,
+  ambientLooksFahrenheit,
   designAmbientOf,
+  fahrenheitToC,
   EQUIPMENT_SINGLES,
   EQUIPMENT_TABLE,
   EXISTING_CAPTURE_ROWS,
@@ -68,7 +71,8 @@ import {
   splitApplicationSubmitted,
 } from "./cells";
 import { estimatorOverrideRows, type IntakeOverrideRow } from "./handoff";
-import { CLIENT_L2_PANEL_ITEM, engineDistributionSchedule, typedDistributionSchedule } from "./schedule";
+import { CLIENT_DC_BOARD_ITEM, CLIENT_L2_PANEL_ITEM, engineDistributionSchedule, typedDistributionSchedule } from "./schedule";
+import { clientPoweredCounts, clientPoweredPhrase } from "../calc/clientPowered";
 import { isoToSerial } from "./serial";
 import type { CellWrite } from "./xlsxWrite";
 
@@ -356,6 +360,10 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
     warnings.push(
       `Electrical B10 design ambient written as ${DESIGN_AMBIENT_DEFAULT_C} °C — the NEC 310.16 table ambient, the estimator's own sizing basis, not a site figure. Type the site's ASHRAE 2% design dry-bulb (or the duct-bank temperature for buried runs) on 3 · Electrical if it is hotter; the sheet will then size some runs up.`,
     );
+  else if (ambientLooksFahrenheit(ambientC))
+    warnings.push(
+      `Electrical B10 design ambient written as ${ambientC} °C — THAT READS AS FAHRENHEIT. ${ambientC} °F is ${fahrenheitToC(ambientC)} °C. The sheet's ambient table stops at 65 °C, so at this figure every DC run reads UNDERSIZED and the secondary feeder is sized up several gauges. Retype the ASHRAE 2% design dry-bulb in °C on 3 · Electrical.`,
+    );
   if (it?.trenchSurface?.trim()) put("Electrical", ELECTRICAL_CELLS.trenchSurface, it.trenchSurface.trim());
   if (it?.trenchDepthIn !== undefined && it?.trenchDepthIn !== null) put("Electrical", ELECTRICAL_CELLS.trenchDepthIn, it.trenchDepthIn);
   if (!it?.trenchSurface?.trim() || it?.trenchDepthIn === undefined || it?.trenchDepthIn === null) leftBlank.push("Electrical B8 trench surface, B9 trench depth — site facts the estimator does not model; the template's Mixed / 24 in stand unless an imported intake carried them.");
@@ -385,6 +393,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   const unplacedLines = new Set<string>();
   const snappedSizes = new Map<string, number>();
   let runFt = 0;
+  let clientRun = 0;
   for (const r of result.rows) {
     if (r.synthetic) continue;
     const rowNo = lineRows.find((x) => x.loadTypeId === r.loadTypeId)?.rowNo;
@@ -400,6 +409,7 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
       const row = CHARGER_RUN_TABLE.firstRow + before + k;
       if (row > CHARGER_RUN_TABLE.lastRow) continue;
       put("Electrical", `${CHARGER_RUN_TABLE.distanceFt}${row}`, r.oneWayDistFt);
+      if (r.clientPowered) put("Electrical", `${CHARGER_RUN_TABLE.circuit}${row}`, `${CLIENT_POWERED_CIRCUIT} ${++clientRun}`);
       if (it?.sharedTrenchRuns) put("Electrical", `${CHARGER_RUN_TABLE.sharesTrench}${row}`, INTAKE_TEXT.yes);
       put("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`, Math.max(1, r.resolvedRunsPerUnit));
       // The estimator's size, or the next one up when the sheet's table does not
@@ -428,10 +438,16 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   }
   if (totalCabinets > 0) leftBlank.push(`Electrical rows ${DISPENSER_RUN_TABLE.firstRow}–${DISPENSER_RUN_TABLE.lastRow} cabinet-to-dispenser DC runs — the estimator sizes the cabinets' AC feeders only.`);
 
-  if (per.l2ClientPowered && result.rows.some((r) => !r.synthetic && r.category === "L2"))
+  const client = clientPoweredCounts(result.rows, project.loadTypes);
+  if (client.total > 0) {
+    const gear = [
+      client.dc ? `the "${CLIENT_DC_BOARD_ITEM}" row` : "",
+      client.l2 ? `the "${CLIENT_L2_PANEL_ITEM}" row` : "",
+    ].filter(Boolean).join(" and ");
     warnings.push(
-      `Level 2 client powered: the units are fed from the client's existing 208 V panel, so no step-down transformer or sub-panel is priced (their pad and bollards drop out; the Level 2 branch breakers and circuits stay). The intake ${INTAKE_TEMPLATE.version} has no cell for this — it travels as the "${CLIENT_L2_PANEL_ITEM}" row on the distribution schedule (by others) and in the scope sentence.`,
+      `${clientPoweredPhrase(client)}${per.l2ClientPowered && client.l2 && !client.dc ? " — Level 2 client powered" : ""}: fed from the client's existing gear, so their load is off our switchgear and our gear is sized on the other ${client.chargers - client.total}; their branch breakers and circuits stay priced. The intake ${INTAKE_TEMPLATE.version} has no cell for this — each one's charger-run row carries "${CLIENT_POWERED_CIRCUIT} n" in column E (Circuit), and the distribution schedule lists ${gear} (by others) with the breakers landed in it. The sheet's service feeder (row ${SERVICE_FEEDER_ROW.row}) still sizes on the Equipment tab's full site load.`,
     );
+  }
   // Block D — service and switchgear.
   put("Electrical", ELECTRICAL_CELLS.pointOfConnection, ic.pointOfConnection);
   put("Electrical", ELECTRICAL_CELLS.txToSwitchgearFt, s.serviceChain?.utilityToSwitchgearFt);

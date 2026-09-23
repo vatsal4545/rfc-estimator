@@ -286,3 +286,32 @@ retained" — on the distribution schedule, the Level 2 breakers fed from it,
 a sentence appended to Equipment!B27, and the Overrides row-10 reason. The
 importer reads the row back into the flag, so a round trip keeps it.
 475 tests.
+
+## 2026-09-23 — Client-powered chargers, one by one; substructure prices on the schedule
+
+**Any charger can be client powered** (`TakeoffRowInput.clientPowered`, kept
+through rebuilds as a takeoff edit): tick it in the new "Client powered"
+column on 3 · Electrical's DC and Level 2 tables — two of twenty, say. The
+unit's load leaves our buses (switchgear, step-down and sub-panel size on the
+rest), its branch breaker stays priced as its own gear group landed in the
+client's gear, its circuit stays. `panel.clientSupply` gives the spare
+capacity the client's 480 V board / 208 V panel needs. The gear pads and
+bollards, the feeder legs and the utility substructures follow only the
+chargers we power (all DC client powered → no switchgear, no service run, no
+pad). The old "all Level 2" switch (`peripherals.l2ClientPowered`) still
+works and now just flags every Level 2 row.
+
+On the intake (3.8.0 has no cell for it): each client-powered run row carries
+a unique "Client powered n" tag in column E (Circuit) — a unique circuit name
+sizes and prices exactly like a blank one — and block E lists the client's
+board / panel "by others" with those breakers fed from it. The importer reads
+the tags back per charger. The sheet's service feeder (row 130) still sizes on
+the Equipment tab's full load; the handoff report says so.
+
+**Utility substructures re-priced** (shop's figures): transformer pad $3,500,
+cable well $1,000, pull box $10,000 each. On block E they are now "Vendor
+quote" rows with their money in column L, so the sheet's Electrical B148 (and
+Pricing B9) carries them. The estimator still books them on its Utility line,
+so the schedule's gear totals (`scheduledGearTotal`, `priceGearAtSchedule`)
+leave these rows out — no double count on import. A figure changed on the
+sheet comes home pinned on the Utility line.

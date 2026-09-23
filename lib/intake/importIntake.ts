@@ -12,7 +12,7 @@
 import { GPR_ITEM_NAME, HARDWARE_ALLOWANCE, buildQuickProject, defaultQuickInput } from "../calc/autoplan";
 import { feederFloorA } from "../calc/chain";
 import { computeEstimate } from "../calc/engine";
-import { CLIENT_L2_PANEL_ITEM, GEAR_LINE_KEY, engineDistributionSchedule, estimatedGearTotal, priceGearAtSchedule } from "./schedule";
+import { CLIENT_L2_PANEL_ITEM, GEAR_LINE_KEY, engineDistributionSchedule, estimatedGearTotal, priceGearAtSchedule, substructureOf } from "./schedule";
 import { withDesignSets } from "../calc/designFees";
 import type { DistributionFeeder, EquipmentRentalItem, OverrideEntry, Project, QuickChargerLine, QuickExtraLine, TakeoffEdit } from "../calc/types";
 import {
@@ -37,7 +37,7 @@ import { MARKET_BENCHMARKS } from "../ref/benchmarks";
 import { findSku } from "../ref/priceBook";
 import { UTILITIES } from "../ref/utilities";
 import { applyEquipmentSchedule, loadTypeIdForSku } from "../skus";
-import { CHARGER_RUN_TABLE, CONSTRUCTION_CELLS, INTAKE_TEXT, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, ELECTRICAL_LEGACY_SHIFT, EXISTING_CELLS, INTAKE_TEMPLATE, RENTAL_TABLE, REVISIONS_TABLE, conductorFromIntake, electricalUsesLegacyRows, joinApplicationSubmitted, legacyElectricalRef, rateBasisFromRatePer } from "./cells";
+import { CHARGER_RUN_TABLE, CLIENT_POWERED_CIRCUIT, isClientPoweredCircuit, CONSTRUCTION_CELLS, INTAKE_TEXT, DISPENSER_RUN_TABLE, DISTRIBUTION_FEEDER_TABLE, DISTRIBUTION_TABLE, ELECTRICAL_CELLS, ELECTRICAL_LEGACY_SHIFT, EXISTING_CELLS, INTAKE_TEMPLATE, RENTAL_TABLE, REVISIONS_TABLE, conductorFromIntake, electricalUsesLegacyRows, joinApplicationSubmitted, legacyElectricalRef, rateBasisFromRatePer } from "./cells";
 import { cellToIso } from "./serial";
 import { readWorkbook, type CellValue, type WorkbookCells } from "./xlsx";
 
@@ -256,6 +256,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const unitIndex = new Map<number, number>();
   let runsWithDistance = 0;
   let runsSharingTrench = 0;
+  let clientPoweredRuns = 0;
   for (let k = 0; k < unitLines.length; k++) {
     const row = CHARGER_RUN_TABLE.firstRow + k;
     if (row > CHARGER_RUN_TABLE.lastRow) break;
@@ -265,9 +266,12 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     const d = num("Electrical", `${CHARGER_RUN_TABLE.distanceFt}${row}`);
     const conductor = str("Electrical", `${CHARGER_RUN_TABLE.conductorOverride}${row}`);
     const sets = num("Electrical", `${CHARGER_RUN_TABLE.sets}${row}`);
+    const clientTag = isClientPoweredCircuit(str("Electrical", `${CHARGER_RUN_TABLE.circuit}${row}`));
+    if (clientTag) clientPoweredRuns++;
     const loadTypeId = lineLoadType.get(lineNo);
-    if (loadTypeId && (d !== undefined || conductor || sets !== undefined)) {
+    if (loadTypeId && (d !== undefined || conductor || sets !== undefined || clientTag)) {
       const edit: TakeoffEdit = {};
+      if (clientTag) edit.clientPowered = true;
       if (d !== undefined && d > 0) edit.oneWayDistFt = d;
       if (conductor) edit.sizeOverride = conductorFromIntake(conductor);
       if (sets !== undefined && sets > 0) edit.runsPerUnitOverride = sets;
@@ -780,8 +784,10 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     quickBase.peripherals = { ...quickBase.peripherals, existingSwitchgear: true };
     mapped.push("Switchgear retained on the Existing tab — the estimator prices a main breaker into the existing board, no switchboard, pad or gear bollards");
   }
-  // The intake has no cell for client-powered Level 2; the app writes it as a "by others" panel row on the schedule and reads it back here.
-  if (distributionSchedule.some((r) => r.item.trim().toLowerCase().startsWith(CLIENT_L2_PANEL_ITEM.toLowerCase()))) {
+  // The intake has no cell for client-powered chargers: each one's run row carries a "Client powered n" circuit tag (read above).
+  if (clientPoweredRuns > 0) mapped.push(`${clientPoweredRuns} charger run(s) tagged "${CLIENT_POWERED_CIRCUIT}" — fed from the client's existing gear; their load is off our switchgear, their breakers and circuits stay priced`);
+  // A file written before the per-charger tags carried "Level 2 client powered" only as a by-others panel row on the schedule.
+  else if (distributionSchedule.some((r) => r.item.trim().toLowerCase().startsWith(CLIENT_L2_PANEL_ITEM.toLowerCase()))) {
     quickBase.peripherals = { ...quickBase.peripherals, l2ClientPowered: true };
     mapped.push("Level 2 client powered (schedule row) — the estimator prices no step-down transformer or sub-panel; Level 2 branch breakers stay");
   }
@@ -998,6 +1004,29 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (dumpLots !== undefined) sticky.add("peripherals.dumpWasteCost");
   if (gprEa !== undefined) sticky.add("peripherals.gpr");
   if (rentals.some((r) => r.qty !== undefined || r.duration !== undefined)) sticky.add("equipment");
+  // The utility substructures travel as vendor-quoted schedule rows: a figure
+  // someone changed on the sheet comes home as the estimator's (pinned).
+  for (const row of distributionSchedule) {
+    const which = substructureOf(row);
+    const cost = row.quotedCost ?? 0;
+    if (!which || cost <= 0) continue;
+    const per = project.peripherals;
+    if (which === "pad" && Math.abs(cost - per.transformerPadCost) > 0.005) {
+      project.peripherals = { ...per, transformerPadCost: cost };
+      sticky.add("peripherals.transformerPadCost");
+    } else if (which === "well" && Math.abs(cost - per.cableWellCost) > 0.005) {
+      project.peripherals = { ...per, cableWellCost: cost };
+      sticky.add("peripherals.cableWellCost");
+    } else if (which === "pullBox") {
+      const qty = Math.max(1, row.qty ?? 1);
+      const unit = Math.round((cost / qty) * 100) / 100;
+      if (qty !== per.pullBoxQty || Math.abs(unit - per.pullBoxUnitCost) > 0.005) {
+        project.peripherals = { ...per, pullBoxQty: qty, pullBoxUnitCost: unit };
+        sticky.add("peripherals.pullBoxQty").add("peripherals.pullBoxUnitCost");
+      }
+    } else continue;
+    mapped.push(`${row.item}: ${money(cost)} (${row.costBasis || "schedule"}) carried on the Utility line`);
+  }
   if (scopeSentence) sticky.add("setup.scopeOfWork");
   if (sticky.size) project.sticky = [...sticky];
   project.intake = intake;
