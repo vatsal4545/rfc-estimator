@@ -69,6 +69,11 @@ export function ElectricalSection() {
         utilityToSwitchgearFt: ft,
       },
     });
+  const setLoadManagement = (patch: Partial<NonNullable<typeof s.loadManagement>>) => {
+    const next = { ...s.loadManagement, ...patch };
+    const on = (next.dcUnitKw ?? 0) > 0 || (next.cappedKw ?? 0) > 0;
+    setSetup({ loadManagement: on ? next : undefined });
+  };
   const setFrame = (v: string) => setSetup({ gearOverrides: { ...s.gearOverrides, switchgear480A: v === "" ? undefined : Number(v) } });
   const setIntake = (patch: Partial<NonNullable<typeof project.intake>>) => rebuild((p) => ({ ...p, intake: { ...(p.intake ?? defaultIntake()), ...patch } }));
   const setAmbient = (v: string) =>
@@ -299,7 +304,7 @@ export function ElectricalSection() {
           <Field label="Switchgear size being priced (A)" hint={bus480 ? `Code minimum ${num(bus480.autoBusA)} A at 125% of ${num(bus480.connectedAmps, 0)} A connected — blank = auto` : bus208 ? `208 V service · code minimum ${num(bus208.autoBusA)} A` : "no load yet"}>
             <input type="number" className={inputCls} placeholder={bus480 ? String(bus480.autoBusA) : "auto"} value={s.gearOverrides?.switchgear480A ?? ""} onChange={(e) => setFrame(e.target.value)} />
           </Field>
-          <Field label="Connected load" hint="AC input at nameplate">
+          <Field label="Connected load" hint={bus480?.managedKw ? "AC input under load management" : "AC input at nameplate"}>
             <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">
               {bus480 ? `${num(bus480.connectedAmps, 0)} A · demand ${num(bus480.demandAmps, 0)} A` : bus208 ? `${num(bus208.connectedAmps, 0)} A at 208 V` : "—"}
             </div>
@@ -310,7 +315,24 @@ export function ElectricalSection() {
             </div>
           </Field>
         </Grid>
-        <div className="mt-3 text-xs text-zinc-500">Load management and multi-board lineups are not modelled: the service is sized at full nameplate on one board. Say so in the notes if the design differs.</div>
+        <div className="mt-4 text-sm font-medium">Load management</div>
+        <div className="mt-1 text-xs text-zinc-500">
+          Chargers dialed down or held by an energy management system: the service — switchgear frame, service feeder — is sized on the managed site draw instead of nameplate (intake Electrical B114–B115; NEC 625.42 / 750). Branch circuits, breakers, the step-down and the 208 V panel stay at nameplate. Type either the DC dial or the site cap; the cap wins when both are typed. Blank = full nameplate.
+        </div>
+        <Grid cols={4}>
+          <Field label="DC chargers dialed to (kW each)" hint={dcRows.length ? "Each DC unit's input scales by dial ÷ nameplate; Level 2 stays at nameplate" : "No DC chargers"}>
+            <input type="number" className={inputCls} placeholder="nameplate" value={s.loadManagement?.dcUnitKw ?? ""} disabled={!dcRows.length} onChange={(e) => setLoadManagement({ dcUnitKw: optNum(e.target.value) })} />
+          </Field>
+          <Field label="Capped site draw (kW)" hint="The EMS sizing cap at the service — wins over the dial">
+            <input type="number" className={inputCls} placeholder="none" value={s.loadManagement?.cappedKw ?? ""} onChange={(e) => setLoadManagement({ cappedKw: optNum(e.target.value) })} />
+          </Field>
+          <Field label="Service sized on" hint={bus480?.managedKw ? `Load managed — nameplate ${num(bus480.nameplateAmps ?? 0, 0)} A would need ${num(Math.ceil((bus480.nameplateAmps ?? 0) * 1.25))} A` : "Full nameplate"}>
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-sm tabular-nums dark:border-zinc-800 dark:bg-zinc-900">
+              {bus480 ? (bus480.managedKw ? `${num(bus480.managedKw, 1)} kW managed · ${num(bus480.demandAmps, 0)} A demand` : `nameplate · ${num(bus480.demandAmps, 0)} A demand`) : "—"}
+            </div>
+          </Field>
+        </Grid>
+        <div className="mt-3 text-xs text-zinc-500">Multi-board lineups are not modelled: the service is sized on one board. Say so in the notes if the design differs.</div>
         {svc.length > 0 && (
           <div className={`${wrap} mt-4`}>
             <table className={table}>

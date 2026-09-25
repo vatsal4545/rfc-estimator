@@ -152,6 +152,22 @@ export interface GearOverrides {
   transformerKva?: number;
 }
 
+/**
+ * Load management — the site draw the service is SIZED on, below full
+ * nameplate (intake Electrical B114 "Yes" + B115 cap). An energy management
+ * system (NEC 625.42 adjustable setting / NEC 750) holds the chargers to it.
+ * Only the 480 V service bus follows it — the switchgear frame, the service
+ * conductors and what hangs off the frame. Branch circuits, breakers, the
+ * step-down transformer and the 208 V panel stay at nameplate, as the sheet
+ * and a stamped one-line keep them.
+ */
+export interface LoadManagement {
+  /** Every DC charger dialed down to this output (kW per unit); its input current scales by dial ÷ nameplate. */
+  dcUnitKw?: number;
+  /** Capped site draw at the service (kW). Wins over the dial when both are typed. */
+  cappedKw?: number;
+}
+
 export interface Setup {
   clientName: string;
   siteAddress: string;
@@ -176,6 +192,8 @@ export interface Setup {
   serviceChain?: ServiceChainConfig;
   /** Manual gear-size overrides — blank fields stay auto-sized. */
   gearOverrides?: GearOverrides;
+  /** Load management: the service is sized on a managed cap instead of nameplate. Absent = full nameplate. */
+  loadManagement?: LoadManagement;
   /**
    * Conduit routing method. Absent on projects saved before the option
    * existed — derive with effectiveInstallMethod(): EMT conduit implied

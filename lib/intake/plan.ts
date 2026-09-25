@@ -456,7 +456,11 @@ export function planIntakeFill(project: Project, result: EstimateResult, proposa
   // A retained board is not a priced one: the sheet's B112 is "size being priced", and 0 keeps RefData from pricing a switchboard the site already has.
   put("Electrical", ELECTRICAL_CELLS.switchgearPricedA, per.existingSwitchgear ? 0 : frame?.suggestedBusA);
   if (it?.switchgearToPoleFt !== undefined && it?.switchgearToPoleFt !== null) put("Electrical", ELECTRICAL_CELLS.switchgearToPoleFt, it.switchgearToPoleFt);
-  leftBlank.push("Electrical B120 distance to the pole (unless an imported intake carried it), B110 board count and B114–B115 load management — the estimator sizes one board at full nameplate; the template's 1 / No stand.");
+  // B114–B115 load management: the sheet's B107 = MIN(nameplate, cap) sizes its frame, as the estimator's managed bus does.
+  const managedKw = result.panel.bus480?.managedKw;
+  put("Electrical", ELECTRICAL_CELLS.loadManagement, yesNo(!!managedKw));
+  put("Electrical", ELECTRICAL_CELLS.cappedKw, managedKw ? Math.ceil(managedKw * 100) / 100 : null);
+  leftBlank.push("Electrical B120 distance to the pole (unless an imported intake carried it) and B110 board count — the estimator sizes one board; the template's 1 stands.");
   leftBlank.push("Electrical B117 demand-limiting setpoint — the billing setpoint the EMS holds the peak fifteen-minute draw to. Nothing is sized on it and the estimator does not model it; blank leaves the template falling back to the sizing cap above.");
   put("Electrical", ELECTRICAL_CELLS.feederBy, ic.serviceFeederBy);
   const svc = feederOutOfScope(ic.serviceFeederBy) ? undefined : result.rows.find((r) => r.synthetic && r.loadTypeId.startsWith("SVC Utility"));

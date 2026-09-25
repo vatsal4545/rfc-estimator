@@ -313,7 +313,9 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const switchgearPriced = num("Electrical", E.switchgearPricedA);
   const boards = num("Electrical", E.boards) ?? 1;
   if (boards > 1) warnings.push(`${boards} service boards in the lineup — the estimator sizes one switchboard; split the gear by hand on the Peripherals tab.`);
-  if (yes("Electrical", E.loadManagement)) warnings.push(`Load management proposed (cap ${num("Electrical", E.cappedKw) ?? "not entered"} kW) — the estimator sizes the service at full nameplate.`);
+  // B114 Yes + B115 cap: the service is sized on the managed site draw (the sheet's B107 = MIN(nameplate, cap)).
+  const cappedKw = yes("Electrical", E.loadManagement) ? num("Electrical", E.cappedKw) : undefined;
+  if (yes("Electrical", E.loadManagement) && !(cappedKw && cappedKw > 0)) warnings.push("Load management proposed with no cap on Electrical B115 — the service is sized at full nameplate, as the sheet does.");
   const designAmbientC = num("Electrical", E.ambientC);
   const dcRuns: number[] = [];
   for (let r = DISPENSER_RUN_TABLE.firstRow; r <= DISPENSER_RUN_TABLE.lastRow; r++) {
@@ -794,6 +796,10 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
     mapped.push("Level 2 client powered (schedule row) — the estimator prices no step-down transformer or sub-panel; Level 2 branch breakers stay");
   }
   if (Object.keys(takeoffEdits).length) quickBase.takeoffEdits = takeoffEdits;
+  if (cappedKw && cappedKw > 0) {
+    quickBase.setup = { ...quickBase.setup, loadManagement: { cappedKw } };
+    mapped.push(`Load management: the service is sized on the ${cappedKw} kW capped site draw (Electrical B114–B115), branch circuits at nameplate`);
+  }
   // The utility decides the customer-built substructures at Build (PG&E and
   // SCE build the service under their EV rule; a POU has the customer pour
   // the pad) — so it has to be on the project before the build, or a PG&E

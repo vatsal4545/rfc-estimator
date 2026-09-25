@@ -341,3 +341,23 @@ project now prices energy from the library instead of warning NOT PUBLISHED.
 The importer reads any 3.8.x file without a layout warning (the 3.8.0 fixture
 is kept to prove it); the handoff's tariff check also refuses a SUPERSEDED
 library row.
+
+## 2026-09-25 — Load management sizes the service (intake B114–B115)
+
+Oceana Inn (E-00039): six 60 kW DC all-in-ones + eight 32 A Level 2 are
+409.92 kW of nameplate → 616 A at 125% → an 800 A frame, while the design
+signed with PG&E is a 600 A board because the DC units are dialed down to
+50 kW. The estimator sized everything at nameplate and ignored the intake's
+load-management cells, so both the estimate and the sheet read UNDERSIZED.
+
+`setup.loadManagement` (`LoadManagement`): `dcUnitKw` (every DC unit dialed
+to this output; its input current scales by dial ÷ nameplate) or `cappedKw`
+(the capped site draw; wins when both are typed). Only the 480 V service bus
+follows it — frame, service feeder, gear chosen off the frame — exactly the
+sheet's B107 = MIN(nameplate, B115) → B108 → B111. Branch circuits, breakers,
+the step-down and the 208 V panel stay at nameplate, as the sheet and the
+stamped SLD keep them (100 A per 60 kW unit). A cap at or above nameplate
+never sizes up. The fill writes B114 Yes/No and B115 = the managed kW; the
+importer reads them back into `cappedKw` (it used to warn and ignore them).
+Controls on 3 · Electrical → Service and switchgear → Load management.
+The revenue model still uses the nameplate power per position.

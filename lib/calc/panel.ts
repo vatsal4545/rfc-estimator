@@ -4,7 +4,7 @@ import {
   findLoadType,
   nextStandardSize,
 } from "./tables";
-import type { GearOverrides, GearSelection, LoadType, TakeoffRowComputed } from "./types";
+import type { GearOverrides, GearSelection, LoadManagement, LoadType, TakeoffRowComputed } from "./types";
 
 const SQRT3 = Math.sqrt(3);
 
@@ -53,6 +53,10 @@ export interface BusSummary {
   overridden: boolean;
   /** 208 V only: the bus is the CLIENT's existing panel (Level 2 client powered) — sized here as the spare capacity it needs, not as gear we buy. */
   clientPowered?: boolean;
+  /** 480 V only, load managed: the nameplate line current the cap replaced (connectedAmps is then the managed figure). */
+  nameplateAmps?: number;
+  /** 480 V only, load managed: the site draw (kW) the bus is sized on. */
+  managedKw?: number;
 }
 
 export interface PanelSchedule {
@@ -90,7 +94,7 @@ export function computePanelSchedule(
   rows: TakeoffRowComputed[],
   loadTypes: LoadType[],
   overrides?: GearOverrides,
-  opts: { existingSwitchgear?: boolean; l2ClientPowered?: boolean } = {},
+  opts: { existingSwitchgear?: boolean; l2ClientPowered?: boolean; loadManagement?: LoadManagement } = {},
 ): PanelSchedule {
   const notes: string[] = [];
   const chargerRows = rows.filter((r) => r.category === "L2" || r.category === "DCFC");
@@ -230,7 +234,9 @@ export function computePanelSchedule(
 
   if (has480Service) {
     const connected480 = rows480.reduce((s, r) => s + r.units * unitInputAmps(r), 0);
-    const withTransformer = connected480 + (transformer ? transformer.primaryAmps480 : 0);
+    const nameplateAmps = connected480 + (transformer ? transformer.primaryAmps480 : 0);
+    const managed = managedServiceAmps(rows480, nameplateAmps, transformer?.primaryAmps480 ?? 0, opts.loadManagement, unitInputAmps, (r) => findLoadType(loadTypes, r.loadTypeId)?.kwPerPort ?? 0);
+    const withTransformer = managed?.amps ?? nameplateAmps;
     const demandAmps = withTransformer * 1.25;
     const autoBusA = nextStandardSize(SWITCHGEAR_480V_A, demandAmps);
     const overrideA = overrides?.switchgear480A;
@@ -244,7 +250,12 @@ export function computePanelSchedule(
       suggestedBusA: overrideA && overrideA > 0 ? overrideA : autoBusA,
       autoBusA,
       overridden: !!overrideA && overrideA > 0,
+      ...(managed ? { nameplateAmps, managedKw: managed.kw } : {}),
     };
+    if (managed)
+      notes.push(
+        `Load managed — the service is sized on ${fmtKw(managed.kw)} kW (${managed.basis}) against ${fmtKw(ampsToKw480(nameplateAmps))} kW of nameplate: ${Math.ceil(demandAmps)} A demand, not ${Math.ceil(nameplateAmps * 1.25)} A. The energy management system that enforces it is scope, and the AHJ will ask to see it (NEC 625.42 / 750).`,
+      );
     if (bus480.overridden && bus480.suggestedBusA < demandAmps) {
       notes.push(`Switchgear override ${bus480.suggestedBusA}A is below the ${Math.ceil(demandAmps)}A demand (NEC 625 continuous) — undersized.`);
     }
@@ -297,4 +308,41 @@ export function computePanelSchedule(
   }
 
   return { branches, bus480, bus208, transformer, suggestedGear, ...(clientSupply.length ? { clientSupply } : {}), notes };
+}
+
+const ampsToKw480 = (amps: number) => (amps * 480 * SQRT3) / 1000;
+const fmtKw = (kw: number) => (Math.round(kw * 100) / 100).toLocaleString("en-US");
+
+/**
+ * The line current the 480 V bus is sized on under load management, or
+ * undefined when the site is not managed (or the cap is at or above nameplate —
+ * a cap never sizes UP). A typed site cap wins; else every DC charger's input
+ * current scales by dial ÷ its nameplate kW, and everything else (Level 2
+ * through the transformer) stays at nameplate.
+ */
+function managedServiceAmps(
+  rows480: TakeoffRowComputed[],
+  nameplateAmps: number,
+  transformerAmps: number,
+  lm: LoadManagement | undefined,
+  unitAmps: (r: TakeoffRowComputed) => number,
+  unitKwOf: (r: TakeoffRowComputed) => number,
+): { amps: number; kw: number; basis: string } | undefined {
+  if (!lm) return undefined;
+  const nameplateKw = ampsToKw480(nameplateAmps);
+  if (lm.cappedKw && lm.cappedKw > 0) {
+    if (lm.cappedKw >= nameplateKw) return undefined;
+    return { amps: (lm.cappedKw * 1000) / (480 * SQRT3), kw: lm.cappedKw, basis: "typed site cap" };
+  }
+  if (lm.dcUnitKw && lm.dcUnitKw > 0) {
+    const dialedDc = rows480.reduce((s, r) => {
+      const unitKw = unitKwOf(r);
+      const ratio = r.category === "DCFC" && unitKw > 0 ? Math.min(1, lm.dcUnitKw! / unitKw) : 1;
+      return s + r.units * unitAmps(r) * ratio;
+    }, 0);
+    const amps = dialedDc + transformerAmps;
+    if (amps >= nameplateAmps - 1e-9) return undefined;
+    return { amps, kw: ampsToKw480(amps), basis: `DC chargers dialed to ${fmtKw(lm.dcUnitKw)} kW each` };
+  }
+  return undefined;
 }

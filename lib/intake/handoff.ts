@@ -137,7 +137,7 @@ export function estimatorOverrideRows(project: Project, result: EstimateResult, 
       `RFC Estimator: site plan ${money(f.autoCadDesignCost)} + SLD / electrical ${money(f.electricalEngDesignCost)} + PM ${num(f.pmHours)} h × ${money(f.pmHourlyRate)} — before plan check`,
     );
     const frame = bus480 ?? bus208;
-    if (frame) put(OVERRIDE_ROWS.frameA, frame.suggestedBusA, frame.overridden ? "Frame typed on the estimator (manual gear override)" : "RFC Estimator panel schedule: next standard frame at or above 125% of the continuous load (NEC 625.41/42)");
+    if (frame) put(OVERRIDE_ROWS.frameA, frame.suggestedBusA, `${frame.overridden ? "Frame typed on the estimator (manual gear override)" : "RFC Estimator panel schedule: next standard frame at or above 125% of the continuous load (NEC 625.41/42)"}${bus480?.managedKw ? ` — load managed, sized on a ${num(bus480.managedKw, 0)} kW capped site draw` : ""}`);
     const dcBreakers = [...new Set(result.rows.filter((row) => !row.synthetic && row.category === "DCFC" && row.ocpdA > 0).map((row) => row.ocpdA))];
     if (dcBreakers.length === 1) put(OVERRIDE_ROWS.branchBreakerA, dcBreakers[0], "RFC Estimator: branch breaker per DC unit (125% of circuit amps, next standard size)");
   }
