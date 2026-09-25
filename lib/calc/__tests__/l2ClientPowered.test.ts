@@ -14,7 +14,7 @@ import { computeProposal } from "../../proposal";
 import { defaultCommercial } from "../../proposal/defaults";
 import type { Project } from "../types";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
 
 /** A mixed site: two 360 kW DC cabinets on 480 V and four dual Level 2 pedestals on 208 V. */
 function site(l2ClientPowered?: boolean): Project {

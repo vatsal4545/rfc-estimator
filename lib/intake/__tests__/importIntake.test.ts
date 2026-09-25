@@ -11,8 +11,8 @@ import { defaultCommercial } from "../../proposal/defaults";
 import { importIntakeFile, looksLikeIntake, projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.0.xlsx");
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.1.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
 
 describe("importing a completed intake workbook", async () => {
   const base = { ...defaultProject(), commercial: defaultCommercial() };
@@ -22,8 +22,8 @@ describe("importing a completed intake workbook", async () => {
   const proposal = computeProposal(project, estimate)!;
 
   it("recognises the workbook and records its version", () => {
-    expect(report.templateVersion).toBe("3.8.0");
-    expect(report.contentHash).toBe("3a564d9eb659391e");
+    expect(report.templateVersion).toBe("3.8.1");
+    expect(report.contentHash).toBe("377c3d7c0bc814a5");
     expect(report.fileVersion).toBe("Rev A");
     expect(report.completedBy).toBe("Test CPM");
     expect(report.dateCompleted).toBe("2026-09-02");
@@ -57,7 +57,7 @@ describe("importing a completed intake workbook", async () => {
     expect(it.projectReference).toBe("BW-TEST-001");
     expect(it.county).toBe("Los Angeles");
     expect(it.cca).toBe("Clean Power Alliance");
-    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.8\.0 Rev A completed by Test CPM on 2026-09-02/);
+    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.8\.1 Rev A completed by Test CPM on 2026-09-02/);
   });
 
   it("Equipment and Electrical → Quick Estimate lines, distances, materials and gear", () => {
@@ -303,5 +303,22 @@ describe("a 3.7.2 file — the Electrical tab at its pre-3.8.0 rows", async () =
     const rental = (name: string) => legacy.project.equipment.find((e) => e.name === name)!;
     expect(rental("Mini excavator")).toMatchObject({ qty: 1, durationValue: 30, rateBasis: "per day" });
     expect(rental("Generator rental")).toMatchObject({ qty: 1, rate: 220, durationValue: 10, rateBasis: "per day" });
+  });
+});
+
+// 3.8.1 is a data release on the 3.8.0 layout (rate library, CA benchmark, notes): no cell moved,
+// so a workbook filled on 3.8.0 reads exactly as a 3.8.1 one and carries no layout warning.
+describe("a 3.8.0 file — the same layout as 3.8.1", async () => {
+  const PREVIOUS = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.0.xlsx");
+  const base = { ...defaultProject(), commercial: defaultCommercial() };
+  const previous = projectFromIntake(await readWorkbook(readFileSync(PREVIOUS)), base);
+  const current = projectFromIntake(await readWorkbook(readFileSync(FIXTURE)), base);
+
+  it("imports with no layout warning and the same inputs", () => {
+    expect(previous.report.templateVersion).toBe("3.8.0");
+    expect(previous.report.warnings.some((w) => /^Template 3\.8\.0/.test(w))).toBe(false);
+    expect(previous.project.setup).toEqual(current.project.setup);
+    expect(previous.project.takeoffEdits).toEqual(current.project.takeoffEdits);
+    expect({ ...previous.project.intake, notes: undefined }).toEqual({ ...current.project.intake, notes: undefined });
   });
 });

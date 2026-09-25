@@ -14,7 +14,7 @@ import { projectFromIntake } from "../importIntake";
 import { GEAR_LINE_KEY, SUBPANELS_LINE_KEY, catalogPriceFor, clearGearQuotePricing, distributionScheduleOf, engineDistributionSchedule, estimatedGearTotal, gearPricedAtSchedule, priceGearAtSchedule, scheduledGearTotal, withCatalogPrice } from "../schedule";
 import { readWorkbook } from "../xlsx";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
 
 function site() {
   const dc = findSku("TP5-360-480-2-300")!;

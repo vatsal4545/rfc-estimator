@@ -130,7 +130,7 @@ describe("Business model — Best Western replay (BW_Model_5.xlsx)", () => {
     expect(b.benchmarkUtilisation).toBeCloseTo(0.231, 9);
     expect(b.kwhPerDayAtBenchmark).toBeCloseTo(5476.58496, 4); // B27
     expect(b.siteFactor).toBeCloseTo(0.21645, 4); // B29
-    expect(b.priceVsMarket).toBeCloseTo(0.0726, 3); // $0.65 against the $0.606 state average (BW compared the taper cell by mistake)
+    expect(b.priceVsMarket).toBeCloseTo(0.65 / 0.69 - 1, 6); // $0.65 against the $0.69 CA average (intake 3.8.1; 3.8.0 carried $0.606 → +7.26%, BW compared the taper cell by mistake)
     expect(b.impliedMarketGrowth).toBeCloseTo(0.108247, 5); // B19
     expect(b.growthVerdict).toMatch(/^Conservative/);
   });
@@ -363,7 +363,7 @@ describe("Business model — from a project", () => {
     expect(fromTakeoff.l2Positions).toBe(5);
   });
 
-  it("the BW project reproduces the workbook's utilisation and carbon; SCE TOU-EV-9 is flagged NOT PUBLISHED", () => {
+  it("the BW project reproduces the workbook's utilisation and carbon; SCE TOU-EV-9 prices from the verified library row", () => {
     const project = bwProject();
     const proposal = computeProposal(project, computeEstimate(project))!;
     const m = proposal.model;
@@ -377,11 +377,16 @@ describe("Business model — from a project", () => {
     // had $9,318.015) + 2 AC duals at theirs ($736.11), plus 12 ports of EVOLV.
     expect(m.context.annualNetworkFee).toBeCloseTo(12 * 39.99 * 12, 2);
     expect(m.context.annualServiceAfterContract).toBeCloseTo(4 * 8949.96 + 2 * 736.11, 2);
-    // The 2.9.0 library carries SCE TOU-EV-9 with no published $/kWh.
+    // Through 3.8.0 the library carried SCE TOU-EV-9 with no $/kWh (NOT PUBLISHED); 3.8.1 fills it from the
+    // Oct 1, 2025 sheets — energy is priced, the $511.90 customer charge lands, no demand or subscription.
     expect(m.tariff.basis).toBe("library");
-    expect(m.tariff.status).toBe("NOT PUBLISHED");
-    expect(m.tariff.blendedPerKwh).toBe(0);
-    expect(m.tariff.warnings.some((w) => /NOT PUBLISHED/.test(w))).toBe(true);
+    expect(m.tariff.status).toMatch(/^VERIFIED/);
+    expect(m.tariff.blendedPerKwh).toBeGreaterThan(0.1299);
+    expect(m.tariff.blendedPerKwh).toBeLessThan(0.59009);
+    expect(m.tariff.years[0].customerChargeCost).toBeCloseTo(12 * 511.9, 6);
+    expect(m.tariff.years[0].subscriptionCost).toBe(0);
+    expect(m.tariff.years[0].demandChargeCost).toBe(0);
+    expect(m.tariff.warnings.some((w) => /NOT PUBLISHED|verify against/.test(w))).toBe(false);
     // Financing follows the customer price; the deal's base case ties to the cashflow.
     expect(m.financing.financedAmount).toBeCloseTo(proposal.costBuildup.customerPrice, 6);
     expect(m.cashflow.years[0].cashflow).toBeCloseTo(-proposal.margin.clientProjectCost, 6);

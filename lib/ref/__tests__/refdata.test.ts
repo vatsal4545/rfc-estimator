@@ -13,9 +13,9 @@ import { RATE_SCHEDULE_PICKER, UTILITIES } from "../utilities";
 
 describe("reference data — provenance", () => {
   it("records the template it came from", () => {
-    expect(REFDATA_META.templateVersion).toBe("3.8.0");
-    expect(REFDATA_META.contentHash).toBe("3a564d9eb659391e");
-    expect(REFDATA_META.released).toBe("2026-09-20");
+    expect(REFDATA_META.templateVersion).toBe("3.8.1");
+    expect(REFDATA_META.contentHash).toBe("377c3d7c0bc814a5");
+    expect(REFDATA_META.released).toBe("2026-09-25");
   });
 });
 
@@ -121,8 +121,14 @@ describe("rate library, utilities, benchmarks, gear", () => {
     expect(bev2s.blockPerMonth).toBe(95.56);
     expect(bev2s.overagePerKw).toBe(3.82);
     expect(bev2s.status).toBe("VERIFIED");
+    // 3.8.1: SCE TOU-EV-7/8/9 filled from the filed Oct 1, 2025 Cal. PUC sheets (summer figures; no demand, no blocks).
     const sce = RATE_LIBRARY.find((r) => r.schedule === "TOU-EV-9")!;
-    expect(sce.status).toBe("NOT PUBLISHED");
+    expect(sce.status).toMatch(/^VERIFIED/);
+    expect(sce).toMatchObject({ peakPerKwh: 0.59009, offPeakPerKwh: 0.21498, superOffPeakPerKwh: 0.1299, customerPerMonth: 511.9, demandPerKwMonth: 0, blockKw: 0 });
+    // The 2021 placeholder rows are zeroed and marked superseded so nothing reads them.
+    const placeholders = RATE_LIBRARY.filter((r) => /PLACEHOLDER/.test(r.schedule));
+    expect(placeholders).toHaveLength(3);
+    expect(placeholders.every((r) => /^SUPERSEDED/.test(r.status) && r.peakPerKwh === 0 && r.customerPerMonth === 0)).toBe(true);
     expect(RATE_LIBRARY.every((r) => r.status.length > 0)).toBe(true);
   });
 
@@ -139,7 +145,7 @@ describe("rate library, utilities, benchmarks, gear", () => {
   it("carries the Paren market benchmarks", () => {
     const ca = MARKET_BENCHMARKS.find((b) => b.state === "California")!;
     expect(ca.portUtilisation).toBe(0.231);
-    expect(ca.priceToDriverPerKwh).toBe(0.606);
+    expect(ca.priceToDriverPerKwh).toBe(0.69); // 3.8.1: September 2026 DCFC Tracker CA network average (was Paren 0.606)
     expect(MARKET_BENCHMARKS.find((b) => b.state === "United States (average)")!.portUtilisation).toBe(0.1576);
   });
 

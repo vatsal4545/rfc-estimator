@@ -155,7 +155,9 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const revisionNotes = str("Version", "B14");
   // The fill appends its own sentence to the notes; strip it so a re-fill does not stack a second copy.
   const carriedRevisionNotes = revisionNotes.replace(/\s*Filled by the RFC Estimator on \d{4}-\d{2}-\d{2}[\s\S]*$/, "").trim();
-  if (templateVersion && templateVersion !== INTAKE_TEMPLATE.version) {
+  // A patch release (3.8.0 -> 3.8.1) keeps every cell where it was, so a file from the same major.minor reads without a warning.
+  const sameLayout = !!templateVersion && templateVersion.split(".").slice(0, 2).join(".") === INTAKE_TEMPLATE.version.split(".").slice(0, 2).join(".");
+  if (templateVersion && templateVersion !== INTAKE_TEMPLATE.version && !sameLayout) {
     const [major, minor] = templateVersion.split(".").map(Number);
     const beforeRebuild = Number.isFinite(major) && Number.isFinite(minor) && (major < 3 || (major === 3 && minor < 3));
     warnings.push(

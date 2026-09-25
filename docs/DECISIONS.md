@@ -315,3 +315,29 @@ Pricing B9) carries them. The estimator still books them on its Utility line,
 so the schedule's gear totals (`scheduledGearTotal`, `priceGearAtSchedule`)
 leave these rows out — no double count on import. A figure changed on the
 sheet comes home pinned on the Utility line.
+
+## 2026-09-25 — Intake 3.8.1: SCE TOU-EV rates verified, CA price benchmark $0.69
+
+The CEO released 3.8.1 (2026-09-25, hash 377c3d7c0bc814a5). A data release on
+the 3.8.0 layout — no cell moved, no blue cell added — so the cell map only
+changes its version gate. What changed on the sheet:
+
+- RateLibrary rows 9–11: SCE TOU-EV-7/8/9 filled from the filed Cal. PUC sheets
+  effective 2025-10-01 (bundled < 2 kV, summer peak / off-peak / super-off-peak
+  in the three columns, winter figures in the text; customer charge $9.97 /
+  $234.67 / $511.90 a month; no demand charge, no subscription block). STATUS
+  is VERIFIED. The three 2021 PLACEHOLDER rows (37–39) are zeroed and marked
+  SUPERSEDED.
+- Revenue!B103 (subscription verdict) now reads "n/a — no capacity charge"
+  on a verified schedule with no demand charge and no block — the app's recalc
+  evaluates the new COUNTIFS "VERIFIED*" wildcard with no errors.
+- RefData C174: California DCFC price to driver $0.606 → $0.69 (Sept 2026
+  network averages). The business model's price-vs-market reads this row.
+- Help text only: Electrical C117 (demand setpoint), Revenue C56 (escalation),
+  C91 (blend a TOU row on the load shape — never the off-peak rate alone).
+
+App: template copies, refdata and a 3.8.1 fixture regenerated. An SCE TOU-EV
+project now prices energy from the library instead of warning NOT PUBLISHED.
+The importer reads any 3.8.x file without a layout warning (the 3.8.0 fixture
+is kept to prove it); the handoff's tariff check also refuses a SUPERSEDED
+library row.

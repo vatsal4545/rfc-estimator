@@ -13,7 +13,7 @@ import { computeProposal } from "../../proposal";
 import { defaultCommercial } from "../../proposal/defaults";
 import type { Project, TakeoffEdit } from "../types";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.0.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
 
 const DC = "DCFC 360kW Dual";
 const L2 = "L2 Dual 40A";

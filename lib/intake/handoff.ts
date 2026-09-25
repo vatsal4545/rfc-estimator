@@ -188,7 +188,7 @@ export function intakeCompleteness(project: Project, result: EstimateResult, pro
   const ic = it?.interconnection;
   const tariff = proposal?.model.tariff;
   const libraryRow = RATE_LIBRARY.find((r) => r.utility === s.utility && r.schedule === (it?.rateSchedule ?? ""));
-  const tariffOk = m.tariff.basis === "manual" ? m.tariff.manual.peakPerKwh > 0 : !!libraryRow && !/NOT PUBLISHED|PLACEHOLDER/i.test(libraryRow.status);
+  const tariffOk = m.tariff.basis === "manual" ? m.tariff.manual.peakPerKwh > 0 : !!libraryRow && !/NOT PUBLISHED|PLACEHOLDER|SUPERSEDED/i.test(libraryRow.status);
 
   // Existing!B201 — on an add-load or retained-service site the existing service and switchgear must carry the new load before the model is built.
   const ex = project.existing;
