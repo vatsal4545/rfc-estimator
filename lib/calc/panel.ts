@@ -8,10 +8,13 @@ import type { GearOverrides, GearSelection, LoadManagement, LoadType, TakeoffRow
 
 const SQRT3 = Math.sqrt(3);
 
-// Bus ratings available in the gear catalog. Suggestions stay on sizes the
-// estimate can actually price. Exported so the UI's override pickers offer
-// the same catalog.
-export const SWITCHGEAR_480V_A = [400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 3200, 4000, 5000];
+// Bus ratings the sizing ladder may pick. Suggestions stay on sizes the
+// estimate can actually price, and the ladder steps 2,500 -> 3,000 -> 4,000 A
+// like the intake's standard-frame table since 3.8.2 (NEC 240.6): the 3,200 A
+// board is still in the catalog for a frame typed by hand, but auto-sizing
+// never lands on it. Exported so the UI's override pickers offer the same
+// ladder.
+export const SWITCHGEAR_480V_A = [400, 600, 800, 1000, 1200, 1600, 2000, 2500, 3000, 4000, 5000];
 export const SUBPANEL_208V_A = [150, 250, 400, 600, 800, 1000];
 export const TRANSFORMER_KVA = [75, 112.5, 150, 175, 225, 300, 500];
 

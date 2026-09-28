@@ -352,7 +352,8 @@ function BusCard({
             onChange={(e) => override.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
           >
             <option value="">{override.autoLabel}</option>
-            {override.options.map((o) => (
+            {/* A typed size off the ladder (a 3,200 A frame from an intake or the register) stays visible rather than falling back to "auto". */}
+            {(override.value !== undefined && override.value > 0 && !override.options.includes(override.value) ? [...override.options, override.value].sort((a, b) => a - b) : override.options).map((o) => (
               <option key={o} value={o}>
                 {o} {override.unit}
               </option>

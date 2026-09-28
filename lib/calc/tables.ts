@@ -132,7 +132,7 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
   { item: "Main switchgear", size: "2000A", voltage: "480V", unitCost: 55000, note: "Re-set Aug 2026 (was $60k) — keeps the ladder monotonic" },
   { item: "Main switchgear", size: "2500A", voltage: "480V", unitCost: 60000, note: "Re-set Aug 2026 (was $58.5k, priced below the 2000A unit)" },
   { item: "Main switchgear", size: "3000A", voltage: "480V", unitCost: 58842, note: "Sept 2026: Larson 3000A main-only Type 3R board, published $58,842.20 (was $65,000)" },
-  { item: "Main switchgear", size: "3200A", voltage: "480V", unitCost: 62200, note: "Added Sept 2026 — main-breaker basis on the Larson $16.76/A slope; their switch-only 3200A gear is $59,593" },
+  { item: "Main switchgear", size: "3200A", voltage: "480V", unitCost: 62200, note: "Added Sept 2026 — main-breaker basis on the Larson $16.76/A slope; their switch-only 3200A gear is $59,593. Priced only for a frame typed by hand: the sizing ladder steps 3000A -> 4000A like the intake (3.8.2)" },
   { item: "Main switchgear", size: "4000A", voltage: "480V", unitCost: 75600, note: "Sept 2026: Larson $16.76/A slope (was $67,500, below even switch-only gear)" },
   { item: "Main switchgear", size: "5000A", voltage: "480V", unitCost: 100000, note: "Sept 2026: user's budget; slope gives $92.4k, Larson switch-only 5000A is $80.3k (was $70,000)" },
   { item: "Main switchgear", size: "350A", voltage: "208V", unitCost: 0, note: "No price on original list" },
@@ -160,7 +160,7 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
   { item: "Main breaker", size: "2000A", voltage: "480V", unitCost: 12000, note: "Budgetary — top of the molded-case range, insulated-case above" },
   { item: "Main breaker", size: "2500A", voltage: "480V", unitCost: 20000, note: "Budgetary — MasterPact NW25 listed $19,999; Magnum SB $35k" },
   { item: "Main breaker", size: "3000A", voltage: "480V", unitCost: 21000, note: "Budgetary — MasterPact NW30 listed $19,999" },
-  { item: "Main breaker", size: "3200A", voltage: "480V", unitCost: 22500, note: "Budgetary — between the NW30 and NW40 listings" },
+  { item: "Main breaker", size: "3200A", voltage: "480V", unitCost: 22500, note: "Budgetary — between the NW30 and NW40 listings; typed frames only, the ladder skips 3200A" },
   { item: "Main breaker", size: "4000A", voltage: "480V", unitCost: 29500, note: "Budgetary — MasterPact NW40 listed $29,500; re-certified SE 4000 A $35.9k" },
   { item: "Main breaker", size: "5000A", voltage: "480V", unitCost: 40000, note: "Budgetary — extrapolated above the NW40; a switchboard quote at this size" },
   { item: "Main breaker", size: "400A", voltage: "208V", unitCost: 1500, note: "Budgetary — verify vendor quote" },
@@ -198,11 +198,12 @@ export const GEAR_CATALOG: GearCatalogRow[] = [
 ];
 
 // NEC 240.6(A) standard OCPD ratings, plus the large frame sizes the gear
-// catalog carries.
+// catalog carries (3,200 A is not a 240.6 rating and, like the intake's
+// standard-frame table since 3.8.2, the ladder skips it: 3,000 then 4,000 A).
 export const STANDARD_BREAKERS_A: number[] = [
   15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 110, 125, 150, 175,
   200, 225, 250, 300, 350, 400, 450, 500, 600, 700, 800, 1000, 1200, 1600,
-  2000, 2500, 3000, 3200, 4000, 5000,
+  2000, 2500, 3000, 4000, 5000,
 ];
 
 /** Smallest value in `sizes` that is >= amps; falls back to the largest size. */

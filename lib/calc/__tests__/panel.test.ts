@@ -149,3 +149,19 @@ describe("Single-phase L2 aggregation — the 3-phase factor belongs to L3 only"
     expect(panel.bus208?.connectedAmps).toBeCloseTo(277.1, 1);
   });
 });
+
+// Intake 3.8.2 re-set the standard-frame table to 2,500 -> 3,000 -> 4,000 A
+// (NEC 240.6); the estimator's ladder steps the same way, so the two never
+// disagree on an auto-sized frame. The 3,200 A board stays priced for a frame
+// typed by hand.
+describe("480 V frame ladder — matches the intake's standard-frame table", () => {
+  it("skips 3,200 A: a demand just over 3,000 A sizes to 4,000 A", async () => {
+    const { SWITCHGEAR_480V_A } = await import("../panel");
+    const { GEAR_CATALOG, STANDARD_BREAKERS_A, nextStandardSize } = await import("../tables");
+    expect(SWITCHGEAR_480V_A).not.toContain(3200);
+    expect(STANDARD_BREAKERS_A).not.toContain(3200);
+    expect(nextStandardSize(SWITCHGEAR_480V_A, 2900)).toBe(3000);
+    expect(nextStandardSize(SWITCHGEAR_480V_A, 3100)).toBe(4000);
+    expect(GEAR_CATALOG.find((g) => g.item === "Main switchgear" && g.size === "3200A" && g.voltage === "480V")?.unitCost).toBe(62200);
+  });
+});
