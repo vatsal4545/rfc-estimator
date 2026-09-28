@@ -1,4 +1,4 @@
-// The CEO's EVSE Project Intake 3.8.1 (3.8.0 layout) — where every blue cell lives.
+// The CEO's EVSE Project Intake 3.8.3 (3.8.0 layout) — where every blue cell lives.
 //
 // One vocabulary for both directions: the importer (importIntake.ts) reads
 // these cells into a project, the filler (fillIntake.ts) writes a project back
@@ -9,17 +9,17 @@ import { DESIGN_UNIT_RATES } from "../calc/designFees";
 
 /** The template generation this map describes. Compared against Version!B4 / B8 before anything is written. */
 export const INTAKE_TEMPLATE = {
-  version: "3.8.1",
+  version: "3.8.3",
   /**
    * Version!B8. It held at 4aecae7d4b5f25a9 across 2.9.0 -> 3.1.0 despite 53
-   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0, 3.7.0, 3.7.2, 3.8.0 and 3.8.1 — so it
+   * changed cells, and moved at 3.2.0, 3.5.0, 3.6.0, 3.7.0, 3.7.2, 3.8.0, 3.8.1 and 3.8.3 — so it
    * is not a reliable content digest. The version string is what actually
    * gates a fill.
    */
-  contentHash: "377c3d7c0bc814a5",
-  file: "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx",
+  contentHash: "c67e6ff9adce3595",
+  file: "EVSE_Project_Intake_TEMPLATE_3.8.3.xlsx",
   /** Where the blank template ships in the app bundle (public/). */
-  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx",
+  publicPath: "/intake/EVSE_Project_Intake_TEMPLATE_3.8.3.xlsx",
 } as const;
 
 export const VERSION_CELLS = {
@@ -244,7 +244,8 @@ export const isClientPoweredCircuit = (text: string) => text.trim().toLowerCase(
  * scheduled (the sheet says NOT USED otherwise). Rows are built from the
  * cabinet lines: dispenser k is row firstRow + k − 1.
  */
-export const DISPENSER_RUN_TABLE = { firstRow: 65, lastRow: 96, distanceFt: "C", conductor: "E", ground: "F", conduit: "G", sharedTrench: "H" } as const;
+/** Column O since 3.8.2: parallel conductor sets per pole (blank = 1) — the sheet's conductor, ground and conduit feet scale with it. */
+export const DISPENSER_RUN_TABLE = { firstRow: 65, lastRow: 96, distanceFt: "C", conductor: "E", ground: "F", conduit: "G", sharedTrench: "H", setsPerPole: "O" } as const;
 
 /** The transformer-to-switchgear feeder (one lateral). */
 export const SERVICE_FEEDER_ROW = { row: 130, material: "B", conductor: "I", sets: "J" } as const;

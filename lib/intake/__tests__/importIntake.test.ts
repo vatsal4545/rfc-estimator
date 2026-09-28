@@ -11,8 +11,8 @@ import { defaultCommercial } from "../../proposal/defaults";
 import { importIntakeFile, looksLikeIntake, projectFromIntake } from "../importIntake";
 import { readWorkbook } from "../xlsx";
 
-const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.1.xlsx");
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
+const FIXTURE = join(__dirname, "..", "__fixtures__", "intake-sample-3.8.3.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.3.xlsx");
 
 describe("importing a completed intake workbook", async () => {
   const base = { ...defaultProject(), commercial: defaultCommercial() };
@@ -22,8 +22,8 @@ describe("importing a completed intake workbook", async () => {
   const proposal = computeProposal(project, estimate)!;
 
   it("recognises the workbook and records its version", () => {
-    expect(report.templateVersion).toBe("3.8.1");
-    expect(report.contentHash).toBe("377c3d7c0bc814a5");
+    expect(report.templateVersion).toBe("3.8.3");
+    expect(report.contentHash).toBe("c67e6ff9adce3595");
     expect(report.fileVersion).toBe("Rev A");
     expect(report.completedBy).toBe("Test CPM");
     expect(report.dateCompleted).toBe("2026-09-02");
@@ -57,7 +57,7 @@ describe("importing a completed intake workbook", async () => {
     expect(it.projectReference).toBe("BW-TEST-001");
     expect(it.county).toBe("Los Angeles");
     expect(it.cca).toBe("Clean Power Alliance");
-    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.8\.1 Rev A completed by Test CPM on 2026-09-02/);
+    expect(it.notes).toMatch(/Imported from EVSE Project Intake 3\.8\.3 Rev A completed by Test CPM on 2026-09-02/);
   });
 
   it("Equipment and Electrical → Quick Estimate lines, distances, materials and gear", () => {

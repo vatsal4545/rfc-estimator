@@ -11,7 +11,7 @@ import { computeProposal } from "../../proposal";
 import { defaultCommercial } from "../../proposal/defaults";
 import type { LoadManagement, Project } from "../types";
 
-const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.1.xlsx");
+const TEMPLATE = join(__dirname, "..", "..", "..", "templates", "source", "EVSE_Project_Intake_TEMPLATE_3.8.3.xlsx");
 
 /** The Oceana Inn (E-00039) shape: six 60 kW dual DC all-in-ones on 480 V and eight 32 A single Level 2 on 208 V. */
 function site(loadManagement?: LoadManagement): Project {

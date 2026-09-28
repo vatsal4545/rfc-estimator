@@ -155,7 +155,7 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   const revisionNotes = str("Version", "B14");
   // The fill appends its own sentence to the notes; strip it so a re-fill does not stack a second copy.
   const carriedRevisionNotes = revisionNotes.replace(/\s*Filled by the RFC Estimator on \d{4}-\d{2}-\d{2}[\s\S]*$/, "").trim();
-  // A patch release (3.8.0 -> 3.8.1) keeps every cell where it was, so a file from the same major.minor reads without a warning.
+  // A patch release (3.8.0 -> 3.8.1 -> 3.8.3) keeps every cell where it was, so a file from the same major.minor reads without a warning.
   const sameLayout = !!templateVersion && templateVersion.split(".").slice(0, 2).join(".") === INTAKE_TEMPLATE.version.split(".").slice(0, 2).join(".");
   if (templateVersion && templateVersion !== INTAKE_TEMPLATE.version && !sameLayout) {
     const [major, minor] = templateVersion.split(".").map(Number);
@@ -318,11 +318,17 @@ export function projectFromIntake(wb: WorkbookCells, base: Project, allowance: R
   if (yes("Electrical", E.loadManagement) && !(cappedKw && cappedKw > 0)) warnings.push("Load management proposed with no cap on Electrical B115 — the service is sized at full nameplate, as the sheet does.");
   const designAmbientC = num("Electrical", E.ambientC);
   const dcRuns: number[] = [];
+  let dcParallelRuns = 0;
   for (let r = DISPENSER_RUN_TABLE.firstRow; r <= DISPENSER_RUN_TABLE.lastRow; r++) {
     const d = num("Electrical", `${DISPENSER_RUN_TABLE.distanceFt}${r}`);
-    if (d !== undefined && d > 0) dcRuns.push(d);
+    if (d !== undefined && d > 0) {
+      dcRuns.push(d);
+      // 3.8.2: sets per pole in column O (blank = 1) — the sheet doubles the run's conductor, ground and conduit feet for 2.
+      const sets = num("Electrical", `${DISPENSER_RUN_TABLE.setsPerPole}${r}`);
+      if (sets !== undefined && sets > 1) dcParallelRuns++;
+    }
   }
-  if (dcRuns.length) skipped.push(`${dcRuns.length} cabinet-to-dispenser DC run(s), ${dcRuns.reduce((s, d) => s + d, 0)} ft — dispenser DC runs are not in the estimator takeoff yet.`);
+  if (dcRuns.length) skipped.push(`${dcRuns.length} cabinet-to-dispenser DC run(s), ${dcRuns.reduce((s, d) => s + d, 0)} ft${dcParallelRuns ? ` (${dcParallelRuns} with parallel sets per pole)` : ""} — dispenser DC runs are not in the estimator takeoff yet.`);
   // Site facts the estimator does not model but the intake records — carried as typed so a round trip keeps them.
   const trenchSurface = str("Electrical", E.trenchSurface);
   const trenchDepthIn = num("Electrical", E.trenchDepthIn);
